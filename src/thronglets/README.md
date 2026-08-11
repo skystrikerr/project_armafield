@@ -46,6 +46,11 @@ Agents remember where they found food and water, and hand those memories over
 when they stop to socialise — so knowledge of a good grove spreads through the
 colony by word of mouth.
 
+Neighbour lookups (the crowd separation that keeps everyone from stacking into
+one pixel) go through a spatial grid rebuilt each tick, so a colony of a
+hundred-odd costs a handful of cell lookups per agent rather than a scan of
+everybody.
+
 ## The Throng
 
 A shared knowledge pool grows with population, conversations, blocks laid and
@@ -73,6 +78,15 @@ sociability, industry, lifespan, and a hue shift that tints the instance
 colour) with a little mutation. Babies grow through child and adult stages into
 elders and eventually die of old age, so the colony genuinely turns over
 generations — the stats bar tracks which one you're on.
+
+## Reading what's happening
+
+- A thronglet hauling wood carries a visible bundle of logs, so the gather →
+  build loop is legible without opening the inspector.
+- The inspector names each creature's parents; the colony log records who
+  hatched from whom, who laid the last block, and who died.
+- The HUD charts population over the colony's life — booms, plateaus and the
+  dips as a generation ages out.
 
 ## Rendering notes
 

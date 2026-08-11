@@ -79,6 +79,44 @@ function Trait({ label, value }: { label: string; value: number }) {
   );
 }
 
+/** Population over the colony's life, drawn straight to an SVG path. */
+function PopulationChart({ history }: { history: number[] }) {
+  if (history.length < 2) return null;
+  const peak = Math.max(4, ...history);
+  const step = 100 / (history.length - 1);
+  const points = history
+    .map((n, i) => `${(i * step).toFixed(2)},${(100 - (n / peak) * 100).toFixed(2)}`)
+    .join(" ");
+  return (
+    <div className="mt-2.5">
+      <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-wider text-white/40">
+        <span>population</span>
+        <span className="tabular-nums">peak {peak}</span>
+      </div>
+      <svg
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        className="h-8 w-full sm:w-72"
+        aria-hidden
+      >
+        <polyline
+          points={`0,100 ${points} 100,100`}
+          fill="rgba(246,207,90,0.16)"
+          stroke="none"
+        />
+        <polyline
+          points={points}
+          fill="none"
+          stroke="#f6cf5a"
+          strokeWidth="2"
+          vectorEffect="non-scaling-stroke"
+          strokeLinejoin="round"
+        />
+      </svg>
+    </div>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="flex flex-col">
@@ -230,6 +268,8 @@ export default function Thronglets() {
               />
             </div>
           </div>
+
+          <PopulationChart history={snapshot?.history ?? []} />
         </div>
 
         {/* Controls */}
@@ -346,6 +386,11 @@ export default function Thronglets() {
               <p className="text-[10px] uppercase tracking-wider text-white/40">
                 gen {selected.gen} · {selected.stage} ·{" "}
                 {Math.floor(selected.age)}s old
+              </p>
+              <p className="mt-0.5 text-[10px] text-white/35">
+                {selected.parentNames
+                  ? `child of ${selected.parentNames[0]} & ${selected.parentNames[1]}`
+                  : "one of the first eight"}
               </p>
             </div>
             <button

@@ -23,6 +23,9 @@ import {
 
 export const BLOCK = 0.3;
 
+/** Side of one spatial-index cell, a little wider than the separation radius. */
+const CELL = 1.6;
+
 /** How far a finished structure keeps wandering thronglets out. */
 const FOOTPRINT: Record<StructureKind, number> = {
   cairn: 0.7,
@@ -65,6 +68,7 @@ export type Thronglet = {
   name: string;
   gen: number;
   parents: [number, number] | null;
+  parentNames: [string, string] | null;
 
   x: number;
   z: number;
@@ -120,6 +124,7 @@ export type Egg = {
   timer: number;
   genome: Genome;
   parents: [number, number];
+  parentNames: [string, string];
   gen: number;
 };
 
@@ -314,12 +319,17 @@ export class Colony {
   drops: { x: number; z: number; y: number; life: number }[] = [];
 
   time = DAY_LENGTH * 0.18; // start mid-morning
+  /** Population sampled over time, for the chart in the HUD. */
+  history: number[] = [];
+  private historyTimer = 0;
   knowledge = 0;
   births = 0;
   deaths = 0;
   generation = 1;
   log: LogEntry[] = [];
 
+  /** Agents bucketed by cell, rebuilt each tick so crowd checks stay local. */
+  private grid = new Map<number, Thronglet[]>();
   private nextId = 1;
   private nextSiteId = 1;
   private planCooldown = 6;
@@ -382,12 +392,14 @@ export class Colony {
     gen: number,
     parents: [number, number] | null,
     age = 0,
+    parentNames: [string, string] | null = null,
   ): Thronglet {
     const t: Thronglet = {
       id: this.nextId++,
       name: makeName(this.rand),
       gen,
       parents,
+      parentNames,
       x,
       z,
       y: this.terrain.height(x, z),
@@ -634,6 +646,7 @@ export class Colony {
   update(dt: number) {
     this.time += dt;
 
+    this.rebuildGrid();
     this.updateFlora(dt);
     this.updateEggs(dt);
 
@@ -666,12 +679,50 @@ export class Colony {
         towers * 0.15 +
         monoliths * 0.6);
 
+    this.historyTimer -= dt;
+    if (this.historyTimer <= 0) {
+      this.historyTimer = 4;
+      this.history.push(this.thronglets.length);
+      if (this.history.length > 150) this.history.shift();
+    }
+
     this.planCooldown -= dt;
     if (this.planCooldown <= 0) {
       this.planCooldown = 25;
       const pending = this.sites.filter((s) => !s.complete).length;
       if (pending < 1 + Math.floor(this.thronglets.length / 25)) this.planSite();
     }
+  }
+
+  /* ---------------- spatial index ---------------- */
+
+  private static cellOf(x: number, z: number) {
+    // One key per CELL x CELL patch of ground, offset so negatives stay positive.
+    return (
+      (Math.floor(x / CELL) + 4096) * 8192 + (Math.floor(z / CELL) + 4096)
+    );
+  }
+
+  private rebuildGrid() {
+    this.grid.clear();
+    for (const t of this.thronglets) {
+      const key = Colony.cellOf(t.x, t.z);
+      const bucket = this.grid.get(key);
+      if (bucket) bucket.push(t);
+      else this.grid.set(key, [t]);
+    }
+  }
+
+  /** Everyone in the nine cells around a point — the only ones close enough to matter. */
+  private eachNeighbour(t: Thronglet, fn: (other: Thronglet) => void) {
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dz = -1; dz <= 1; dz++) {
+        const bucket = this.grid.get(
+          Colony.cellOf(t.x + dx * CELL, t.z + dz * CELL),
+        );
+        if (!bucket) continue;
+        for (const o of bucket) fn(o);
+      }
   }
 
   private updateFlora(dt: number) {
@@ -699,9 +750,20 @@ export class Colony {
       if (e.timer > 0) continue;
       this.eggs.splice(i, 1);
       if (this.thronglets.length >= POP_CAP) continue;
-      const baby = this.spawn(e.x, e.z, e.genome, e.gen, e.parents, 0);
+      const baby = this.spawn(
+        e.x,
+        e.z,
+        e.genome,
+        e.gen,
+        e.parents,
+        0,
+        e.parentNames,
+      );
       this.births++;
-      this.addLog(`${baby.name} hatches. Gen ${e.gen}.`, "birth");
+      this.addLog(
+        `${baby.name} hatches, child of ${e.parentNames[0]} and ${e.parentNames[1]}.`,
+        "birth",
+      );
     }
   }
 
@@ -1187,6 +1249,7 @@ export class Colony {
               timer: range(this.rand, 18, 28),
               genome: this.mixGenome(t.genome, p.genome),
               parents: [t.id, p.id],
+              parentNames: [t.name, p.name],
               gen,
             });
             this.generation = Math.max(this.generation, gen);
@@ -1257,8 +1320,8 @@ export class Colony {
       }
 
       // Gentle separation so crowds don't stack into one pixel.
-      for (const o of this.thronglets) {
-        if (o === t) continue;
+      this.eachNeighbour(t, (o) => {
+        if (o === t) return;
         const ox = t.x - o.x;
         const oz = t.z - o.z;
         const od = Math.hypot(ox, oz);
@@ -1266,7 +1329,7 @@ export class Colony {
           dx += (ox / od) * 0.9;
           dz += (oz / od) * 0.9;
         }
-      }
+      });
 
       const n = Math.hypot(dx, dz) || 1;
       t.vx += ((dx / n) * speed - t.vx) * Math.min(1, dt * 6);

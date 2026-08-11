@@ -248,6 +248,17 @@ export function tubGeometry() {
   return bake(g, P, { scale: VOX, origin: [10, 0, 6] });
 }
 
+/** The bundle of logs a thronglet carries back to a build site. */
+export function plankGeometry() {
+  const P = [0x9c6c3c, 0x744d29, 0xb98a52];
+  const g = createGrid(8, 3, 4);
+  fill(g, 0, 7, 0, 1, 0, 2, 0);
+  fill(g, 0, 0, 0, 1, 0, 2, 1);
+  fill(g, 7, 7, 0, 1, 0, 2, 1);
+  fill(g, 1, 6, 2, 2, 1, 2, 2);
+  return bake(g, P, { scale: VOX * 0.8, origin: [4, 0, 1.5] });
+}
+
 /** A single build block — instanced and tinted per structure. */
 export function blockGeometry(size = VOX * 2.4) {
   return new THREE.BoxGeometry(size, size, size);

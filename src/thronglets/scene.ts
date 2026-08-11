@@ -8,6 +8,7 @@ import {
   bushGeometry,
   eggGeometry,
   NECK_HEIGHT,
+  plankGeometry,
   throngletGeometries,
   treeGeometry,
   tubGeometry,
@@ -23,6 +24,7 @@ export type SimSnapshot = ColonyStats & {
   isNight: boolean;
   fps: number;
   log: { t: number; text: string; kind: string }[];
+  history: number[];
 };
 
 const SKY_NIGHT = new THREE.Color(0x0a1030);
@@ -68,6 +70,7 @@ export class ThrongletSim {
   private bushMesh!: THREE.InstancedMesh;
   private tubMesh!: THREE.InstancedMesh;
   private dropMesh!: THREE.InstancedMesh;
+  private planks!: THREE.InstancedMesh;
   private fireflies!: THREE.Points;
   private outline = new THREE.Group();
   private ring!: THREE.Mesh;
@@ -195,6 +198,14 @@ export class ThrongletSim {
     this.dropMesh.frustumCulled = false;
     this.dropMesh.count = 0;
     this.worldGroup.add(this.dropMesh);
+
+    // Wood in transit, so the gather → build loop is legible at a glance.
+    this.planks = new THREE.InstancedMesh(plankGeometry(), lambert(), MAX_AGENTS);
+    this.planks.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.planks.castShadow = true;
+    this.planks.frustumCulled = false;
+    this.planks.count = 0;
+    this.worldGroup.add(this.planks);
 
     this.treeMesh = new THREE.InstancedMesh(treeGeometry(), lambert(), 400);
     this.treeMesh.castShadow = true;
@@ -568,6 +579,7 @@ export class ThrongletSim {
       isNight: c.isNight,
       fps: this.fps,
       log: c.log.slice(-8).reverse(),
+      history: c.history,
     });
     if (this.selectedId !== null) {
       const t = c.thronglets.find((x) => x.id === this.selectedId);
@@ -583,6 +595,7 @@ export class ThrongletSim {
     const headColors = this.heads.instanceColor!;
 
     let emote = 0;
+    let carried = 0;
     const tex = emoteTextures();
 
     for (let i = 0; i < n; i++) {
@@ -640,6 +653,21 @@ export class ThrongletSim {
       bodyColors.setXYZ(i, this.tmpColor.r, this.tmpColor.g, this.tmpColor.b);
       headColors.setXYZ(i, this.tmpColor.r, this.tmpColor.g, this.tmpColor.b);
 
+      // Logs held out in front, bobbing with the walk.
+      if (t.carryingWood > 0) {
+        const fx = Math.sin(t.heading);
+        const fz = Math.cos(t.heading);
+        this.dummy.position.set(
+          t.x + fx * 0.33 * s,
+          t.y + lift + 0.4 * s,
+          t.z + fz * 0.33 * s,
+        );
+        this.dummy.rotation.set(walk * 0.12 * Math.min(1, moving), t.heading, 0);
+        this.dummy.scale.setScalar(s);
+        this.dummy.updateMatrix();
+        this.planks.setMatrixAt(carried++, this.dummy.matrix);
+      }
+
       // Emote bubble.
       const icon = t.emote?.icon ?? (asleep ? "zzz" : null);
       if (icon && emote < this.emotePool.length) {
@@ -654,6 +682,9 @@ export class ThrongletSim {
 
     for (let i = emote; i < this.emotePool.length; i++)
       this.emotePool[i].visible = false;
+
+    this.planks.count = carried;
+    this.planks.instanceMatrix.needsUpdate = true;
 
     this.bodies.count = n;
     this.heads.count = n;
