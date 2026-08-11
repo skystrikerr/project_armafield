@@ -4,6 +4,10 @@ A colony of little yellow voxel creatures that live, learn and build on their
 own, rendered in three.js. Inspired by the Tamagotchi-like creatures in the
 *Black Mirror* episode "Plaything" — an unaffiliated fan project.
 
+The island runs a bit over 140 units across, with five or six hundred apple
+trees, a couple of dozen ponds, room for ten clans and up to three hundred and
+fifty creatures at once.
+
 Nothing about the colony is scripted. Every creature scores its own drives once
 a second and acts on whichever shouts loudest, so where they settle, what they
 build, who they pair off with and whether the colony thrives are all emergent.

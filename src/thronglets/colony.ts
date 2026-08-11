@@ -56,14 +56,14 @@ const FOOTPRINT: Record<StructureKind, number> = {
   monolith: 1.2,
 };
 export const DAY_LENGTH = 150; // sim seconds for a full day/night cycle
-export const POP_CAP = 220;
+export const POP_CAP = 360;
 
 /** A clan this big starts looking for reasons to split. */
 const SCHISM_SIZE = 30;
 /** Past this many living clans the island stops splintering further. */
-const MAX_CLANS = 6;
+const MAX_CLANS = 10;
 /** Villages are kept at least this far apart. */
-const VILLAGE_SPACING = 26;
+const VILLAGE_SPACING = 30;
 
 export type Task =
   | "idle"
@@ -464,7 +464,7 @@ export class Colony {
 
     const start = this.newVillageSpot();
     const first = this.foundClan(start);
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 16; i++) {
       const spot = findLandSpot(this.rand, this.terrain, start, 7);
       this.spawn(
         spot.x,
@@ -472,14 +472,14 @@ export class Colony {
         this.randomGenome(),
         1,
         null,
-        i < 5 ? 40 : 12,
+        i < 8 ? 40 : 12,
         null,
         makeName(this.rand),
         first.id,
       );
     }
     this.addLog(
-      `Ten thronglets blink awake and call themselves the ${first.name}.`,
+      `Sixteen thronglets blink awake and call themselves the ${first.name}.`,
       "spawn",
     );
     this.addLog(

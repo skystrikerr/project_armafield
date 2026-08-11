@@ -39,10 +39,10 @@ const SKY_NIGHT = new THREE.Color(0x0a1030);
 const SKY_DUSK = new THREE.Color(0xef9a63);
 const SKY_DAY = new THREE.Color(0x8ecbf5);
 
-const MAX_AGENTS = 260;
-const MAX_BLOCKS = 12000;
-const MAX_APPLES = 1600;
-const MAX_EGGS = 60;
+const MAX_AGENTS = 400;
+const MAX_BLOCKS = 22000;
+const MAX_APPLES = 3200;
+const MAX_EGGS = 120;
 
 export class ThrongletSim {
   readonly canvas: HTMLCanvasElement;
@@ -122,32 +122,32 @@ export class ThrongletSim {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    this.camera = new THREE.PerspectiveCamera(34, 1, 0.5, 500);
+    this.camera = new THREE.PerspectiveCamera(34, 1, 0.5, 800);
     this.camera.position.set(24, 26, 30);
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.minDistance = 4;
-    this.controls.maxDistance = 150;
+    this.controls.maxDistance = 260;
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.target.set(0, 1, 0);
 
-    this.scene.fog = new THREE.Fog(SKY_DAY.getHex(), 85, 260);
+    this.scene.fog = new THREE.Fog(SKY_DAY.getHex(), 130, 400);
     this.scene.add(this.worldGroup);
 
     this.hemi = new THREE.HemisphereLight(0xbfe3ff, 0x6f8a52, 1.9);
     this.ambient = new THREE.AmbientLight(0xffffff, 0.9);
     this.sun = new THREE.DirectionalLight(0xfff2d0, 4.5);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(3072, 3072);
     const sc = this.sun.shadow.camera as THREE.OrthographicCamera;
-    sc.left = -62;
-    sc.right = 62;
-    sc.top = 62;
-    sc.bottom = -62;
+    sc.left = -95;
+    sc.right = 95;
+    sc.top = 95;
+    sc.bottom = -95;
     sc.near = 1;
-    sc.far = 200;
+    sc.far = 320;
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.04;
     sc.updateProjectionMatrix();
@@ -229,18 +229,18 @@ export class ThrongletSim {
     this.banners.count = 0;
     this.worldGroup.add(this.banners);
 
-    this.treeMesh = new THREE.InstancedMesh(treeGeometry(), lambert(), 600);
+    this.treeMesh = new THREE.InstancedMesh(treeGeometry(), lambert(), 900);
     this.treeMesh.castShadow = true;
     this.treeMesh.receiveShadow = true;
     this.treeMesh.frustumCulled = false;
     this.worldGroup.add(this.treeMesh);
 
-    this.bushMesh = new THREE.InstancedMesh(bushGeometry(), lambert(), 300);
+    this.bushMesh = new THREE.InstancedMesh(bushGeometry(), lambert(), 500);
     this.bushMesh.castShadow = true;
     this.bushMesh.frustumCulled = false;
     this.worldGroup.add(this.bushMesh);
 
-    this.tubMesh = new THREE.InstancedMesh(tubGeometry(), lambert(), 24);
+    this.tubMesh = new THREE.InstancedMesh(tubGeometry(), lambert(), 40);
     this.tubMesh.castShadow = true;
     this.tubMesh.receiveShadow = true;
     this.tubMesh.frustumCulled = false;
@@ -1019,7 +1019,7 @@ export class ThrongletSim {
     const elev = Math.sin(p * Math.PI * 2);
     const az = p * Math.PI * 2;
 
-    this.sun.position.set(Math.cos(az) * 50, Math.max(-10, elev * 60), 25);
+    this.sun.position.set(Math.cos(az) * 80, Math.max(-16, elev * 95), 40);
     this.sun.target.position.set(0, 0, 0);
     this.sun.intensity = THREE.MathUtils.clamp(elev * 6.5, 0, 4.8);
     this.sun.color.setHex(elev < 0.25 ? 0xffc48a : 0xfff3d6);

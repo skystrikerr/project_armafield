@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mulberry32, range, type Rand } from "./random";
 
-export const WORLD_RADIUS = 46;
+export const WORLD_RADIUS = 72;
 export const WATER_LEVEL = -0.22;
 
 export type Pond = { x: number; z: number; r: number };
@@ -111,7 +111,7 @@ export function buildTerrain(seed: number, ponds: Pond[]): Terrain {
   const isWater = (x: number, z: number) => height(x, z) < WATER_LEVEL;
 
   // --- mesh -------------------------------------------------------
-  const SEG = 150;
+  const SEG = 224;
   const SPAN = WORLD_RADIUS * 2.4;
   const geo = new THREE.PlaneGeometry(SPAN, SPAN, SEG, SEG);
   geo.rotateX(-Math.PI / 2);
@@ -180,14 +180,14 @@ export function buildTerrain(seed: number, ponds: Pond[]): Terrain {
 
 export function scatterPonds(rand: Rand): Pond[] {
   const ponds: Pond[] = [];
-  const count = 9 + Math.floor(rand() * 4);
+  const count = 15 + Math.floor(rand() * 7);
   for (let i = 0; i < count; i++) {
     const a = rand() * Math.PI * 2;
-    const d = range(rand, 6, WORLD_RADIUS * 0.62);
+    const d = range(rand, 8, WORLD_RADIUS * 0.66);
     ponds.push({
       x: Math.cos(a) * d,
       z: Math.sin(a) * d,
-      r: range(rand, 3.4, 6.2),
+      r: range(rand, 3.4, 7.4),
     });
   }
   return ponds;
@@ -196,14 +196,14 @@ export function scatterPonds(rand: Rand): Pond[] {
 export function scatterTrees(rand: Rand, terrain: Terrain): Tree[] {
   const trees: Tree[] = [];
   let id = 0;
-  for (let i = 0; i < 2600 && trees.length < 280; i++) {
+  for (let i = 0; i < 26000 && trees.length < 620; i++) {
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * WORLD_RADIUS * 0.92;
     const x = Math.cos(a) * d;
     const z = Math.sin(a) * d;
     const y = terrain.height(x, z);
     if (y < WATER_LEVEL + 0.35) continue;
-    if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 3.1)) continue;
+    if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.9)) continue;
 
     const scale = range(rand, 0.82, 1.25);
     const capacity = 3 + Math.floor(rand() * 4);
@@ -248,7 +248,7 @@ export function fruitSlotsFor(rand: Rand, count: number, scale: number) {
 export function scatterBushes(rand: Rand, terrain: Terrain): Bush[] {
   const bushes: Bush[] = [];
   let id = 0;
-  for (let i = 0; i < 1600 && bushes.length < 140; i++) {
+  for (let i = 0; i < 12000 && bushes.length < 380; i++) {
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * WORLD_RADIUS * 0.95;
     const x = Math.cos(a) * d;
@@ -274,14 +274,14 @@ export function scatterTubs(
   trees: Tree[],
 ): Tub[] {
   const tubs: Tub[] = [];
-  for (let i = 0; i < 400 && tubs.length < 9; i++) {
+  for (let i = 0; i < 900 && tubs.length < 18; i++) {
     const a = rand() * Math.PI * 2;
     const d = range(rand, 5, WORLD_RADIUS * 0.7);
     const x = Math.cos(a) * d;
     const z = Math.sin(a) * d;
     const y = terrain.height(x, z);
     if (y < WATER_LEVEL + 0.5) continue;
-    if (tubs.some((t) => Math.hypot(t.x - x, t.z - z) < 9)) continue;
+    if (tubs.some((t) => Math.hypot(t.x - x, t.z - z) < 12)) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.6)) continue;
     tubs.push({ x, z, y, rot: rand() * Math.PI * 2 });
   }

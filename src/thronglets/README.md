@@ -6,6 +6,10 @@ that follows — where they settle, what they build, who they pair off with,
 whether the colony grows or dwindles — falls out of each individual scoring its
 own drives and acting on the loudest one.
 
+The island is a bit over 140 units across, carries five or six hundred apple
+trees, a couple of dozen ponds and pools, and supports up to ten clans and
+around three hundred and fifty creatures at once.
+
 ## Files
 
 | File | What it holds |
@@ -63,8 +67,10 @@ A clan is a village, a bloodline pool and a religion at once.
 
 - **Villages.** Every clan builds outward in rings from the spot it settled, so
   a place grows instead of scattering. Settlement picks ground within reach of
-  water and trees — a clan founded on a dry hill starves. Villagers stay near
-  home unless they are curious, which is what keeps them meeting each other.
+  water and trees — a clan founded on a dry hill starves — and keeps thirty
+  units clear of every other village, so the island fills up with distinct
+  places rather than one sprawl. Villagers stay near home unless they are
+  curious, which is what keeps them meeting each other.
 - **Faith.** Each clan has a god, a sacred thing (the sun, water, the grove,
   stone, the throng, the egg) and a creed. Devotion builds up like any other
   need and is spent at the clan's shrine; at dawn and dusk the whole village
