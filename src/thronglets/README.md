@@ -127,6 +127,19 @@ resists replacement and a shaky one gets overwritten by the neighbours'.
   whichever material their town is shortest of, and a builder can only lay the
   next block if that pile has something in it.
 
+## Trades
+
+Nobody is assigned a job. Each thronglet settles into one — forager, builder,
+quarrier, farmer, priest or warrior — from its own traits crossed with what
+its town is currently short of, and reconsiders now and then. A site short of
+stone turns foragers into quarriers; a town with fields needs somebody on
+them; a clan that has been raided three times starts producing warriors. The
+trade is a leaning rather than a rule: it multiplies the matching drive by
+half again, and a builder still stops to eat.
+
+The same creature born into two different towns ends up doing different work,
+which is the whole point.
+
 ## Towns
 
 A clan's first settlement rings its shrine. Once a town has six finished
@@ -134,12 +147,37 @@ buildings and twenty people, it breaks ground on a second one — an outpost of
 the same clan, not a schism — and builds around both. Three per clan is the
 limit before they would rather split.
 
+Towns are named in their own language the day they are founded, so the log
+reads *the Bramcairn break ground on a new town and call it skoskep*.
+
 Two buildings exist purely because colonies kept dying:
 
 - A **well**, placed on the near side of the closest pond, so nobody has to
   cross the island for a drink.
 - A **granary**, which anyone with a spare afternoon fills with fruit, and
   which the hungry eat from when the trees near town have been picked bare.
+- **Grove plots**, which only yield if a farmer works them. Tended ground
+  produces far more reliably than a wild grove, which is what lets a town
+  outgrow the trees around it — the moment a colony stops being foragers.
+
+## Roads
+
+Ground remembers being walked on. Every step wears the patch underfoot a
+little, wear fades if nobody uses that line, and the routes that survive get
+drawn as bare earth — light scuffing at the edges, trodden dirt down the
+middle. Nobody plans a road; they appear between the places people actually
+go, and they fade when a town is abandoned. The first version of this wore
+paths far too eagerly and paved the entire village, so it now takes sustained
+traffic before anything shows.
+
+## Trade
+
+Clans on good terms send caravans. A trader loads food from their own granary,
+walks it to a friendly clan's town, and hands it over: the receiving store
+grows, both sides gain, relations improve by more than idle proximity ever
+does, and a word crosses between the two languages on the way. It is the one
+thing that reliably makes two peoples like each other, and the alternative to
+the other thing two peoples do when they meet.
 
 ## What they learn
 

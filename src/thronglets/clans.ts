@@ -48,6 +48,10 @@ export type Clan = {
   lessons: { thirst: number; famine: number; raided: number };
   /** Daughter settlements: extra centres this clan builds around. */
   outposts: { x: number; z: number }[];
+  /** What they call each of their towns, in their own tongue. */
+  townNames: string[];
+  /** Goods carried in from other clans — the trade that isn't war. */
+  traded: number;
 };
 
 const CLAN_HEAD = [
@@ -211,6 +215,8 @@ export function makeClan(
     lexicon: new Map(),
     lessons: { thirst: 0, famine: 0, raided: 0 },
     outposts: [],
+    townNames: [],
+    traded: 0,
   };
 }
 

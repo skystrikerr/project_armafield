@@ -2,6 +2,7 @@ import { gauss, mulberry32, pick, range, type Rand } from "./random";
 import {
   borrow,
   coin,
+  coinWord,
   CONCEPTS,
   distance,
   reinforce,
@@ -52,6 +53,9 @@ export const MORPH_COUNT = 7;
 /** Side of one spatial-index cell, a little wider than the separation radius. */
 const CELL = 1.6;
 
+/** Ground is worn into paths on a grid this fine. */
+export const WEAR_CELL = 1.5;
+
 /** How far a finished structure keeps wandering thronglets out. */
 const FOOTPRINT: Record<StructureKind, number> = {
   cairn: 0.7,
@@ -73,6 +77,28 @@ const MAX_CLANS = 10;
 /** Villages are kept at least this far apart. */
 const VILLAGE_SPACING = 30;
 
+/**
+ * What a thronglet has ended up doing with itself. Roles are not assigned:
+ * each one settles into whatever its traits and its town's shortages point at,
+ * and then does that thing better than its neighbours.
+ */
+export type Role =
+  | "forager"
+  | "builder"
+  | "quarrier"
+  | "farmer"
+  | "priest"
+  | "warrior";
+
+export const ROLE_LABEL: Record<Role, string> = {
+  forager: "forager",
+  builder: "builder",
+  quarrier: "quarrier",
+  farmer: "farmer",
+  priest: "priest",
+  warrior: "warrior",
+};
+
 export type Task =
   | "idle"
   | "wander"
@@ -89,7 +115,9 @@ export type Task =
   | "worship"
   | "raid"
   | "flee"
-  | "stock";
+  | "stock"
+  | "tend"
+  | "trade";
 
 export type Genome = {
   speed: number;
@@ -175,6 +203,8 @@ export type Thronglet = {
   homeSite: number | null;
 
   memory: Memory[];
+  /** The trade this one has settled into. */
+  role: Role;
   /** What is currently killing this one, if anything. */
   dyingOf: "hunger" | "thirst" | null;
   /** Set while the player is holding this one off the ground. */
@@ -276,7 +306,10 @@ export type ClanReport = {
   losses: number;
   standings: { id: number; name: string; value: number }[];
   outposts: number;
+  towns: string[];
+  traded: number;
   lessons: { thirst: number; famine: number; raided: number };
+  roles: Record<string, number>;
   tongue: { concept: string; word: string; borrowedFrom: string | null }[];
   /** How far each neighbour's tongue has drifted from this one. */
   drift: { name: string; value: number }[];
@@ -494,6 +527,19 @@ function layout(kind: StructureKind, rand: Rand, accent: number): Block[] {
 /* Colony                                                              */
 /* ------------------------------------------------------------------ */
 
+/** Grid key for the wear map, and its inverse. */
+export function wearKey(x: number, z: number) {
+  return (
+    (Math.floor(x / WEAR_CELL) + 2048) * 4096 + (Math.floor(z / WEAR_CELL) + 2048)
+  );
+}
+
+export function wearCentre(key: number) {
+  const gx = Math.floor(key / 4096) - 2048;
+  const gz = (key % 4096) - 2048;
+  return { x: (gx + 0.5) * WEAR_CELL, z: (gz + 0.5) * WEAR_CELL };
+}
+
 export class Colony {
   rand: Rand;
   terrain: Terrain;
@@ -523,6 +569,12 @@ export class Colony {
 
   /** Agents bucketed by cell, rebuilt each tick so crowd checks stay local. */
   private grid = new Map<number, Thronglet[]>();
+  /**
+   * How much each patch of ground has been walked on. Routes people actually
+   * use wear down into paths; everything else grows back over.
+   */
+  wear = new Map<number, number>();
+  private wearDecay = 0;
   private nextId = 1;
   private nextSiteId = 1;
   private nextClanId = 1;
@@ -675,6 +727,7 @@ export class Colony {
       combatTimer: 0,
       hurt: 0,
       slain: false,
+      role: "forager",
       dyingOf: null,
       homeSite: null,
       memory: [],
@@ -687,6 +740,53 @@ export class Colony {
     this.thronglets.push(t);
     this.generation = Math.max(this.generation, gen);
     return t;
+  }
+
+  /**
+   * Settle on a trade. Traits do most of the work, but a town short of stone
+   * turns foragers into quarriers, and a town with a farm needs somebody on
+   * it — so the same creature born into two different towns ends up doing
+   * different work.
+   */
+  private chooseRole(t: Thronglet): Role {
+    const g = t.genome;
+    const clan = this.clanOf(t);
+    const scores: Record<Role, number> = {
+      forager: 0.35 + g.curiosity * 0.5,
+      builder: g.industry * 0.9,
+      quarrier: g.industry * 0.6,
+      farmer: g.industry * 0.5 + g.sociability * 0.2,
+      priest: g.devotion * 1.0,
+      warrior: g.aggression * 0.95,
+    };
+
+    if (clan) {
+      const site = this.sites.find((s) => !s.complete && s.clanId === clan.id);
+      if (site) {
+        if (site.stone < site.stoneNeeded) scores.quarrier += 0.45;
+        if (site.wood < site.woodNeeded) scores.builder += 0.3;
+      }
+      const farms = this.sites.filter(
+        (s) => s.complete && s.kind === "farm" && s.clanId === clan.id,
+      ).length;
+      const farmers = this.thronglets.filter(
+        (o) => o.clanId === clan.id && o.role === "farmer",
+      ).length;
+      if (farms > 0 && farmers < farms * 4) scores.farmer += 0.6;
+      else if (farms === 0) scores.farmer = 0;
+
+      if (clan.lessons.raided > 2) scores.warrior += 0.3;
+      const priests = this.thronglets.filter(
+        (o) => o.clanId === clan.id && o.role === "priest",
+      ).length;
+      if (priests > Math.max(1, clan.members * 0.15)) scores.priest -= 0.5;
+    }
+
+    let best: Role = "forager";
+    for (const role of Object.keys(scores) as Role[]) {
+      if (scores[role] > scores[best]) best = role;
+    }
+    return best;
   }
 
   private updateStage(t: Thronglet) {
@@ -769,6 +869,42 @@ export class Colony {
     return best;
   }
 
+  /**
+   * A worked farm, ready for someone to put time into. Farms only yield if
+   * they are tended, which is what makes farmers a job rather than a label.
+   */
+  farmFor(t: Thronglet): BuildSite | null {
+    let best: BuildSite | null = null;
+    let bestD = Infinity;
+    for (const s of this.sites) {
+      if (!s.complete || s.kind !== "farm" || s.clanId !== t.clanId) continue;
+      if (s.store >= 30) continue;
+      const d = Math.hypot(s.x - t.x, s.z - t.z);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  /** Anywhere with food in it: a granary, or a farm with a standing crop. */
+  private storeFor(t: Thronglet): BuildSite | null {
+    let best: BuildSite | null = null;
+    let bestD = Infinity;
+    for (const s of this.sites) {
+      if (!s.complete || s.clanId !== t.clanId) continue;
+      if (s.kind !== "granary" && s.kind !== "farm") continue;
+      if (s.store <= 0) continue;
+      const d = Math.hypot(s.x - t.x, s.z - t.z);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
   /** The clan's nearest finished granary, if they have built one. */
   granaryOf(t: Thronglet, needsStock = false): BuildSite | null {
     let best: BuildSite | null = null;
@@ -810,6 +946,8 @@ export class Colony {
       // A new people starts out merely unknown, unless it left in anger.
       adjustRelation(clan, other, f.heresyOf === other.faith.id ? -0.45 : 0);
     }
+    // Name the place in their own tongue.
+    clan.townNames.push(coinWord(this.rand, clan.phonology));
     this.clans.push(clan);
     return clan;
   }
@@ -940,7 +1078,15 @@ export class Colony {
           .filter((o) => o.id !== c.id && o.members > 0)
           .map((o) => ({ id: o.id, name: o.name, value: relationOf(c, o) })),
         outposts: c.outposts.length,
+        towns: [...c.townNames],
+        traded: c.traded,
         lessons: { ...c.lessons },
+        roles: this.thronglets
+          .filter((t) => t.clanId === c.id)
+          .reduce<Record<string, number>>((a, t) => {
+            a[t.role] = (a[t.role] ?? 0) + 1;
+            return a;
+          }, {}),
         tongue: Array.from(c.lexicon.entries()).map(([concept, w]) => ({
           concept,
           word: w.word,
@@ -1163,9 +1309,35 @@ export class Colony {
     if (this.knowledge >= shrine.knowledge && !has("shrine") && !planned("shrine"))
       return shrine;
 
+    // A town that only ever builds housing never becomes a town. Once there
+    // is somewhere to sleep, the store and the fields come before more huts.
     const hut = STRUCTURE_TIERS.find((t) => t.kind === "hut")!;
     const huts = built.filter((s) => s.kind === "hut").length;
-    if (this.knowledge >= hut.knowledge && huts * 4 < clan.members) return hut;
+
+    const granary = STRUCTURE_TIERS.find((t) => t.kind === "granary")!;
+    if (
+      know("granary") &&
+      huts >= 2 &&
+      !has("granary") &&
+      !planned("granary")
+    )
+      return granary;
+
+    const farm = STRUCTURE_TIERS.find((t) => t.kind === "farm")!;
+    const farms = built.filter((s) => s.kind === "farm").length;
+    if (
+      know("farm") &&
+      has("granary") &&
+      farms < 1 + Math.floor(clan.members / 25) &&
+      !planned("farm")
+    )
+      return farm;
+
+    const wellKnown = know("well");
+    if (wellKnown && huts >= 1 && !has("well") && !planned("well"))
+      return STRUCTURE_TIERS.find((t) => t.kind === "well")!;
+
+    if (this.knowledge >= hut.knowledge && huts * 5 < clan.members) return hut;
 
     const weights = unlocked.map((_, i) => (i === unlocked.length - 1 ? 3 : 1));
     const total = weights.reduce((a, b) => a + b, 0);
@@ -1196,8 +1368,14 @@ export class Colony {
     const spot = this.newVillageSpot(clan.home, 20);
     if (!spot) return;
     clan.outposts.push(spot);
+    const name = coinWord(this.rand, clan.phonology);
+    clan.townNames.push(name);
+    this.name(
+      this.thronglets.find((t) => t.clanId === clan.id) ?? this.thronglets[0],
+      "town",
+    );
     this.addLog(
-      `The ${clan.name} break ground on a second settlement.`,
+      `The ${clan.name} break ground on a new town and call it ${name}.`,
       "expand",
     );
   }
@@ -1253,6 +1431,7 @@ export class Colony {
     driftRelations(this.clans, dt);
     this.updateWars(dt);
     this.updateFlora(dt);
+    this.updateSites(dt);
     this.updateEggs(dt);
 
     for (const t of this.thronglets) this.updateThronglet(t, dt);
@@ -1295,6 +1474,17 @@ export class Colony {
     if (this.planCooldown <= 0) {
       this.planCooldown = 18;
       this.planSite();
+    }
+
+    // Paths fade if nobody uses them, so a route dies with the town it served.
+    this.wearDecay -= dt;
+    if (this.wearDecay <= 0) {
+      this.wearDecay = 5;
+      for (const [key, value] of Array.from(this.wear.entries())) {
+        const next = value - 0.09;
+        if (next <= 0.05) this.wear.delete(key);
+        else this.wear.set(key, next);
+      }
     }
 
     this.contactTimer -= dt;
@@ -1471,6 +1661,15 @@ export class Colony {
       }
   }
 
+  private updateSites(dt: number) {
+    for (const s of this.sites) {
+      if (!s.complete) continue;
+      // Standing crops keep growing a little on their own, and stores spoil.
+      if (s.kind === "farm" && s.store > 0) s.store = Math.min(30, s.store + dt * 0.02);
+      if (s.kind === "granary" && s.store > 0) s.store = Math.max(0, s.store - dt * 0.004);
+    }
+  }
+
   private updateFlora(dt: number) {
     for (const tr of this.trees) {
       tr.regrow += dt;
@@ -1572,7 +1771,10 @@ export class Colony {
     // If a goal has been unreachable for half a minute, give up on it and go
     // somewhere else — otherwise one bad target can starve a whole colony.
     t.stuck += dt;
-    if (t.stuck > 30) {
+    // A caravan or a raiding party is a long walk across the island; give
+    // those the room to finish before the watchdog calls it off.
+    const patience = t.task === "trade" || t.task === "raid" ? 75 : 30;
+    if (t.stuck > patience) {
       this.startTask(t, "wander");
       t.thought = "…this isn't working.";
     }
@@ -1580,6 +1782,8 @@ export class Colony {
     t.thinkTimer -= dt;
     if (t.thinkTimer <= 0) {
       t.thinkTimer = range(this.rand, 0.6, 1.4);
+      // Growing up, and now and then afterwards, they reconsider their trade.
+      if (t.stage !== "baby" && this.rand() < 0.05) t.role = this.chooseRole(t);
       this.think(t);
     }
 
@@ -1648,15 +1852,33 @@ export class Colony {
         (next.mat === "thatch" ||
           (next.mat === "wood" ? site.wood > 0 : site.stone > 0));
       scores.gather = short ? 0.95 * g.industry * calm : 0;
-      // Filling the store is what they do with a good day.
-      const store = this.granaryOf(t);
-      scores.stock =
-        store && t.hunger < 0.4 && this.nearestTreeWithFruit(t)
-          ? 0.6 * g.industry * calm
-          : 0;
       scores.build = canLay ? 1.0 * g.industry * calm : 0;
       if (t.carryingWood > 0 || t.carryingStone > 0)
         scores.build = Math.max(scores.build, 1.2 * calm);
+    }
+
+    // The work of a settled town, which has nothing to do with whether
+    // anything happens to be under construction.
+    if (clan && t.stage !== "baby") {
+      // Filling the store is what they do with a good day.
+      const granary = this.granaryOf(t);
+      scores.stock =
+        granary && t.hunger < 0.4 && this.nearestTreeWithFruit(t)
+          ? 0.6 * g.industry * calm
+          : 0;
+      // Worked ground: the difference between foraging and farming.
+      scores.tend = this.farmFor(t) ? 0.75 * g.industry * calm : 0;
+      // Surplus plus a friendly neighbour is how a caravan starts.
+      const spare = this.granaryOf(t, true);
+      const friend = this.clans.some(
+        (o) => o.members > 0 && o.id !== clan.id && relationOf(clan, o) > 0.3,
+      );
+      // Weighted to actually win sometimes: a caravan is a long walk, and it
+      // will never happen if hauling one more log always scores higher.
+      scores.trade =
+        spare && friend && t.stage === "adult" && spare.store > 6
+          ? 1.05 * (0.4 + g.sociability) * calm
+          : 0;
     }
 
     if (
@@ -1670,6 +1892,19 @@ export class Colony {
       // S-curve instead of slamming into the cap and starving.
       const room = 1 - (this.thronglets.length + this.eggs.length) / POP_CAP;
       scores.mate = 1.25 * (0.5 + g.sociability) * calm * Math.max(0.05, room);
+    }
+
+    // A trade is a leaning, not a rule: a builder still eats when hungry.
+    const lean: Partial<Record<Role, string[]>> = {
+      builder: ["build", "gather"],
+      quarrier: ["gather"],
+      farmer: ["tend", "stock"],
+      priest: ["worship"],
+      warrior: ["raid"],
+      forager: ["eat", "stock", "trade", "wander"],
+    };
+    for (const key of lean[t.role] ?? []) {
+      if (scores[key] !== undefined) scores[key] *= 1.5;
     }
 
     let bestKey = "wander";
@@ -1716,6 +1951,10 @@ export class Colony {
         return "flee";
       case "stock":
         return "stock";
+      case "tend":
+        return "tend";
+      case "trade":
+        return "trade";
       default:
         return "wander";
     }
@@ -1745,7 +1984,7 @@ export class Colony {
         }
         // The granary is the point of having one: in a lean week it is
         // closer than any tree still carrying fruit.
-        const store = this.granaryOf(t, true);
+        const store = this.storeFor(t);
         const tree = this.nearestTreeWithFruit(t);
         const bush = this.nearestBushWithBerries(t);
         const dt_ = tree ? Math.hypot(tree.x - t.x, tree.z - t.z) : Infinity;
@@ -1960,6 +2199,21 @@ export class Colony {
         } else this.startTask(t, "wander");
         return;
       }
+      case "tend": {
+        const farm = this.farmFor(t);
+        if (!farm) {
+          this.startTask(t, "wander");
+          return;
+        }
+        t.task = "tend";
+        t.targetSite = farm.id;
+        t.target = {
+          x: farm.x + range(this.rand, -2.2, 2.2),
+          z: farm.z + range(this.rand, -2.2, 2.2),
+        };
+        t.thought = "the plot needs working.";
+        return;
+      }
       case "stock": {
         const store = this.granaryOf(t);
         const tree = this.nearestTreeWithFruit(t);
@@ -1972,6 +2226,38 @@ export class Colony {
         t.targetTree = tree.id;
         t.target = { x: tree.x + 0.9, z: tree.z + 0.6 };
         t.thought = "put some by.";
+        return;
+      }
+      case "trade": {
+        const mine = this.clanOf(t);
+        if (!mine) {
+          this.startTask(t, "wander");
+          return;
+        }
+        // Somebody they are on good terms with, and near enough to walk to.
+        const partner = this.clans
+          .filter(
+            (o) =>
+              o.members > 0 &&
+              o.id !== mine.id &&
+              relationOf(mine, o) > 0.3 &&
+              Math.hypot(o.home.x - t.x, o.home.z - t.z) < 70,
+          )
+          .sort(
+            (a, b) =>
+              Math.hypot(a.home.x - t.x, a.home.z - t.z) -
+              Math.hypot(b.home.x - t.x, b.home.z - t.z),
+          )[0];
+        const store = this.granaryOf(t, true);
+        if (!partner || !store) {
+          this.startTask(t, "wander");
+          return;
+        }
+        t.task = "trade";
+        t.targetSite = store.id;
+        t.partner = partner.id;
+        t.target = { x: store.x + 1.3, z: store.z + 1.1 };
+        t.thought = `carry some to the ${partner.name}.`;
         return;
       }
       case "flee": {
@@ -2033,7 +2319,10 @@ export class Colony {
       case "seekFood": {
         if (!atTarget) return;
         const store = this.sites.find(
-          (s) => s.id === t.targetSite && s.kind === "granary" && s.store > 0,
+          (s) =>
+            s.id === t.targetSite &&
+            (s.kind === "granary" || s.kind === "farm") &&
+            s.store > 0,
         );
         if (store) {
           store.store--;
@@ -2365,6 +2654,27 @@ export class Colony {
         }
         return;
       }
+      case "tend": {
+        const farm = this.sites.find((s) => s.id === t.targetSite);
+        if (!farm || !farm.complete) {
+          t.task = "idle";
+          t.thinkTimer = 0;
+          return;
+        }
+        if (Math.hypot(farm.x - t.x, farm.z - t.z) > 3.4) return;
+        t.taskTimer += dt;
+        t.hop = Math.max(t.hop, 0.5);
+        // Worked ground yields far more reliably than a wild grove does.
+        farm.store = Math.min(30, farm.store + dt * 0.5);
+        this.knowledge += dt * 0.03;
+        if (t.taskTimer > 5) {
+          t.emote = { icon: "spark", t: 1.2 };
+          this.name(t, "food");
+          t.task = "idle";
+          t.thinkTimer = 0;
+        }
+        return;
+      }
       case "stock": {
         const store = this.sites.find((s) => s.id === t.targetSite);
         if (!store || !store.complete) {
@@ -2401,6 +2711,55 @@ export class Colony {
         }
         return;
       }
+      case "trade": {
+        const mine = this.clanOf(t);
+        const them = this.clans.find((c) => c.id === t.partner);
+        if (!mine || !them) {
+          t.task = "idle";
+          t.thinkTimer = 0;
+          return;
+        }
+        // Load up at home, then walk it over.
+        if (t.carryingFood <= 0) {
+          const store = this.sites.find((s) => s.id === t.targetSite);
+          if (!store || store.store <= 0) {
+            t.task = "idle";
+            t.thinkTimer = 0;
+            return;
+          }
+          t.target = { x: store.x + 1.3, z: store.z + 1.1 };
+          if (Math.hypot(store.x - t.x, store.z - t.z) > 2.4) return;
+          const take = Math.min(4, Math.floor(store.store));
+          store.store -= take;
+          t.carryingFood = take;
+          t.thought = `a gift for the ${them.name}.`;
+          return;
+        }
+
+        t.target = { x: them.home.x, z: them.home.z };
+        if (Math.hypot(them.home.x - t.x, them.home.z - t.z) > 3) return;
+
+        // Delivered. Goodwill is the point; the food is the excuse.
+        const theirStore = this.sites.find(
+          (s) => s.complete && s.kind === "granary" && s.clanId === them.id,
+        );
+        if (theirStore) theirStore.store += t.carryingFood;
+        them.traded += t.carryingFood;
+        mine.traded += t.carryingFood;
+        t.carryingFood = 0;
+        t.emote = { icon: "heart", t: 1.8 };
+        adjustRelation(mine, them, 0.09);
+        this.knowledge += 2;
+        this.tradeWordsBetween(mine, them);
+        if (this.rand() < 0.5)
+          this.addLog(
+            `${t.name} carries food from the ${mine.name} to the ${them.name}.`,
+            "trade",
+          );
+        t.task = "idle";
+        t.thinkTimer = 0;
+        return;
+      }
       case "flee": {
         t.health = Math.min(1, t.health + dt * 0.02);
         if (atTarget || t.health > 0.7) {
@@ -2427,6 +2786,10 @@ export class Colony {
     const mine = this.clanOf(a);
     const theirs = this.clanOf(b);
     if (!mine || !theirs || mine.id === theirs.id) return;
+    this.tradeWordsBetween(mine, theirs);
+  }
+
+  private tradeWordsBetween(mine: Clan, theirs: Clan) {
     const concept = pick(this.rand, CONCEPTS);
     const event = borrow(
       this.rand,
@@ -2635,6 +2998,14 @@ export class Colony {
     t.y = this.terrain.height(t.x, t.z);
 
     const moving = Math.hypot(t.vx, t.vz);
+
+    // Wear the ground where they actually walk.
+    if (moving > 0.4) {
+      const key = wearKey(t.x, t.z);
+      // Slow to accrue on purpose: only a route walked over and over should
+      // ever go bare, or the whole village turns into a paved yard.
+      this.wear.set(key, Math.min(3, (this.wear.get(key) ?? 0) + dt * 0.1));
+    }
     if (moving > 0.05) t.heading = Math.atan2(t.vx, t.vz);
     t.bob += dt * (3.5 + moving * 2.4);
     t.hop = Math.max(0, t.hop - dt * 1.6);

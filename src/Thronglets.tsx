@@ -24,7 +24,7 @@ import {
   type Tool,
 } from "@/thronglets/scene";
 import type { ClanReport, Thronglet } from "@/thronglets/colony";
-import { TIER_NAMES } from "@/thronglets/colony";
+import { ROLE_LABEL, TIER_NAMES } from "@/thronglets/colony";
 import { relationLabel } from "@/thronglets/clans";
 import {
   chronicle,
@@ -45,6 +45,8 @@ const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 const TASK_LABEL: Record<string, string> = {
   worship: "at the shrine",
   stock: "filling the store",
+  tend: "working the plot",
+  trade: "carrying a gift",
   raid: "raiding",
   flee: "fleeing",
   idle: "thinking",
@@ -191,12 +193,12 @@ function PeoplesPanel({
                   {c.members}
                 </span>
               </button>
+              {c.towns.length > 0 && (
+                <p className="mt-1 text-[10px] text-emerald-300/70">
+                  {c.towns.join(" · ")}
+                </p>
+              )}
               <p className="mt-1 text-[10px] text-white/50">
-                {c.outposts > 0 && (
-                  <span className="text-emerald-300/70">
-                    {c.outposts + 1} towns ·{" "}
-                  </span>
-                )}
                 worship {c.deity}
                 {c.heresy && (
                   <span className="text-rose-300/70"> · heresy</span>
@@ -206,6 +208,19 @@ function PeoplesPanel({
                 )}
               </p>
               <p className="text-[10px] italic text-white/35">“{c.creed}”</p>
+              {Object.keys(c.roles).length > 0 && (
+                <p className="mt-1 text-[10px] text-white/40">
+                  {Object.entries(c.roles)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([role, n]) => `${n} ${role}${n > 1 ? "s" : ""}`)
+                    .join(" · ")}
+                </p>
+              )}
+              {c.traded > 0 && (
+                <p className="text-[10px] text-sky-300/60">
+                  {c.traded} traded
+                </p>
+              )}
               {(c.lessons.thirst > 0 ||
                 c.lessons.famine > 0 ||
                 c.lessons.raided > 0) && (
@@ -698,6 +713,7 @@ export default function Thronglets() {
                 {Math.floor(selected.age)}s old
               </p>
               <p className="mt-0.5 text-[10px] text-white/35">
+                {ROLE_LABEL[selected.role] ?? selected.role} ·{" "}
                 {MORPH_NAMES[Math.floor(selected.genome.morph)] ?? "amber"} ·{" "}
                 {selected.family} line ·{" "}
                 {selected.parentNames

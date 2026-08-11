@@ -27,6 +27,7 @@ import {
   tubGeometry,
 } from "./models";
 import { buildTerrain, WORLD_RADIUS } from "./world";
+import { wearCentre, WEAR_CELL } from "./colony";
 import { mulberry32 } from "./random";
 
 export type Tool = "inspect" | "food" | "plant";
@@ -52,6 +53,7 @@ const MAX_AGENTS = 400;
 const MAX_BLOCKS = 22000;
 const MAX_APPLES = 3200;
 const MAX_EGGS = 120;
+const MAX_PATH_TILES = 4000;
 
 export class ThrongletSim {
   readonly canvas: HTMLCanvasElement;
@@ -96,6 +98,8 @@ export class ThrongletSim {
   private dropMesh!: THREE.InstancedMesh;
   private planks!: THREE.InstancedMesh;
   private banners!: THREE.InstancedMesh;
+  private paths!: THREE.InstancedMesh;
+  private pathTimer = 0;
   private fireflies!: THREE.Points;
   private outline = new THREE.Group();
   private ring!: THREE.Mesh;
@@ -265,6 +269,31 @@ export class ThrongletSim {
     }
     this.treeMesh = this.treeMeshes.apple;
 
+    // Worn ground. Flat tiles laid just over the terrain wherever they have
+    // walked the same line often enough to kill the grass.
+    // Circles rather than squares, so heavy traffic reads as a trodden line
+    // instead of a tiled floor.
+    const tile = new THREE.CircleGeometry(WEAR_CELL * 0.62, 10);
+    tile.rotateX(-Math.PI / 2);
+    this.paths = new THREE.InstancedMesh(
+      tile,
+      new THREE.MeshLambertMaterial({
+        color: 0xb59a63,
+        transparent: true,
+        opacity: 0.9,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      }),
+      MAX_PATH_TILES,
+    );
+    this.paths.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.paths.frustumCulled = false;
+    this.paths.count = 0;
+    this.paths.renderOrder = 1;
+    this.worldGroup.add(this.paths);
+
     this.rockMesh = new THREE.InstancedMesh(rockGeometry(), lambert(), 300);
     this.rockMesh.castShadow = true;
     this.rockMesh.receiveShadow = true;
@@ -307,7 +336,7 @@ export class ThrongletSim {
       new THREE.MeshBasicMaterial({
         color: 0x5dff7a,
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.9,
         side: THREE.DoubleSide,
         fog: false,
       }),
@@ -931,10 +960,46 @@ export class ThrongletSim {
     this.stoneLoads.instanceMatrix.needsUpdate = true;
 
     this.syncBanners();
+    this.syncPaths();
 
     // Trees can be planted at runtime, so the flora buffers get rebuilt when
     // the count moves.
     if (this.colony.trees.length !== this.lastTreeCount) this.mountFlora();
+  }
+
+  /**
+   * Desire paths: the top-worn cells, drawn darkest where the traffic is
+   * heaviest. Rebuilt a few times a second rather than every frame.
+   */
+  private syncPaths() {
+    this.pathTimer -= 1;
+    if (this.pathTimer > 0) return;
+    this.pathTimer = 20;
+
+    let i = 0;
+    for (const [key, value] of Array.from(this.colony.wear.entries())) {
+      if (value < 1.35 || i >= MAX_PATH_TILES) continue;
+      const { x, z } = wearCentre(key);
+      const y = this.colony.terrain.height(x, z);
+      const worn = Math.min(1, (value - 1.35) / 1.6);
+      this.dummy.position.set(x, y + 0.035, z);
+      // A little rotation per cell breaks up the grid the map is stored on.
+      this.dummy.rotation.set(0, (key % 17) * 0.37, 0);
+      this.dummy.scale.set(0.55 + worn * 0.5, 1, 0.55 + worn * 0.5);
+      this.dummy.updateMatrix();
+      this.paths.setMatrixAt(i, this.dummy.matrix);
+      // Scuffed grass where it is light, bare earth where it is heaviest.
+      this.tmpColor.setRGB(
+        0.4 + worn * 0.26,
+        0.42 + worn * 0.12,
+        0.24 + worn * 0.1,
+      );
+      this.paths.setColorAt(i, this.tmpColor);
+      i++;
+    }
+    this.paths.count = i;
+    this.paths.instanceMatrix.needsUpdate = true;
+    if (this.paths.instanceColor) this.paths.instanceColor.needsUpdate = true;
   }
 
   /** A pole in each clan's colour, planted where that clan settled. */

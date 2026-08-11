@@ -77,6 +77,27 @@ it.
 Creatures come in seven colour schemes, inherited from a parent with a small
 chance of something new, so towns drift towards a look of their own.
 
+## A working civilisation
+
+Nobody is assigned a job. Each creature settles into forager, builder,
+quarrier, farmer, priest or warrior from its own traits crossed with what its
+town is short of, and reconsiders as things change — a site short of stone
+turns foragers into quarriers, three raids and a clan starts producing
+warriors.
+
+Grove plots yield only if a farmer works them, and tended ground beats a wild
+grove by a mile: that is the step that lets a town outgrow the trees around
+it. Towns are named in their founders' own language the day they are founded.
+
+Roads are not planned. Ground remembers being walked on, wear fades where
+nobody goes, and the routes that survive show up as bare earth between the
+places people actually go.
+
+Clans on good terms send caravans of food to each other, which raises
+relations by more than proximity ever does and carries a word across between
+their languages on the way — the alternative to the other thing two peoples do
+when they meet.
+
 ## Their own language
 
 Each clan invents its own words. It gets a sound system when it is founded,
