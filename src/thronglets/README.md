@@ -17,6 +17,7 @@ own drives and acting on the loudest one.
 | `emotes.ts` | Pixel-art emote icons drawn onto a canvas at runtime (no image assets). |
 | `scene.ts` | Rendering and input: instanced meshes, the sun's arc, picking, camera. |
 | `clans.ts` | Clans, faiths, creeds and the relations between peoples. Pure data and drift rules. |
+| `language.ts` | Invented tongues: per-clan sound systems, coining, borrowing, sound change, drift. |
 | `llm.ts` | Optional language-model bridge: provider clients, prompts, config in localStorage. |
 | `random.ts` | Seeded RNG, so a given seed always grows the same island. |
 
@@ -83,11 +84,56 @@ A clan is a village, a bloodline pool and a religion at once.
   down afterwards that kills. Grief is the only thing that reliably ends a
   war.
 
+## Their own language
+
+Every clan gets its own sound system when it is founded — a handful of onsets,
+vowels and codas drawn at random, and a typical word length. Nothing is
+authored beyond that.
+
+- **Coining.** When a creature does something worth naming — eats while
+  starving, drinks, prays, chops wood, lays a block, meets a stranger, kills —
+  it may invent a word for it, if its clan has none. The coiner is recorded and
+  the log names them: *Pux of the Ashhearth calls it "moungou" — food.*
+- **Borrowing.** Where two clans stand close enough to talk they swap a word.
+  It comes out of the borrower's mouth changed, run through their own sound
+  system: a vowel swapped, an ending lost, a first consonant hardened, a
+  syllable doubled.
+- **Drift.** So words travel and deform. In one run `shongmir` (sleep) was
+  borrowed as `sheengmir` and passed on again as `sheengming`, while `moungou`
+  (food) survived three villages intact. The peoples panel marks borrowed
+  words with an asterisk and reports how far each pair of tongues has drifted
+  apart.
+
+Words are held with a strength that use reinforces, so a firmly-held word
+resists replacement and a shaky one gets overwritten by the neighbours'.
+
+## Living and surviving
+
+- **Homes.** Once a village has huts, every creature claims the least crowded
+  one in its own clan and goes back to it to sleep.
+- **Seeds.** A creature that has just eaten somewhere the grove is thinning
+  buries a seed near the village. This is the colony's entire answer to
+  famine, and it works: groves regrow around settlements.
+- **Sharing.** Anyone well fed who meets somebody starving from their own clan
+  hands food over. It is the main reason babies survive a bad week.
+
+## Picking them up
+
+Press and hold on a creature and it dangles from the cursor; drag it anywhere
+and let go. The camera stays put while you are holding one. Dropped in water
+it panics and swims out; dropped far from home it turns round and walks back;
+dropped in the village it shrugs and gets on with whatever it was doing.
+
 ## The Oracle: running your own model
 
-The colony writes its own scripture if you point it at a language model.
-Everything it needs has a procedural fallback, so this is entirely optional
-and nothing is sent anywhere unless you switch it on.
+The sim has two modes, chosen in the Oracle panel and defaulting to the first:
+
+- **No model.** They name their own gods, word their own creeds and invent
+  their own vocabulary, procedurally. Everything described above works.
+- **Language model.** A model you connect writes the scripture instead, speaks
+  for the creature you have selected, and reads their language back to you.
+
+Nothing is sent anywhere unless you switch the second one on.
 
 Open the brain icon in the corner and pick a provider:
 
@@ -102,6 +148,7 @@ Then it can:
 - **name the gods** — rewrite every living clan's deity and creed,
 - **voice** — speak for the creature you have selected, from its needs,
   lineage, faith and current job,
+- **read their tongue** — a field note on the largest clan's vocabulary,
 - **write the chronicle** — turn the event log into a passage of history.
 
 The endpoint, model and key live in `localStorage` on your machine and are
@@ -157,6 +204,7 @@ generations — the stats bar tracks which one you're on.
 
 ## Interacting
 
-Drag to orbit, scroll to zoom, click a creature to inspect it (click again to
-pet). `1/2/3` switch between inspect, dropping food and planting a tree,
-`space` pauses, `f` focuses the selected creature.
+Drag the ground to orbit, scroll to zoom, click a creature to inspect it
+(click again to pet), press and hold to pick it up and drag it anywhere.
+`1/2/3` switch between inspect, dropping food and planting a tree, `space`
+pauses, `f` focuses the selected creature.

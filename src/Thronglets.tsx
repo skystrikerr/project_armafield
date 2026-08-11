@@ -23,6 +23,7 @@ import { TIER_NAMES } from "@/thronglets/colony";
 import { relationLabel } from "@/thronglets/clans";
 import {
   chronicle,
+  glossTongue,
   inventFaith,
   loadConfig,
   LlmError,
@@ -194,6 +195,26 @@ function PeoplesPanel({
                 )}
               </p>
               <p className="text-[10px] italic text-white/35">“{c.creed}”</p>
+              {c.tongue.length > 0 && (
+                <div className="mt-1.5 border-t border-white/10 pt-1.5">
+                  <p className="mb-1 text-[9px] uppercase tracking-wider text-white/30">
+                    their tongue · {c.tongue.length} words
+                  </p>
+                  <div className="flex flex-wrap gap-x-2 gap-y-0.5">
+                    {c.tongue.slice(0, 10).map((w) => (
+                      <span key={w.concept} className="text-[10px]">
+                        <span className="text-[#f6cf5a]/90">{w.word}</span>
+                        <span className="text-white/30"> {w.concept}</span>
+                        {w.borrowedFrom && (
+                          <span className="text-sky-300/40" title={`borrowed from the ${w.borrowedFrom}`}>
+                            *
+                          </span>
+                        )}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
               {c.standings.length > 0 && (
                 <div className="mt-1 flex flex-wrap gap-1">
                   {c.standings.map((s) => (
@@ -407,6 +428,14 @@ export default function Thronglets() {
       });
     });
 
+  const askTongue = () =>
+    runOracle("tongue", async () => {
+      const biggest = snapshot?.peoples[0];
+      if (!biggest || !biggest.tongue.length)
+        return "They have not named anything yet.";
+      return glossTongue(llm, biggest.name, biggest.tongue);
+    });
+
   const askChronicle = () =>
     runOracle("chronicle", async () =>
       chronicle(
@@ -480,6 +509,7 @@ export default function Thronglets() {
             />
             <Stat label="Clans" value={snapshot?.clans ?? 0} />
             <Stat label="Gods" value={snapshot?.faiths ?? 0} />
+            <Stat label="Words" value={snapshot?.words ?? 0} />
             <Stat
               label="Wars"
               value={`${snapshot?.wars ?? 0}${snapshot?.killed ? ` · ${snapshot.killed}†` : ""}`}
@@ -792,15 +822,36 @@ export default function Thronglets() {
               </button>
             </div>
 
-            <label className="mt-4 flex items-center gap-2 text-xs text-white/70">
-              <input
-                type="checkbox"
-                checked={llm.enabled}
-                onChange={(e) => setLlm({ ...llm, enabled: e.target.checked })}
-                className="h-3.5 w-3.5 accent-[#c9a6ff]"
-              />
-              use a model
-            </label>
+            <div className="mt-4 grid grid-cols-2 gap-1.5">
+              <button
+                onClick={() => setLlm({ ...llm, enabled: false })}
+                className={cn(
+                  "rounded-lg px-3 py-2 text-left text-[11px] transition",
+                  !llm.enabled
+                    ? "bg-[#f6cf5a] text-black"
+                    : "bg-white/5 text-white/60 hover:bg-white/10",
+                )}
+              >
+                <span className="block font-semibold">no model</span>
+                <span className="block opacity-70">
+                  they name their own gods and invent their own words
+                </span>
+              </button>
+              <button
+                onClick={() => setLlm({ ...llm, enabled: true })}
+                className={cn(
+                  "rounded-lg px-3 py-2 text-left text-[11px] transition",
+                  llm.enabled
+                    ? "bg-[#c9a6ff] text-black"
+                    : "bg-white/5 text-white/60 hover:bg-white/10",
+                )}
+              >
+                <span className="block font-semibold">language model</span>
+                <span className="block opacity-70">
+                  a model writes the scripture and speaks for them
+                </span>
+              </button>
+            </div>
 
             <div className="mt-3 grid gap-2">
               <div className="flex gap-1.5">
@@ -861,6 +912,7 @@ export default function Thronglets() {
                 { id: "test", label: "test", run: testModel, need: false },
                 { id: "gods", label: "name the gods", run: nameTheGods, need: true },
                 { id: "voice", label: "voice", run: askVoice, need: true },
+                { id: "tongue", label: "read their tongue", run: askTongue, need: true },
                 {
                   id: "chronicle",
                   label: "write the chronicle",
@@ -912,11 +964,13 @@ export default function Thronglets() {
               dismiss
             </button>
           </div>
-          Every thronglet scores its own hunger, thirst, tiredness, loneliness
-          and the urge to build, then acts on whichever shouts loudest. They
-          remember where food and water are, teach each other when they meet,
-          pair off, lay eggs and pass on their traits. Drag to orbit, scroll to
-          zoom, click one to inspect it (click again to pet). Keys:{" "}
+          Every thronglet scores its own hunger, thirst, tiredness, loneliness,
+          devotion and the urge to build, then acts on whichever shouts
+          loudest. They name things, carry words between villages, pair off,
+          lay eggs, split into clans and fall out over whose god is real.{" "}
+          <span className="text-white/90">Pick one up and drag it anywhere</span>{" "}
+          — press and hold on a creature. Drag the ground to orbit, scroll to
+          zoom, click a creature to inspect it (click again to pet). Keys:{" "}
           <span className="text-white/90">space</span> pause,{" "}
           <span className="text-white/90">1/2/3</span> tools,{" "}
           <span className="text-white/90">f</span> focus.

@@ -52,10 +52,29 @@ somebody running. Grief is the only thing that reliably ends a war.
 The peoples panel lists who is alive, what they worship, and how each clan
 feels about the others; click one to fly to its village.
 
+## Their own language
+
+Each clan invents its own words. It gets a sound system when it is founded,
+coins words for whatever its members actually do, and swaps words with
+neighbouring clans — where they come out changed, run through the borrower's
+own sounds. Words drift as they travel: in one run `shongmir` (sleep) was
+borrowed as `sheengmir` and passed on as `sheengming`, while `moungou` (food)
+crossed three villages intact. The peoples panel lists every clan's
+vocabulary, marks the loanwords, and reports how far their tongues have
+drifted apart.
+
+## Picking them up
+
+Press and hold on a creature and it dangles from the cursor. Drag it anywhere
+and let go — the camera stays put while you have hold of one. Dropped in water
+it panics out; dropped far from home it turns round and walks back.
+
 ## The Oracle: bring your own model
 
-Point the colony at a language model and it starts writing its own scripture.
-Open the brain icon and pick:
+There are two modes, and the default needs nothing: **no model**, where they
+name their own gods, word their own creeds and invent their own vocabulary
+procedurally. Or connect a **language model** and it writes the scripture
+instead. Open the brain icon and pick:
 
 | Provider | Endpoint | Notes |
 | --- | --- | --- |
@@ -64,7 +83,8 @@ Open the brain icon and pick:
 | Anthropic | `/v1/messages` | Called from the browser with the direct-browser-access header. |
 
 It can name the gods and word their creeds, speak for whichever creature you
-have selected, or turn the event log into a chronicle. It is off by default,
+have selected, read a clan's invented language back to you, or turn the event
+log into a chronicle. It is off by default,
 every piece of text has a procedural fallback, and the endpoint, model and key
 stay in your browser's localStorage.
 

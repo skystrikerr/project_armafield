@@ -1,4 +1,5 @@
 import { pick, range, type Rand } from "./random";
+import { makePhonology, type Lexicon, type Phonology } from "./language";
 
 /**
  * Clans and the things they believe.
@@ -36,6 +37,10 @@ export type Clan = {
   raids: number;
   losses: number;
   converts: number;
+  /** The sound system this clan's words are drawn from. */
+  phonology: Phonology;
+  /** Everything they have found a word for. */
+  lexicon: Lexicon;
 };
 
 const CLAN_HEAD = [
@@ -191,6 +196,8 @@ export function makeClan(
     raids: 0,
     losses: 0,
     converts: 0,
+    phonology: makePhonology(rand),
+    lexicon: new Map(),
   };
 }
 

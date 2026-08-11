@@ -1,5 +1,14 @@
 import { gauss, mulberry32, pick, range, type Rand } from "./random";
 import {
+  borrow,
+  coin,
+  CONCEPTS,
+  distance,
+  reinforce,
+  say,
+  type Concept,
+} from "./language";
+import {
   adjustRelation,
   atWar,
   driftRelations,
@@ -146,8 +155,12 @@ export type Thronglet = {
   hurt: number;
   /** Killed in a raid rather than by age or hunger — changes the eulogy. */
   slain: boolean;
+  /** The hut this one sleeps in, once the village has built enough of them. */
+  homeSite: number | null;
 
   memory: Memory[];
+  /** Set while the player is holding this one off the ground. */
+  held: boolean;
   /** Little animation helpers the renderer reads. */
   bob: number;
   hop: number;
@@ -210,6 +223,7 @@ export type ColonyStats = {
   killed: number;
   converted: number;
   skirmishes: number;
+  words: number;
 };
 
 export type ClanReport = {
@@ -226,6 +240,9 @@ export type ClanReport = {
   raids: number;
   losses: number;
   standings: { id: number; name: string; value: number }[];
+  tongue: { concept: string; word: string; borrowedFrom: string | null }[];
+  /** How far each neighbour's tongue has drifted from this one. */
+  drift: { name: string; value: number }[];
 };
 
 const SYL_A = [
@@ -563,7 +580,9 @@ export class Colony {
       combatTimer: 0,
       hurt: 0,
       slain: false,
+      homeSite: null,
       memory: [],
+      held: false,
       bob: this.rand() * 10,
       hop: 0,
       emote: null,
@@ -588,10 +607,70 @@ export class Colony {
     t.scale = growth * t.genome.size;
   }
 
+  /* ---------------- language ---------------- */
+
+  /**
+   * Something happened worth having a word for. If the clan has no word yet,
+   * this one coins it; otherwise saying it again makes it stick.
+   */
+  private name(t: Thronglet, concept: Concept) {
+    const clan = this.clanOf(t);
+    if (!clan) return null;
+    const existing = say(clan.lexicon, concept);
+    if (existing) {
+      reinforce(clan.lexicon, concept);
+      return existing;
+    }
+    // Not everyone is a coiner — it takes a talkative one, and a moment.
+    if (this.rand() > 0.25 * (0.4 + t.genome.sociability)) return null;
+    const event = coin(this.rand, clan.lexicon, clan.phonology, concept, t.name);
+    if (event) {
+      this.addLog(
+        `${t.name} of the ${clan.name} calls it “${event.word}” — ${concept}.`,
+        "word",
+      );
+      this.knowledge += 1.5;
+    }
+    return event?.word ?? null;
+  }
+
   /* ---------------- clans and faith ---------------- */
 
   clanOf(t: Thronglet): Clan {
     return this.clans.find((c) => c.id === t.clanId) ?? this.clans[0];
+  }
+
+  /**
+   * The hut this one lives in. Claims the least crowded hut in its own
+   * village the first time it needs somewhere to sleep, and re-claims if that
+   * hut is torn down.
+   */
+  homeHut(t: Thronglet): BuildSite | null {
+    const current = this.sites.find(
+      (s) => s.id === t.homeSite && s.complete && s.kind === "hut",
+    );
+    if (current) return current;
+
+    const clan = this.clanOf(t);
+    const options = this.sites.filter(
+      (s) => s.complete && s.kind === "hut" && (!clan || s.clanId === clan.id),
+    );
+    if (!options.length) {
+      t.homeSite = null;
+      return null;
+    }
+
+    const load = new Map<number, number>();
+    for (const o of this.thronglets)
+      if (o.homeSite !== null) load.set(o.homeSite, (load.get(o.homeSite) ?? 0) + 1);
+
+    const best = options.reduce((a, b) => {
+      const score = (s: BuildSite) =>
+        (load.get(s.id) ?? 0) * 6 + Math.hypot(s.x - t.x, s.z - t.z);
+      return score(a) <= score(b) ? a : b;
+    });
+    t.homeSite = best.id;
+    return best;
   }
 
   /** The clan's finished shrine, if they have got one up yet. */
@@ -711,6 +790,9 @@ export class Colony {
       killed: this.killed,
       converted: this.converted,
       skirmishes: this.skirmishes,
+      words: this.clans
+        .filter((c) => c.members > 0)
+        .reduce((n, c) => n + c.lexicon.size, 0),
     };
   }
 
@@ -735,6 +817,17 @@ export class Colony {
         standings: this.clans
           .filter((o) => o.id !== c.id && o.members > 0)
           .map((o) => ({ id: o.id, name: o.name, value: relationOf(c, o) })),
+        tongue: Array.from(c.lexicon.entries()).map(([concept, w]) => ({
+          concept,
+          word: w.word,
+          borrowedFrom: w.borrowedFrom,
+        })),
+        drift: this.clans
+          .filter((o) => o.id !== c.id && o.members > 0)
+          .map((o) => ({
+            name: o.name,
+            value: distance(c.lexicon, o.lexicon),
+          })),
       }));
   }
 
@@ -1092,7 +1185,9 @@ export class Colony {
         if (met || o === t || o.clanId === t.clanId || o.stage === "baby") return;
         if (Math.hypot(o.x - t.x, o.z - t.z) < 1.9) met = o;
       });
-      if (met) this.maybeConvert(t, met);
+      if (!met) continue;
+      this.tradeWords(t, met);
+      this.maybeConvert(t, met);
     }
   }
 
@@ -1194,6 +1289,20 @@ export class Colony {
 
   private updateThronglet(t: Thronglet, dt: number) {
     t.age += dt;
+    if (t.held) {
+      // Dangling from a giant hand: needs still tick, but nothing else does.
+      this.updateStage(t);
+      t.hunger = Math.min(1, t.hunger + dt * 0.004);
+      t.joy = Math.min(1, t.joy + dt * 0.02);
+      t.vx = 0;
+      t.vz = 0;
+      t.bob += dt * 6;
+      if (t.emote) {
+        t.emote.t -= dt;
+        if (t.emote.t <= 0) t.emote = null;
+      }
+      return;
+    }
     this.updateStage(t);
     if (t.mateCooldown > 0) t.mateCooldown -= dt;
     if (t.emote) {
@@ -1413,16 +1522,9 @@ export class Colony {
         return;
       }
       case "sleep": {
-        // Curl up against the nearest hut wall — the walls are solid, so the
-        // spot has to sit just outside the footprint or they can never arrive.
-        const huts = this.sites.filter((s) => s.complete && s.kind === "hut");
-        const hut = huts.length
-          ? huts.reduce((a, b) =>
-              Math.hypot(a.x - t.x, a.z - t.z) < Math.hypot(b.x - t.x, b.z - t.z)
-                ? a
-                : b,
-            )
-          : null;
+        // Everyone claims a hut in their own village and goes back to it. The
+        // walls are solid, so the spot sits just outside the footprint.
+        const hut = this.homeHut(t);
         t.task = "sleep";
         if (hut) {
           const a = this.rand() * Math.PI * 2;
@@ -1664,6 +1766,7 @@ export class Colony {
         t.taskTimer -= dt;
         t.thirst = Math.max(0, t.thirst - dt * 0.5);
         if (t.taskTimer <= 0) {
+          this.name(t, "water");
           t.emote = { icon: "droplet", t: 1.6 };
           t.task = "idle";
           t.thinkTimer = 0;
@@ -1674,6 +1777,7 @@ export class Colony {
         if (!atTarget) return;
         t.energy = Math.max(0, t.energy - dt * 0.055);
         t.health = Math.min(1, t.health + dt * 0.01);
+        if (this.rand() < 0.01) this.name(t, t.homeSite !== null ? "home" : "sleep");
         t.thought = "zzz";
         if (t.energy <= 0.03) {
           t.task = "idle";
@@ -1699,6 +1803,14 @@ export class Colony {
           t.emote = { icon: "heart", t: 1.5 };
           // Chatter spreads what each of them knows.
           for (const m of p.memory) this.remember(t, m.x, m.z, m.kind);
+          this.name(t, p.clanId === t.clanId ? "friend" : "stranger");
+          // Feed whoever is worse off than you — the reason babies survive a
+          // bad week at all.
+          if (p.hunger > 0.7 && t.hunger < 0.35 && p.clanId === t.clanId) {
+            p.hunger = Math.max(0, p.hunger - 0.45);
+            p.emote = { icon: "apple", t: 1.5 };
+            this.name(t, "food");
+          }
           if (p.clanId !== t.clanId) this.maybeConvert(t, p);
           t.task = "idle";
           t.thinkTimer = 0;
@@ -1709,6 +1821,7 @@ export class Colony {
         if (!atTarget) return;
         t.joy = Math.max(0, t.joy - dt * 0.4);
         t.energy = Math.min(1, t.energy + dt * 0.02);
+        if (this.rand() < 0.02) this.name(t, "play");
         t.hop = Math.max(t.hop, 1);
         t.taskTimer += dt;
         if (t.taskTimer > 4) {
@@ -1747,6 +1860,7 @@ export class Colony {
         t.taskTimer += dt;
         t.hop = Math.max(t.hop, 0.6);
         if (t.taskTimer > 2.4) {
+          this.name(t, "wood");
           const take = Math.min(9, Math.floor(tree.wood));
           tree.wood -= take;
           t.carryingWood = take;
@@ -1783,6 +1897,7 @@ export class Colony {
           site.placed++;
           site.wood -= 1;
           t.blocksPlaced++;
+          if (this.rand() < 0.05) this.name(t, "build");
           this.knowledge += 0.4;
           if (site.placed >= site.blocks.length) {
             site.complete = true;
@@ -1842,6 +1957,7 @@ export class Colony {
         this.knowledge += dt * 0.05;
         t.thought = `${clan?.faith.deity ?? "something"}, hold us.`;
         if (t.taskTimer > 3.5) {
+          this.name(t, "god");
           t.emote = { icon: "faith", t: 1.6 };
           t.task = "idle";
           t.thinkTimer = 0;
@@ -1917,6 +2033,30 @@ export class Colony {
   }
 
   /**
+   * Two clans standing close enough to talk swap a word. It comes out of the
+   * borrower's mouth changed, which is how neighbouring tongues end up with
+   * words that are obviously related but no longer the same.
+   */
+  private tradeWords(a: Thronglet, b: Thronglet) {
+    const mine = this.clanOf(a);
+    const theirs = this.clanOf(b);
+    if (!mine || !theirs || mine.id === theirs.id) return;
+    const concept = pick(this.rand, CONCEPTS);
+    const event = borrow(
+      this.rand,
+      { lex: theirs.lexicon, name: theirs.name },
+      { lex: mine.lexicon, phonology: mine.phonology, name: mine.name },
+      concept,
+    );
+    if (event && this.rand() < 0.3) {
+      this.addLog(
+        `The ${mine.name} take “${event.word}” for ${concept} from the ${theirs.name}.`,
+        "word",
+      );
+    }
+  }
+
+  /**
    * Two creatures from different clans got talking. The more devout one may
    * carry the other's god home with them — the quiet way a faith spreads, and
    * a reliable way to make the losing clan furious.
@@ -1954,6 +2094,7 @@ export class Colony {
     attacker.hop = Math.max(attacker.hop, 1.1);
     attacker.emote = { icon: "clash", t: 0.9 };
     this.skirmishes++;
+    this.name(attacker, "fight");
     foe.hurt = 1;
     // Standing fights mostly end in someone running. It is the chasing down
     // afterwards that actually kills.
@@ -1994,10 +2135,32 @@ export class Colony {
   }
 
   private feed(t: Thronglet, amount: number) {
+    const wasStarving = t.hunger > 0.85;
+    this.name(t, "food");
+    if (wasStarving) this.name(t, "hunger");
     t.hunger = Math.max(0, t.hunger - amount);
     t.joy = Math.max(0, t.joy - amount * 0.25);
     t.mealsEaten++;
     t.emote = { icon: "apple", t: 1.5 };
+
+    // Somebody who has just eaten, in a place that is running out of fruit,
+    // buries a seed. This is the colony's whole answer to famine.
+    const clan = this.clanOf(t);
+    if (clan && this.rand() < 0.12) {
+      const nearby = this.trees.filter(
+        (tr) => Math.hypot(tr.x - clan.home.x, tr.z - clan.home.z) < 26,
+      );
+      const bearing = nearby.filter((tr) => tr.fruit > 0).length;
+      if (nearby.length < 14 || bearing < 4) {
+        const spot = findLandSpot(this.rand, this.terrain, clan.home, 14);
+        if (this.plantTree(spot.x, spot.z)) {
+          t.emote = { icon: "spark", t: 1.4 };
+          this.knowledge += 0.5;
+          if (this.rand() < 0.25)
+            this.addLog(`${t.name} buries a seed near the ${clan.name}.`, "grow");
+        }
+      }
+    }
     t.task = "idle";
     t.thinkTimer = 0.3;
     t.thought = "mm.";
@@ -2101,6 +2264,46 @@ export class Colony {
       }
     }
     return true;
+  }
+
+  /** The player has picked this one up. */
+  pickUp(t: Thronglet) {
+    t.held = true;
+    t.task = "idle";
+    t.target = null;
+    t.foe = null;
+    t.emote = { icon: "spark", t: 1.5 };
+    t.thought = "whoa —";
+  }
+
+  /**
+   * Put down wherever the hand let go. Landing in water or on the far side of
+   * the island is survivable; they just have to walk home.
+   */
+  putDown(t: Thronglet, x: number, z: number) {
+    t.held = false;
+    t.x = x;
+    t.z = z;
+    t.y = this.terrain.height(x, z);
+    t.vx = 0;
+    t.vz = 0;
+    t.stuck = 0;
+    t.thinkTimer = 0;
+    t.hop = 1;
+
+    const clan = this.clanOf(t);
+    const far = clan ? Math.hypot(clan.home.x - x, clan.home.z - z) : 0;
+    if (this.terrain.height(x, z) < WATER_LEVEL + 0.1) {
+      t.thought = "cold. cold. out.";
+      t.joy = Math.min(1, t.joy + 0.4);
+      this.startTask(t, "flee");
+    } else if (far > 22) {
+      t.thought = "this is nowhere. go home.";
+      t.task = "wander";
+      t.target = { x: clan!.home.x, z: clan!.home.z };
+    } else {
+      t.thought = "…down.";
+    }
   }
 
   pet(t: Thronglet) {

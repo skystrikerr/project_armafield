@@ -92,6 +92,10 @@ export class ThrongletSim {
   private pointer = new THREE.Vector2();
   private down = new THREE.Vector2();
   private downTime = 0;
+  /** The creature currently dangling from the cursor, if any. */
+  private dragging: Thronglet | null = null;
+  private dragCandidate: Thronglet | null = null;
+  private dragPoint = new THREE.Vector3();
   private ray = new THREE.Raycaster();
   private dummy = new THREE.Object3D();
   private tmpColor = new THREE.Color();
@@ -400,9 +404,44 @@ export class ThrongletSim {
   private onPointerDown = (e: PointerEvent) => {
     this.down.set(e.clientX, e.clientY);
     this.downTime = performance.now();
+    this.dragCandidate = this.tool === "inspect" ? this.pickThronglet(e) : null;
+    // Grab the creature, not the camera.
+    if (this.dragCandidate) this.controls.enabled = false;
+  };
+
+  /** Hold on a creature for a moment and you pick it up instead of orbiting. */
+  private onPointerMove = (e: PointerEvent) => {
+    if (this.dragging) {
+      const ground = this.groundAt(e);
+      if (ground) this.dragPoint.copy(ground);
+      e.preventDefault();
+      return;
+    }
+    if (!this.dragCandidate) return;
+    const moved = Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y);
+    const held = performance.now() - this.downTime;
+    if (moved > 5 || held > 180) {
+      this.dragging = this.dragCandidate;
+      this.dragCandidate = null;
+      this.colony.pickUp(this.dragging);
+      this.controls.enabled = false;
+      this.canvas.style.cursor = "grabbing";
+      const ground = this.groundAt(e);
+      if (ground) this.dragPoint.copy(ground);
+    }
   };
 
   private onPointerUp = (e: PointerEvent) => {
+    if (this.dragging) {
+      const ground = this.groundAt(e) ?? this.dragPoint;
+      this.colony.putDown(this.dragging, ground.x, ground.z);
+      this.dragging = null;
+      this.controls.enabled = true;
+      this.canvas.style.cursor = "";
+      return;
+    }
+    this.dragCandidate = null;
+    this.controls.enabled = true;
     const moved = Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y);
     if (moved > 6 || performance.now() - this.downTime > 600) return;
     const rect = this.canvas.getBoundingClientRect();
@@ -415,8 +454,35 @@ export class ThrongletSim {
 
   private attachEvents() {
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
+    this.canvas.addEventListener("pointermove", this.onPointerMove);
     this.canvas.addEventListener("pointerup", this.onPointerUp);
+    this.canvas.addEventListener("pointercancel", this.onPointerUp);
     window.addEventListener("resize", this.onResize);
+  }
+
+  private setPointer(e: PointerEvent) {
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  /** Whichever creature is under the cursor, body or head. */
+  private pickThronglet(e: PointerEvent): Thronglet | null {
+    this.setPointer(e);
+    this.ray.setFromCamera(this.pointer, this.camera);
+    const hit = this.ray
+      .intersectObjects([this.bodies, this.heads], false)
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (!hit || hit.instanceId === undefined) return null;
+    return this.colony.thronglets[hit.instanceId] ?? null;
+  }
+
+  /** Where the cursor meets the ground. */
+  private groundAt(e: PointerEvent): THREE.Vector3 | null {
+    this.setPointer(e);
+    this.ray.setFromCamera(this.pointer, this.camera);
+    const hit = this.ray.intersectObject(this.colony.terrain.mesh, false)[0];
+    return hit ? hit.point : null;
   }
 
   private handleClick() {
@@ -545,7 +611,9 @@ export class ThrongletSim {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
+    this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
+    this.canvas.removeEventListener("pointercancel", this.onPointerUp);
     window.removeEventListener("resize", this.onResize);
     this.controls.dispose();
     this.scene.traverse((o) => {
@@ -632,6 +700,29 @@ export class ThrongletSim {
     for (let i = 0; i < n; i++) {
       const t = list[i];
       const s = t.scale;
+      if (t === this.dragging) {
+        // Dangling: hovering above the cursor, legs kicking.
+        const swing = Math.sin(t.bob * 3) * 0.18;
+        this.dummy.position.set(
+          this.dragPoint.x,
+          this.dragPoint.y + 1.5 * s,
+          this.dragPoint.z,
+        );
+        this.dummy.rotation.set(swing * 0.5, t.heading + swing, swing);
+        this.dummy.scale.setScalar(s);
+        this.dummy.updateMatrix();
+        this.bodies.setMatrixAt(i, this.dummy.matrix);
+        this.dummy.position.y += NECK_HEIGHT * s;
+        this.dummy.rotation.set(swing * 0.3, t.heading + swing * 1.4, swing * 1.2);
+        this.dummy.updateMatrix();
+        this.heads.setMatrixAt(i, this.dummy.matrix);
+        t.x = this.dragPoint.x;
+        t.z = this.dragPoint.z;
+        t.y = this.dragPoint.y;
+        bodyColors.setXYZ(i, 1, 1, 1);
+        headColors.setXYZ(i, 1, 1, 1);
+        continue;
+      }
       const moving = Math.hypot(t.vx, t.vz);
       const walk = Math.sin(t.bob * 2.2);
       const asleep = t.task === "sleep";

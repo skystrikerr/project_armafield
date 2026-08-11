@@ -268,6 +268,22 @@ export async function voiceOf(cfg: LlmConfig, c: CreatureBrief): Promise<string>
   return complete(cfg, prompt, { maxTokens: 160 });
 }
 
+/** Gloss a clan's invented vocabulary as if it were a field notebook. */
+export async function glossTongue(
+  cfg: LlmConfig,
+  clan: string,
+  words: { word: string; concept: string }[],
+): Promise<string> {
+  const prompt = [
+    `A clan of small creatures called the ${clan} speak a language of their own.`,
+    "These are the words they have so far, with what each one means:",
+    ...words.map((w) => `- ${w.word} = ${w.concept}`),
+    "",
+    "Write a short field note about this language, three or four sentences: what its sounds are like, what the shape of the vocabulary suggests about what matters to them, and one guess at a word they will coin next and why. Do not invent words they do not have, except for that final guess.",
+  ].join("\n");
+  return complete(cfg, prompt, { maxTokens: 300 });
+}
+
 /** Turn the raw event log into something a historian would write. */
 export async function chronicle(
   cfg: LlmConfig,
