@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Apple,
+  Brain,
+  ChevronDown,
   Crosshair,
   Eye,
+  Loader2,
   Moon,
   Pause,
   Play,
@@ -10,14 +13,33 @@ import {
   Sparkles,
   Sprout,
   Sun,
+  Swords,
   Users,
+  X,
 } from "lucide-react";
 import { ThrongletSim, type SimSnapshot, type Tool } from "@/thronglets/scene";
-import type { Thronglet } from "@/thronglets/colony";
+import type { ClanReport, Thronglet } from "@/thronglets/colony";
 import { TIER_NAMES } from "@/thronglets/colony";
+import { relationLabel } from "@/thronglets/clans";
+import {
+  chronicle,
+  inventFaith,
+  loadConfig,
+  LlmError,
+  PROVIDER_DEFAULTS,
+  saveConfig,
+  voiceOf,
+  type LlmConfig,
+  type LlmProvider,
+} from "@/thronglets/llm";
 import { cn } from "@/lib/utils";
 
+const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
+
 const TASK_LABEL: Record<string, string> = {
+  worship: "at the shrine",
+  raid: "raiding",
+  flee: "fleeing",
   idle: "thinking",
   wander: "wandering",
   seekFood: "looking for food",
@@ -117,6 +139,93 @@ function PopulationChart({ history }: { history: number[] }) {
   );
 }
 
+/** The peoples of the island: who they are, what they worship, who they hate. */
+function PeoplesPanel({
+  peoples,
+  open,
+  onToggle,
+  onFocus,
+}: {
+  peoples: ClanReport[];
+  open: boolean;
+  onToggle: () => void;
+  onFocus: (c: ClanReport) => void;
+}) {
+  return (
+    <div className="pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-xl border border-white/10 bg-black/55 p-2.5 backdrop-blur-sm">
+      <button
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-white/50 transition hover:text-white"
+      >
+        <span className="flex items-center gap-1.5">
+          <Users className="h-3 w-3" /> peoples · {peoples.length}
+        </span>
+        <ChevronDown
+          className={cn("h-3 w-3 transition-transform", !open && "-rotate-90")}
+        />
+      </button>
+
+      {open && (
+        <ul className="mt-2 max-h-[38vh] space-y-2 overflow-y-auto pr-1 sm:w-72">
+          {peoples.map((c) => (
+            <li key={c.id} className="rounded-lg bg-white/5 p-2">
+              <button
+                onClick={() => onFocus(c)}
+                className="flex w-full items-center gap-2 text-left"
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                  style={{ background: hex(c.color) }}
+                />
+                <span className="flex-1 truncate text-xs font-semibold text-white">
+                  {c.name}
+                </span>
+                <span className="text-[10px] tabular-nums text-white/40">
+                  {c.members}
+                </span>
+              </button>
+              <p className="mt-1 text-[10px] text-white/50">
+                worship {c.deity}
+                {c.heresy && (
+                  <span className="text-rose-300/70"> · heresy</span>
+                )}
+                {c.losses > 0 && (
+                  <span className="text-rose-300/70"> · {c.losses} lost</span>
+                )}
+              </p>
+              <p className="text-[10px] italic text-white/35">“{c.creed}”</p>
+              {c.standings.length > 0 && (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {c.standings.map((s) => (
+                    <span
+                      key={s.id}
+                      className={cn(
+                        "rounded px-1 py-0.5 text-[9px]",
+                        s.value <= -0.55
+                          ? "bg-rose-500/25 text-rose-200"
+                          : s.value <= -0.2
+                            ? "bg-amber-500/20 text-amber-200"
+                            : s.value >= 0.6
+                              ? "bg-emerald-500/20 text-emerald-200"
+                              : "bg-white/10 text-white/50",
+                      )}
+                    >
+                      {s.name}: {relationLabel(s.value)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </li>
+          ))}
+          {!peoples.length && (
+            <li className="text-[11px] text-white/30">nobody yet…</li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="flex flex-col">
@@ -143,6 +252,14 @@ export default function Thronglets() {
   const [shadows, setShadows] = useState(true);
   const [follow, setFollow] = useState(false);
   const [showHelp, setShowHelp] = useState(true);
+  const [peoplesOpen, setPeoplesOpen] = useState(true);
+
+  // The optional model connection. Config lives in localStorage only.
+  const [oracleOpen, setOracleOpen] = useState(false);
+  const [llm, setLlm] = useState<LlmConfig>(() => loadConfig());
+  const [llmBusy, setLlmBusy] = useState<string | null>(null);
+  const [llmError, setLlmError] = useState<string | null>(null);
+  const [oracleText, setOracleText] = useState("");
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -196,10 +313,120 @@ export default function Thronglets() {
     simRef.current?.setShadows(shadows);
   }, [shadows]);
 
+  useEffect(() => {
+    saveConfig(llm);
+  }, [llm]);
+
   const reseed = useCallback(() => {
     simRef.current?.reseed();
     setSelected(null);
   }, []);
+
+  const focusClan = useCallback((c: ClanReport) => {
+    simRef.current?.lookAt(c.home.x, c.home.z);
+  }, []);
+
+  /** Every model call goes through here so failures land in one place. */
+  const runOracle = useCallback(
+    async (label: string, fn: () => Promise<string>) => {
+      setLlmBusy(label);
+      setLlmError(null);
+      try {
+        setOracleText(await fn());
+      } catch (err) {
+        setLlmError(
+          err instanceof LlmError ? err.message : String((err as Error)?.message ?? err),
+        );
+      } finally {
+        setLlmBusy(null);
+      }
+    },
+    [],
+  );
+
+  const testModel = () =>
+    runOracle("test", async () => {
+      const { complete } = await import("@/thronglets/llm");
+      return complete(llm, "Reply with exactly: the throng is listening.", {
+        maxTokens: 32,
+      });
+    });
+
+  const nameTheGods = () =>
+    runOracle("gods", async () => {
+      const sim = simRef.current;
+      if (!sim) return "";
+      const lines: string[] = [];
+      for (const clan of sim.colony.clans.filter((c) => c.members > 0)) {
+        const parent = clan.faith.heresyOf
+          ? sim.colony.faiths.find((f) => f.id === clan.faith.heresyOf)?.deity
+          : null;
+        const out = await inventFaith(llm, {
+          clan: clan.name,
+          sacred: clan.faith.sacred,
+          heresyOf: parent,
+        });
+        if (!out) continue;
+        clan.faith.deity = out.deity;
+        clan.faith.creed = out.creed;
+        sim.colony.addLog(
+          `The ${clan.name} learn the true name of their god: ${out.deity}.`,
+          "faith",
+        );
+        lines.push(`The ${clan.name} — ${out.deity}\n“${out.creed}”`);
+      }
+      return lines.join("\n\n") || "The model had nothing to say.";
+    });
+
+  const askVoice = () =>
+    runOracle("voice", async () => {
+      const sim = simRef.current;
+      if (!sim || !selected) return "";
+      const clan = sim.colony.clanOf(selected);
+      const mine = snapshot?.peoples.find((p) => p.id === clan?.id);
+      return voiceOf(llm, {
+        name: selected.name,
+        clan: clan?.name ?? "lost",
+        deity: clan?.faith.deity ?? "nothing",
+        creed: clan?.faith.creed ?? "",
+        stage: selected.stage,
+        age: selected.age,
+        parents: selected.parentNames
+          ? `${selected.parentNames[0]} and ${selected.parentNames[1]}`
+          : null,
+        task: TASK_LABEL[selected.task] ?? selected.task,
+        hunger: selected.hunger,
+        thirst: selected.thirst,
+        energy: selected.energy,
+        spirit: selected.spirit,
+        kills: selected.kills,
+        blocksPlaced: selected.blocksPlaced,
+        children: selected.childCount,
+        atWarWith:
+          mine?.standings.filter((s) => s.value <= -0.55).map((s) => s.name) ?? [],
+      });
+    });
+
+  const askChronicle = () =>
+    runOracle("chronicle", async () =>
+      chronicle(
+        llm,
+        [...(snapshot?.log ?? [])].reverse().map((e) => e.text),
+        (snapshot?.peoples ?? []).map((p) => ({
+          name: p.name,
+          deity: p.deity,
+          members: p.members,
+        })),
+      ),
+    );
+
+  const selectedClan = selected
+    ? snapshot?.peoples.find((p) =>
+        simRef.current
+          ? simRef.current.colony.clanOf(selected)?.id === p.id
+          : false,
+      )
+    : undefined;
 
   const tierIdx = Math.max(
     0,
@@ -230,6 +457,7 @@ export default function Thronglets() {
 
       {/* Top bar ------------------------------------------------- */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-3 sm:p-4">
+       <div className="flex flex-col gap-2">
         <div className="pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-xl border border-white/10 bg-black/55 p-2.5 backdrop-blur-sm sm:p-3">
           <div>
             <h1 className="text-sm font-bold uppercase tracking-[0.18em] text-[#f6cf5a]">
@@ -249,6 +477,12 @@ export default function Thronglets() {
             <Stat
               label="Deaths"
               value={`${snapshot?.deaths ?? 0}/${snapshot?.births ?? 0}`}
+            />
+            <Stat label="Clans" value={snapshot?.clans ?? 0} />
+            <Stat label="Gods" value={snapshot?.faiths ?? 0} />
+            <Stat
+              label="Wars"
+              value={`${snapshot?.wars ?? 0}${snapshot?.killed ? ` · ${snapshot.killed}†` : ""}`}
             />
           </div>
 
@@ -271,6 +505,14 @@ export default function Thronglets() {
 
           <PopulationChart history={snapshot?.history ?? []} />
         </div>
+
+        <PeoplesPanel
+          peoples={snapshot?.peoples ?? []}
+          open={peoplesOpen}
+          onToggle={() => setPeoplesOpen((o) => !o)}
+          onFocus={focusClan}
+        />
+       </div>
 
         {/* Controls */}
         <div className="pointer-events-auto flex flex-col items-end gap-2">
@@ -311,6 +553,17 @@ export default function Thronglets() {
               title="New world"
             >
               <RefreshCw className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setOracleOpen(true)}
+              className={cn(
+                "rounded-lg p-2 transition hover:bg-white/10",
+                llm.enabled ? "text-[#c9a6ff]" : "text-white/50",
+              )}
+              aria-label="Oracle"
+              title="Connect a language model"
+            >
+              <Brain className="h-4 w-4" />
             </button>
           </div>
 
@@ -388,10 +641,24 @@ export default function Thronglets() {
                 {Math.floor(selected.age)}s old
               </p>
               <p className="mt-0.5 text-[10px] text-white/35">
+                of the {selected.family} line ·{" "}
                 {selected.parentNames
                   ? `child of ${selected.parentNames[0]} & ${selected.parentNames[1]}`
-                  : "one of the first eight"}
+                  : "one of the first"}
               </p>
+              {selectedClan && (
+                <p className="mt-0.5 flex items-center gap-1.5 text-[10px]">
+                  <span
+                    className="h-2 w-2 rounded-sm"
+                    style={{ background: hex(selectedClan.color) }}
+                  />
+                  <span className="text-white/60">{selectedClan.name}</span>
+                  <span className="text-white/30">·</span>
+                  <span className="text-[#c9a6ff]/80">
+                    {selectedClan.deity}
+                  </span>
+                </p>
+              )}
             </div>
             <button
               onClick={() => {
@@ -423,6 +690,7 @@ export default function Thronglets() {
             <NeedBar label="Rested" value={selected.energy} />
             <NeedBar label="Social" value={selected.social} />
             <NeedBar label="Joy" value={selected.joy} />
+            <NeedBar label="Faith" value={selected.spirit} />
             <NeedBar label="Health" value={selected.health} invert={false} />
           </div>
 
@@ -431,13 +699,32 @@ export default function Thronglets() {
             <Trait label="Curious" value={selected.genome.curiosity} />
             <Trait label="Social" value={selected.genome.sociability} />
             <Trait label="Industry" value={selected.genome.industry} />
+            <Trait label="Devotion" value={selected.genome.devotion} />
+            <Trait label="Temper" value={selected.genome.aggression} />
           </div>
 
           <div className="mt-2 flex justify-between border-t border-white/10 pt-2 text-[10px] text-white/40">
-            <span>{selected.blocksPlaced} blocks laid</span>
-            <span>{selected.mealsEaten} meals</span>
+            <span>{selected.blocksPlaced} blocks</span>
             <span>{selected.childCount} kin</span>
+            <span className={cn(selected.kills > 0 && "text-rose-300/70")}>
+              {selected.kills} killed
+            </span>
           </div>
+
+          {llm.enabled && (
+            <button
+              onClick={askVoice}
+              disabled={llmBusy !== null}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-[#c9a6ff]/15 px-2 py-1.5 text-[11px] text-[#c9a6ff] transition hover:bg-[#c9a6ff]/25 disabled:opacity-40"
+            >
+              {llmBusy === "voice" ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Brain className="h-3 w-3" />
+              )}
+              ask what it is thinking
+            </button>
+          )}
         </div>
       )}
 
@@ -453,12 +740,18 @@ export default function Thronglets() {
               <li
                 key={`${e.t}-${i}`}
                 className={cn(
-                  "truncate text-[11px]",
+                  "line-clamp-2 text-[11px] leading-snug",
                   e.kind === "birth" && "text-emerald-300/80",
                   e.kind === "death" && "text-rose-300/70",
                   e.kind === "built" && "text-sky-300/80",
                   e.kind === "build" && "text-amber-200/70",
                   e.kind === "spawn" && "text-white/60",
+                  e.kind === "war" && "text-rose-400/80",
+                  e.kind === "kill" && "text-rose-400",
+                  e.kind === "peace" && "text-emerald-300/70",
+                  e.kind === "faith" && "text-[#c9a6ff]/90",
+                  e.kind === "schism" && "text-amber-300/90",
+                  e.kind === "convert" && "text-[#c9a6ff]/70",
                 )}
                 title={e.text}
               >
@@ -471,6 +764,139 @@ export default function Thronglets() {
           </ul>
         </div>
       </div>
+
+
+      {/* Oracle -------------------------------------------------- */}
+      {oracleOpen && (
+        <div className="pointer-events-auto absolute inset-0 z-20 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="max-h-[88dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-white/10 bg-[#0d1226] p-4 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 text-sm font-bold uppercase tracking-[0.16em] text-[#c9a6ff]">
+                  <Brain className="h-4 w-4" /> the oracle
+                </h2>
+                <p className="mt-1 text-[11px] leading-relaxed text-white/45">
+                  Point the colony at a language model and it starts writing its
+                  own religion: naming gods, wording creeds, speaking for a
+                  creature you have selected, and turning the log into a
+                  chronicle. Everything below stays in this browser, and the sim
+                  runs perfectly well with it switched off.
+                </p>
+              </div>
+              <button
+                onClick={() => setOracleOpen(false)}
+                className="rounded-lg p-1.5 text-white/40 transition hover:bg-white/10 hover:text-white"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="mt-4 flex items-center gap-2 text-xs text-white/70">
+              <input
+                type="checkbox"
+                checked={llm.enabled}
+                onChange={(e) => setLlm({ ...llm, enabled: e.target.checked })}
+                className="h-3.5 w-3.5 accent-[#c9a6ff]"
+              />
+              use a model
+            </label>
+
+            <div className="mt-3 grid gap-2">
+              <div className="flex gap-1.5">
+                {(Object.keys(PROVIDER_DEFAULTS) as LlmProvider[]).map((p) => (
+                  <button
+                    key={p}
+                    onClick={() =>
+                      setLlm({
+                        ...llm,
+                        provider: p,
+                        baseUrl: PROVIDER_DEFAULTS[p].baseUrl,
+                        model: PROVIDER_DEFAULTS[p].model,
+                      })
+                    }
+                    className={cn(
+                      "flex-1 rounded-lg px-2 py-1.5 text-[11px] transition",
+                      llm.provider === p
+                        ? "bg-[#c9a6ff] text-black"
+                        : "bg-white/5 text-white/60 hover:bg-white/10",
+                    )}
+                  >
+                    {PROVIDER_DEFAULTS[p].label}
+                  </button>
+                ))}
+              </div>
+              <p className="text-[10px] leading-relaxed text-white/35">
+                {PROVIDER_DEFAULTS[llm.provider].hint}
+              </p>
+
+              <input
+                value={llm.baseUrl}
+                onChange={(e) => setLlm({ ...llm, baseUrl: e.target.value })}
+                placeholder="http://localhost:11434"
+                spellCheck={false}
+                className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-white outline-none focus:border-[#c9a6ff]/60"
+              />
+              <input
+                value={llm.model}
+                onChange={(e) => setLlm({ ...llm, model: e.target.value })}
+                placeholder="model name"
+                spellCheck={false}
+                className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-white outline-none focus:border-[#c9a6ff]/60"
+              />
+              {PROVIDER_DEFAULTS[llm.provider].needsKey && (
+                <input
+                  value={llm.apiKey}
+                  onChange={(e) => setLlm({ ...llm, apiKey: e.target.value })}
+                  placeholder="api key — kept in this browser only"
+                  type="password"
+                  spellCheck={false}
+                  className="rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-xs text-white outline-none focus:border-[#c9a6ff]/60"
+                />
+              )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {[
+                { id: "test", label: "test", run: testModel, need: false },
+                { id: "gods", label: "name the gods", run: nameTheGods, need: true },
+                { id: "voice", label: "voice", run: askVoice, need: true },
+                {
+                  id: "chronicle",
+                  label: "write the chronicle",
+                  run: askChronicle,
+                  need: true,
+                },
+              ].map((a) => (
+                <button
+                  key={a.id}
+                  onClick={a.run}
+                  disabled={
+                    llmBusy !== null ||
+                    (a.need && !llm.enabled) ||
+                    (a.id === "voice" && !selected)
+                  }
+                  className="flex items-center gap-1.5 rounded-lg bg-white/5 px-2.5 py-1.5 text-[11px] text-white/75 transition hover:bg-white/10 disabled:opacity-30"
+                >
+                  {llmBusy === a.id && <Loader2 className="h-3 w-3 animate-spin" />}
+                  {a.label}
+                </button>
+              ))}
+            </div>
+
+            {llmError && (
+              <p className="mt-3 rounded-lg bg-rose-500/15 px-2.5 py-2 text-[11px] leading-relaxed text-rose-200">
+                {llmError}
+              </p>
+            )}
+            {oracleText && (
+              <pre className="mt-3 whitespace-pre-wrap rounded-lg bg-white/5 px-3 py-2.5 font-sans text-[12px] leading-relaxed text-white/80">
+                {oracleText}
+              </pre>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Help ----------------------------------------------------- */}
       {showHelp && !selected && (

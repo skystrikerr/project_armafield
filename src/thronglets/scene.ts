@@ -1,9 +1,16 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Colony, BLOCK, type ColonyStats, type Thronglet } from "./colony";
+import {
+  Colony,
+  BLOCK,
+  type ClanReport,
+  type ColonyStats,
+  type Thronglet,
+} from "./colony";
 import { emoteTextures } from "./emotes";
 import {
   appleGeometry,
+  bannerGeometry,
   blockGeometry,
   bushGeometry,
   eggGeometry,
@@ -25,15 +32,16 @@ export type SimSnapshot = ColonyStats & {
   fps: number;
   log: { t: number; text: string; kind: string }[];
   history: number[];
+  peoples: ClanReport[];
 };
 
 const SKY_NIGHT = new THREE.Color(0x0a1030);
 const SKY_DUSK = new THREE.Color(0xef9a63);
 const SKY_DAY = new THREE.Color(0x8ecbf5);
 
-const MAX_AGENTS = 200;
-const MAX_BLOCKS = 6000;
-const MAX_APPLES = 900;
+const MAX_AGENTS = 260;
+const MAX_BLOCKS = 12000;
+const MAX_APPLES = 1600;
 const MAX_EGGS = 60;
 
 export class ThrongletSim {
@@ -71,6 +79,7 @@ export class ThrongletSim {
   private tubMesh!: THREE.InstancedMesh;
   private dropMesh!: THREE.InstancedMesh;
   private planks!: THREE.InstancedMesh;
+  private banners!: THREE.InstancedMesh;
   private fireflies!: THREE.Points;
   private outline = new THREE.Group();
   private ring!: THREE.Mesh;
@@ -86,6 +95,7 @@ export class ThrongletSim {
   private ray = new THREE.Raycaster();
   private dummy = new THREE.Object3D();
   private tmpColor = new THREE.Color();
+  private tmpTint = new THREE.Color();
 
   private lastBlockCount = -1;
   private lastAppleKey = -1;
@@ -108,18 +118,18 @@ export class ThrongletSim {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    this.camera = new THREE.PerspectiveCamera(34, 1, 0.5, 400);
+    this.camera = new THREE.PerspectiveCamera(34, 1, 0.5, 500);
     this.camera.position.set(24, 26, 30);
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.minDistance = 4;
-    this.controls.maxDistance = 110;
+    this.controls.maxDistance = 150;
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.target.set(0, 1, 0);
 
-    this.scene.fog = new THREE.Fog(SKY_DAY.getHex(), 60, 190);
+    this.scene.fog = new THREE.Fog(SKY_DAY.getHex(), 85, 260);
     this.scene.add(this.worldGroup);
 
     this.hemi = new THREE.HemisphereLight(0xbfe3ff, 0x6f8a52, 1.9);
@@ -128,10 +138,10 @@ export class ThrongletSim {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     const sc = this.sun.shadow.camera as THREE.OrthographicCamera;
-    sc.left = -46;
-    sc.right = 46;
-    sc.top = 46;
-    sc.bottom = -46;
+    sc.left = -62;
+    sc.right = 62;
+    sc.top = 62;
+    sc.bottom = -62;
     sc.near = 1;
     sc.far = 200;
     this.sun.shadow.bias = -0.0006;
@@ -207,18 +217,26 @@ export class ThrongletSim {
     this.planks.count = 0;
     this.worldGroup.add(this.planks);
 
-    this.treeMesh = new THREE.InstancedMesh(treeGeometry(), lambert(), 400);
+    // One banner per clan, standing at the middle of its village.
+    this.banners = new THREE.InstancedMesh(bannerGeometry(), lambert(), 32);
+    this.banners.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.banners.castShadow = true;
+    this.banners.frustumCulled = false;
+    this.banners.count = 0;
+    this.worldGroup.add(this.banners);
+
+    this.treeMesh = new THREE.InstancedMesh(treeGeometry(), lambert(), 600);
     this.treeMesh.castShadow = true;
     this.treeMesh.receiveShadow = true;
     this.treeMesh.frustumCulled = false;
     this.worldGroup.add(this.treeMesh);
 
-    this.bushMesh = new THREE.InstancedMesh(bushGeometry(), lambert(), 200);
+    this.bushMesh = new THREE.InstancedMesh(bushGeometry(), lambert(), 300);
     this.bushMesh.castShadow = true;
     this.bushMesh.frustumCulled = false;
     this.worldGroup.add(this.bushMesh);
 
-    this.tubMesh = new THREE.InstancedMesh(tubGeometry(), lambert(), 16);
+    this.tubMesh = new THREE.InstancedMesh(tubGeometry(), lambert(), 24);
     this.tubMesh.castShadow = true;
     this.tubMesh.receiveShadow = true;
     this.tubMesh.frustumCulled = false;
@@ -470,6 +488,18 @@ export class ThrongletSim {
     this.onSelect?.(this.colony.thronglets.find((t) => t.id === id) ?? null);
   }
 
+  /** Swing the camera over a point on the ground, keeping the current angle. */
+  lookAt(x: number, z: number) {
+    const y = this.colony.terrain.height(x, z);
+    const offset = new THREE.Vector3().subVectors(
+      this.camera.position,
+      this.controls.target,
+    );
+    this.controls.target.set(x, y + 0.6, z);
+    this.camera.position.copy(this.controls.target).add(offset);
+    this.controls.update();
+  }
+
   focusSelected() {
     const t = this.colony.thronglets.find((x) => x.id === this.selectedId);
     if (!t) return;
@@ -578,8 +608,9 @@ export class ThrongletSim {
       dayPhase: c.dayPhase,
       isNight: c.isNight,
       fps: this.fps,
-      log: c.log.slice(-8).reverse(),
+      log: c.log.slice(-9).reverse(),
       history: c.history,
+      peoples: c.clanReports(),
     });
     if (this.selectedId !== null) {
       const t = c.thronglets.find((x) => x.id === this.selectedId);
@@ -642,7 +673,8 @@ export class ThrongletSim {
       this.dummy.updateMatrix();
       this.heads.setMatrixAt(i, this.dummy.matrix);
 
-      // Inherited hue plus a sickly tint when a thronglet is failing.
+      // Inherited hue, then the clan's colour washed over the top, then a
+      // sickly cast when a thronglet is failing and a red flash when it is hit.
       const hue = t.genome.hue;
       const ill = THREE.MathUtils.clamp(t.health, 0.35, 1);
       this.tmpColor.setRGB(
@@ -650,6 +682,20 @@ export class ThrongletSim {
         (1 - Math.abs(hue) * 0.5) * ill,
         (1 - hue * 2.2) * ill,
       );
+      const clan = this.colony.clanOf(t);
+      if (clan) {
+        // Normalise the clan colour first, or a deep hue would just darken
+        // the creature instead of tinting it.
+        this.tmpTint.setHex(clan.color);
+        const peak =
+          Math.max(this.tmpTint.r, this.tmpTint.g, this.tmpTint.b) || 1;
+        this.tmpTint.multiplyScalar(1 / peak);
+        this.tmpColor.lerp(this.tmpTint, 0.4);
+      }
+      if (t.hurt > 0) {
+        this.tmpTint.setRGB(1.4, 0.25, 0.2);
+        this.tmpColor.lerp(this.tmpTint, Math.min(0.8, t.hurt * 0.8));
+      }
       bodyColors.setXYZ(i, this.tmpColor.r, this.tmpColor.g, this.tmpColor.b);
       headColors.setXYZ(i, this.tmpColor.r, this.tmpColor.g, this.tmpColor.b);
 
@@ -686,6 +732,8 @@ export class ThrongletSim {
     this.planks.count = carried;
     this.planks.instanceMatrix.needsUpdate = true;
 
+    this.syncBanners();
+
     this.bodies.count = n;
     this.heads.count = n;
     this.bodies.instanceMatrix.needsUpdate = true;
@@ -712,6 +760,31 @@ export class ThrongletSim {
       this.treeMesh.instanceMatrix.needsUpdate = true;
       this.lastTreeCount = c.trees.length;
     }
+  }
+
+  /** A pole in each clan's colour, planted where that clan settled. */
+  private syncBanners() {
+    const clans = this.colony.clans.filter((c) => c.members > 0);
+    const n = Math.min(clans.length, 32);
+    for (let i = 0; i < n; i++) {
+      const c = clans[i];
+      this.dummy.position.set(
+        c.home.x,
+        this.colony.terrain.height(c.home.x, c.home.z),
+        c.home.z,
+      );
+      this.dummy.rotation.set(0, c.id * 0.9, 0);
+      this.dummy.scale.setScalar(1);
+      this.dummy.updateMatrix();
+      this.banners.setMatrixAt(i, this.dummy.matrix);
+      this.banners.setColorAt(
+        i,
+        this.tmpColor.setHex(c.color).convertSRGBToLinear(),
+      );
+    }
+    this.banners.count = n;
+    this.banners.instanceMatrix.needsUpdate = true;
+    if (this.banners.instanceColor) this.banners.instanceColor.needsUpdate = true;
   }
 
   private syncEggs() {

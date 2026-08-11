@@ -248,6 +248,20 @@ export function tubGeometry() {
   return bake(g, P, { scale: VOX, origin: [10, 0, 6] });
 }
 
+/** A clan's banner, planted at the centre of its village and tinted per clan. */
+export function bannerGeometry() {
+  const P = [0x6b4726, 0xffffff, 0xd9d2c4];
+  const g = createGrid(9, 22, 3);
+  fill(g, 0, 0, 0, 21, 1, 1, 0);
+  fill(g, 0, 2, 0, 0, 0, 2, 0);
+  // Cloth — left white so the instance colour carries the clan's hue.
+  fill(g, 1, 8, 14, 20, 1, 1, 1);
+  fill(g, 1, 8, 14, 14, 1, 1, 2);
+  set(g, 8, 20, 1, 2);
+  set(g, 8, 15, 1, 2);
+  return bake(g, P, { scale: VOX, origin: [0.5, 0, 1.5] });
+}
+
 /** The bundle of logs a thronglet carries back to a build site. */
 export function plankGeometry() {
   const P = [0x9c6c3c, 0x744d29, 0xb98a52];

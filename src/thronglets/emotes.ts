@@ -76,6 +76,34 @@ const ART: Record<string, { rows: string[]; colors: Record<string, string> }> = 
     ],
     colors: { X: "#f2b705", w: "#fff6c9" },
   },
+  clash: {
+    rows: [
+      "X.......X",
+      ".X.....X.",
+      "..X...X..",
+      "...XwX...",
+      "..XwWwX..",
+      "...XwX...",
+      "..X...X..",
+      ".X.....X.",
+      "X.......X",
+    ],
+    colors: { X: "#c9342b", w: "#ff8a5c", W: "#fff3d0" },
+  },
+  faith: {
+    rows: [
+      "....X....",
+      "...XwX...",
+      "..XwwwX..",
+      ".XXXwXXX.",
+      "....w....",
+      "....w....",
+      "...XwX...",
+      "..XwwwX..",
+      "...XXX...",
+    ],
+    colors: { X: "#8f6bd8", w: "#e6d6ff" },
+  },
   zzz: {
     rows: [
       "XXXX.....",

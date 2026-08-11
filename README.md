@@ -39,6 +39,35 @@ The sim opens on a top-down view of the island.
 Speed runs up to 8×, and the refresh button in the corner grows a brand new
 island. `pixel` and `shadows` toggle the look and the expensive lighting.
 
+## Peoples, gods and war
+
+The island fills with clans. Each is a village, a bloodline and a religion at
+once — a god, a sacred thing, a creed, and a banner colour its members wear as
+a tint. They build their villages outward in rings from where they settled,
+gather at their shrine at dawn and dusk, carry their god to neighbours who
+have not heard of it, split when they grow too big to agree with themselves,
+and eventually come to blows over whose god is real. Most fights end with
+somebody running. Grief is the only thing that reliably ends a war.
+
+The peoples panel lists who is alive, what they worship, and how each clan
+feels about the others; click one to fly to its village.
+
+## The Oracle: bring your own model
+
+Point the colony at a language model and it starts writing its own scripture.
+Open the brain icon and pick:
+
+| Provider | Endpoint | Notes |
+| --- | --- | --- |
+| Local (Ollama) | `http://localhost:11434` | `ollama serve`, `ollama pull llama3.2`. Start with `OLLAMA_ORIGINS=*` so the page may call it. No key needed. |
+| OpenAI-compatible | `/v1/chat/completions` | OpenAI, LM Studio, vLLM, OpenRouter. |
+| Anthropic | `/v1/messages` | Called from the browser with the direct-browser-access header. |
+
+It can name the gods and word their creeds, speak for whichever creature you
+have selected, or turn the event log into a chronicle. It is off by default,
+every piece of text has a procedural fallback, and the endpoint, model and key
+stay in your browser's localStorage.
+
 ## What the creatures actually do
 
 Each one carries hunger, thirst, tiredness, loneliness and a need to play,
@@ -51,8 +80,8 @@ and commit to the winner.
   over when they stop to chat, so a good grove spreads by word of mouth.
 - A shared knowledge pool, **the Throng**, grows with population,
   conversations and finished buildings. Crossing a threshold teaches the
-  colony something new to make: cairn → hut → grove plot → watchtower →
-  monolith.
+  colony something new to make: cairn → hut → shrine → grove plot →
+  watchtower → monolith.
 - **Building** is real work: wood gets chopped from trees, carried to the
   site and stacked one block at a time. Finished walls are solid.
 - Two well-fed adults who spend enough time together lay an **egg**, and the

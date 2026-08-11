@@ -16,6 +16,8 @@ own drives and acting on the loudest one.
 | `colony.ts` | The simulation. No three.js in here — agents, needs, utility AI, building, breeding, the day/night clock. |
 | `emotes.ts` | Pixel-art emote icons drawn onto a canvas at runtime (no image assets). |
 | `scene.ts` | Rendering and input: instanced meshes, the sun's arc, picking, camera. |
+| `clans.ts` | Clans, faiths, creeds and the relations between peoples. Pure data and drift rules. |
+| `llm.ts` | Optional language-model bridge: provider clients, prompts, config in localStorage. |
 | `random.ts` | Seeded RNG, so a given seed always grows the same island. |
 
 The page that mounts it all is `src/Thronglets.tsx`.
@@ -30,9 +32,12 @@ drink     thirst²  × 2.0
 sleep     energy^2.4 × (night ? 1.15 : 0.5)
 socialize social^1.6 × sociability
 play      joy^1.8
+worship   spirit^1.7 × devotion × (dawn or dusk ? 1.9 : 0.8)
 gather    industry × calm     (when the current build site is short of wood)
 build     industry × calm     (when the site has wood and unplaced blocks)
 mate      sociability × calm  (adults, fed, off cooldown)
+raid      aggression × zeal   (adults over 0.45 temper, only during a war)
+flee      2.2                 (whenever health drops below half)
 wander    0.1 + curiosity × 0.1
 ```
 
@@ -50,6 +55,57 @@ Neighbour lookups (the crowd separation that keeps everyone from stacking into
 one pixel) go through a spatial grid rebuilt each tick, so a colony of a
 hundred-odd costs a handful of cell lookups per agent rather than a scan of
 everybody.
+
+## Peoples, faith and war
+
+A clan is a village, a bloodline pool and a religion at once.
+
+- **Villages.** Every clan builds outward in rings from the spot it settled, so
+  a place grows instead of scattering. Settlement picks ground within reach of
+  water and trees — a clan founded on a dry hill starves. Villagers stay near
+  home unless they are curious, which is what keeps them meeting each other.
+- **Faith.** Each clan has a god, a sacred thing (the sun, water, the grove,
+  stone, the throng, the egg) and a creed. Devotion builds up like any other
+  need and is spent at the clan's shrine; at dawn and dusk the whole village
+  converges on it.
+- **Conversion.** Wherever two clans rub shoulders, the more devout may carry
+  their god home with the other — defections are logged, and they make the
+  losing clan resent the winner.
+- **Schism.** A clan that grows past thirty stops agreeing with itself. Its
+  most devout member walks out with whoever is standing nearby and founds a
+  new village around a sharper version of the old god. Heresies run hotter
+  than the orthodoxy they left, which is what turns theology into feuds.
+- **War.** Relations drift on shared gods, heresy and how crowded the island
+  is. Past a threshold a feud is declared and commits both sides. Warriors —
+  adults with the temper for it — march on the rival village, fight whoever
+  they meet, and pull stones out of the enemy's shrine when there is nobody
+  left to fight. Most fights end with somebody running; it is the chasing
+  down afterwards that kills. Grief is the only thing that reliably ends a
+  war.
+
+## The Oracle: running your own model
+
+The colony writes its own scripture if you point it at a language model.
+Everything it needs has a procedural fallback, so this is entirely optional
+and nothing is sent anywhere unless you switch it on.
+
+Open the brain icon in the corner and pick a provider:
+
+| Provider | Endpoint | Notes |
+| --- | --- | --- |
+| Local (Ollama) | `http://localhost:11434` | `ollama serve`, `ollama pull llama3.2`. Start it with `OLLAMA_ORIGINS=*` so the page may call it. No key. |
+| OpenAI-compatible | `/v1/chat/completions` | OpenAI, LM Studio, vLLM, OpenRouter — anything speaking that API. |
+| Anthropic | `/v1/messages` | Called straight from the browser with the direct-browser-access header. |
+
+Then it can:
+
+- **name the gods** — rewrite every living clan's deity and creed,
+- **voice** — speak for the creature you have selected, from its needs,
+  lineage, faith and current job,
+- **write the chronicle** — turn the event log into a passage of history.
+
+The endpoint, model and key live in `localStorage` on your machine and are
+never committed or transmitted anywhere except to the endpoint you name.
 
 ## The Throng
 

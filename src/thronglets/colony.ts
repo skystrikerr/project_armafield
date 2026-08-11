@@ -1,5 +1,16 @@
 import { gauss, mulberry32, pick, range, type Rand } from "./random";
 import {
+  adjustRelation,
+  atWar,
+  driftRelations,
+  makeClan,
+  makeFaith,
+  relationOf,
+  splinterFaith,
+  type Clan,
+  type Faith,
+} from "./clans";
+import {
   findLandSpot,
   fruitSlotsFor,
   scatterBushes,
@@ -30,12 +41,20 @@ const CELL = 1.6;
 const FOOTPRINT: Record<StructureKind, number> = {
   cairn: 0.7,
   hut: 1.5,
+  shrine: 1.2,
   farm: 0,
   tower: 1.0,
   monolith: 1.2,
 };
 export const DAY_LENGTH = 150; // sim seconds for a full day/night cycle
-export const POP_CAP = 140;
+export const POP_CAP = 220;
+
+/** A clan this big starts looking for reasons to split. */
+const SCHISM_SIZE = 30;
+/** Past this many living clans the island stops splintering further. */
+const MAX_CLANS = 6;
+/** Villages are kept at least this far apart. */
+const VILLAGE_SPACING = 26;
 
 export type Task =
   | "idle"
@@ -49,7 +68,10 @@ export type Task =
   | "play"
   | "gather"
   | "build"
-  | "mate";
+  | "mate"
+  | "worship"
+  | "raid"
+  | "flee";
 
 export type Genome = {
   speed: number;
@@ -57,6 +79,10 @@ export type Genome = {
   curiosity: number;
   sociability: number;
   industry: number;
+  /** Willingness to raise a hand to someone from another clan. */
+  aggression: number;
+  /** How readily this one takes the clan's god to heart. */
+  devotion: number;
   hue: number;
   lifespan: number;
 };
@@ -69,6 +95,9 @@ export type Thronglet = {
   gen: number;
   parents: [number, number] | null;
   parentNames: [string, string] | null;
+  /** Family line, inherited from a parent — the surname under the clan. */
+  family: string;
+  clanId: number;
 
   x: number;
   z: number;
@@ -87,6 +116,8 @@ export type Thronglet = {
   energy: number;
   social: number;
   joy: number;
+  /** Unmet devotion — rises until they get to a shrine. */
+  spirit: number;
   health: number;
 
   genome: Genome;
@@ -108,6 +139,13 @@ export type Thronglet = {
   blocksPlaced: number;
   mealsEaten: number;
   childCount: number;
+  kills: number;
+  /** Who they are swinging at, and how long since the last blow landed. */
+  foe: number | null;
+  combatTimer: number;
+  hurt: number;
+  /** Killed in a raid rather than by age or hunger — changes the eulogy. */
+  slain: boolean;
 
   memory: Memory[];
   /** Little animation helpers the renderer reads. */
@@ -125,15 +163,24 @@ export type Egg = {
   genome: Genome;
   parents: [number, number];
   parentNames: [string, string];
+  family: string;
+  clanId: number;
   gen: number;
 };
 
 export type Block = { x: number; y: number; z: number; color: number };
 
-export type StructureKind = "cairn" | "hut" | "farm" | "tower" | "monolith";
+export type StructureKind =
+  | "cairn"
+  | "hut"
+  | "shrine"
+  | "farm"
+  | "tower"
+  | "monolith";
 
 export type BuildSite = {
   id: number;
+  clanId: number;
   kind: StructureKind;
   x: number;
   z: number;
@@ -157,6 +204,28 @@ export type ColonyStats = {
   deaths: number;
   blocks: number;
   tier: string;
+  clans: number;
+  faiths: number;
+  wars: number;
+  killed: number;
+  converted: number;
+  skirmishes: number;
+};
+
+export type ClanReport = {
+  id: number;
+  name: string;
+  color: number;
+  members: number;
+  deity: string;
+  creed: string;
+  sacred: string;
+  zeal: number;
+  heresy: boolean;
+  home: { x: number; z: number };
+  raids: number;
+  losses: number;
+  standings: { id: number; name: string; value: number }[];
 };
 
 const SYL_A = [
@@ -205,6 +274,7 @@ const STRUCTURE_TIERS: {
 }[] = [
   { kind: "cairn", label: "Cairn", knowledge: 0, wood: 12 },
   { kind: "hut", label: "Hut", knowledge: 25, wood: 70 },
+  { kind: "shrine", label: "Shrine", knowledge: 55, wood: 80 },
   { kind: "farm", label: "Grove plot", knowledge: 90, wood: 60 },
   { kind: "tower", label: "Watchtower", knowledge: 220, wood: 130 },
   { kind: "monolith", label: "Monolith", knowledge: 450, wood: 190 },
@@ -223,7 +293,7 @@ export const TIER_NAMES = [
 /* Structure layouts                                                   */
 /* ------------------------------------------------------------------ */
 
-function layout(kind: StructureKind, rand: Rand): Block[] {
+function layout(kind: StructureKind, rand: Rand, accent: number): Block[] {
   const b: Block[] = [];
   const wood = 0xa9763f;
   const woodDark = 0x7d5227;
@@ -262,6 +332,26 @@ function layout(kind: StructureKind, rand: Rand): Block[] {
     for (let x = -1; x <= 1; x++)
       for (let z = -1; z <= 1; z++) push(x, 5, z, leaf);
     push(0, 6, 0, leaf);
+  } else if (kind === "shrine") {
+    // A stepped platform with the clan's colour on top — the thing they walk
+    // to at dawn, and the first thing a raiding party goes for.
+    for (let x = -2; x <= 2; x++)
+      for (let z = -2; z <= 2; z++) push(x, 0, z, (x + z) % 2 === 0 ? stone : stoneDark);
+    for (let x = -1; x <= 1; x++)
+      for (let z = -1; z <= 1; z++) push(x, 1, z, stone);
+    for (const [x, z] of [
+      [-2, -2],
+      [2, -2],
+      [-2, 2],
+      [2, 2],
+    ] as [number, number][]) {
+      push(x, 1, z, woodDark);
+      push(x, 2, z, wood);
+      push(x, 3, z, accent);
+    }
+    push(0, 2, 0, stoneDark);
+    push(0, 3, 0, accent);
+    push(0, 4, 0, accent);
   } else if (kind === "farm") {
     for (let x = -3; x <= 3; x++)
       for (let z = -3; z <= 3; z++) {
@@ -317,6 +407,8 @@ export class Colony {
   eggs: Egg[] = [];
   sites: BuildSite[] = [];
   drops: { x: number; z: number; y: number; life: number }[] = [];
+  clans: Clan[] = [];
+  faiths: Faith[] = [];
 
   time = DAY_LENGTH * 0.18; // start mid-morning
   /** Population sampled over time, for the chart in the HUD. */
@@ -325,6 +417,9 @@ export class Colony {
   knowledge = 0;
   births = 0;
   deaths = 0;
+  killed = 0;
+  converted = 0;
+  skirmishes = 0;
   generation = 1;
   log: LogEntry[] = [];
 
@@ -332,7 +427,12 @@ export class Colony {
   private grid = new Map<number, Thronglet[]>();
   private nextId = 1;
   private nextSiteId = 1;
+  private nextClanId = 1;
+  private nextFaithId = 1;
   private planCooldown = 6;
+  private schismCooldown = 60;
+  private contactTimer = 0;
+  private wars = new Set<string>();
 
   constructor(
     seed: number,
@@ -345,12 +445,30 @@ export class Colony {
     this.bushes = scatterBushes(this.rand, this.terrain);
     this.tubs = scatterTubs(this.rand, this.terrain, this.trees);
 
-    const start = findLandSpot(this.rand, this.terrain);
-    for (let i = 0; i < 8; i++) {
-      const spot = findLandSpot(this.rand, this.terrain, start, 6);
-      this.spawn(spot.x, spot.z, this.randomGenome(), 1, null, i < 4 ? 40 : 12);
+    const start = this.newVillageSpot();
+    const first = this.foundClan(start);
+    for (let i = 0; i < 10; i++) {
+      const spot = findLandSpot(this.rand, this.terrain, start, 7);
+      this.spawn(
+        spot.x,
+        spot.z,
+        this.randomGenome(),
+        1,
+        null,
+        i < 5 ? 40 : 12,
+        null,
+        makeName(this.rand),
+        first.id,
+      );
     }
-    this.addLog("Eight thronglets blink awake.", "spawn");
+    this.addLog(
+      `Ten thronglets blink awake and call themselves the ${first.name}.`,
+      "spawn",
+    );
+    this.addLog(
+      `The ${first.name} name their god ${first.faith.deity}: "${first.faith.creed}"`,
+      "faith",
+    );
   }
 
   /* ---------------- lifecycle ---------------- */
@@ -363,8 +481,10 @@ export class Colony {
       curiosity: range(r, 0.15, 0.95),
       sociability: range(r, 0.2, 0.95),
       industry: range(r, 0.2, 0.95),
+      aggression: range(r, 0.05, 0.7),
+      devotion: range(r, 0.1, 0.9),
       hue: range(r, -0.05, 0.05),
-      lifespan: range(r, 380, 620),
+      lifespan: range(r, 540, 820),
     };
   }
 
@@ -380,8 +500,10 @@ export class Colony {
       curiosity: mix("curiosity", 0.05, 1),
       sociability: mix("sociability", 0.05, 1),
       industry: mix("industry", 0.05, 1),
+      aggression: mix("aggression", 0.02, 1),
+      devotion: mix("devotion", 0.02, 1),
       hue: Math.max(-0.12, Math.min(0.12, mix("hue", -0.12, 0.12))),
-      lifespan: mix("lifespan", 320, 760),
+      lifespan: mix("lifespan", 460, 900),
     };
   }
 
@@ -393,6 +515,8 @@ export class Colony {
     parents: [number, number] | null,
     age = 0,
     parentNames: [string, string] | null = null,
+    family = makeName(this.rand),
+    clanId = this.clans[0]?.id ?? 1,
   ): Thronglet {
     const t: Thronglet = {
       id: this.nextId++,
@@ -400,6 +524,8 @@ export class Colony {
       gen,
       parents,
       parentNames,
+      family,
+      clanId,
       x,
       z,
       y: this.terrain.height(x, z),
@@ -415,6 +541,7 @@ export class Colony {
       energy: range(this.rand, 0, 0.25),
       social: range(this.rand, 0.1, 0.5),
       joy: range(this.rand, 0.1, 0.5),
+      spirit: range(this.rand, 0.1, 0.4),
       health: 1,
       genome,
       task: "wander",
@@ -425,12 +552,17 @@ export class Colony {
       targetTree: null,
       targetSite: null,
       partner: null,
-      mateCooldown: 30,
+      mateCooldown: 18,
       stuck: 0,
       carryingWood: 0,
       blocksPlaced: 0,
       mealsEaten: 0,
       childCount: 0,
+      kills: 0,
+      foe: null,
+      combatTimer: 0,
+      hurt: 0,
+      slain: false,
       memory: [],
       bob: this.rand() * 10,
       hop: 0,
@@ -456,6 +588,82 @@ export class Colony {
     t.scale = growth * t.genome.size;
   }
 
+  /* ---------------- clans and faith ---------------- */
+
+  clanOf(t: Thronglet): Clan {
+    return this.clans.find((c) => c.id === t.clanId) ?? this.clans[0];
+  }
+
+  /** The clan's finished shrine, if they have got one up yet. */
+  shrineOf(clan: Clan): BuildSite | null {
+    return (
+      this.sites.find(
+        (s) => s.complete && s.kind === "shrine" && s.clanId === clan.id,
+      ) ?? null
+    );
+  }
+
+  private foundClan(
+    home: { x: number; z: number },
+    faith?: Faith,
+  ): Clan {
+    const f = faith ?? makeFaith(this.rand, this.nextFaithId++);
+    if (!this.faiths.some((x) => x.id === f.id)) this.faiths.push(f);
+    let clan = makeClan(this.rand, this.nextClanId++, home, f, this.time);
+    // Two villages with the same name would be unreadable in the log.
+    for (let i = 0; i < 20 && this.clans.some((c) => c.name === clan.name); i++) {
+      clan = makeClan(this.rand, clan.id, home, f, this.time);
+    }
+    for (const other of this.clans) {
+      // A new people starts out merely unknown, unless it left in anger.
+      adjustRelation(clan, other, f.heresyOf === other.faith.id ? -0.45 : 0);
+    }
+    this.clans.push(clan);
+    return clan;
+  }
+
+  /**
+   * Somewhere far enough from every existing village to be its own place, and
+   * close enough to water and trees to survive there. Settling a clan on a dry
+   * hill is a slow death sentence for it.
+   */
+  private newVillageSpot(near?: { x: number; z: number }) {
+    let best: { x: number; z: number } | null = null;
+    let bestScore = -Infinity;
+
+    for (let i = 0; i < 200; i++) {
+      const spot = findLandSpot(this.rand, this.terrain, near, WORLD_RADIUS * 0.85);
+      const spacing = this.clans.length
+        ? Math.min(
+            ...this.clans.map((c) =>
+              Math.hypot(c.home.x - spot.x, c.home.z - spot.z),
+            ),
+          )
+        : Infinity;
+      if (spacing < VILLAGE_SPACING) continue;
+
+      const water = Math.min(
+        ...this.terrain.ponds.map(
+          (p) => Math.max(0, Math.hypot(p.x - spot.x, p.z - spot.z) - p.r),
+        ),
+        60,
+      );
+      const wood = this.trees.length
+        ? Math.min(
+            ...this.trees.map((t) => Math.hypot(t.x - spot.x, t.z - spot.z)),
+          )
+        : 60;
+
+      const score = -water * 1.6 - wood * 0.5 + Math.min(spacing, 40) * 0.3;
+      if (score > bestScore) {
+        bestScore = score;
+        best = spot;
+      }
+      if (water < 12 && wood < 8) return spot;
+    }
+    return best ?? findLandSpot(this.rand, this.terrain);
+  }
+
   addLog(text: string, kind: string) {
     this.log.push({ t: this.time, text, kind });
     if (this.log.length > 60) this.log.shift();
@@ -468,6 +676,12 @@ export class Colony {
 
   get dayPhase() {
     return (this.time / DAY_LENGTH) % 1;
+  }
+
+  /** First light and last light — when the faithful gather at the shrine. */
+  get isRitualHour() {
+    const p = this.dayPhase;
+    return p < 0.14 || (p > 0.6 && p < 0.72);
   }
 
   get tierIndex() {
@@ -489,7 +703,39 @@ export class Colony {
       deaths: this.deaths,
       blocks: this.sites.reduce((n, s) => n + s.placed, 0),
       tier: TIER_NAMES[this.tierIndex],
+      clans: this.clans.filter((c) => c.members > 0).length,
+      faiths: new Set(
+        this.clans.filter((c) => c.members > 0).map((c) => c.faith.id),
+      ).size,
+      wars: this.wars.size,
+      killed: this.killed,
+      converted: this.converted,
+      skirmishes: this.skirmishes,
     };
+  }
+
+  /** Everything the HUD needs to draw the peoples panel. */
+  clanReports(): ClanReport[] {
+    return this.clans
+      .filter((c) => c.members > 0)
+      .sort((a, b) => b.members - a.members)
+      .map((c) => ({
+        id: c.id,
+        name: c.name,
+        color: c.color,
+        members: c.members,
+        deity: c.faith.deity,
+        creed: c.faith.creed,
+        sacred: c.faith.sacred,
+        zeal: c.faith.zeal,
+        heresy: c.faith.heresyOf !== null,
+        home: c.home,
+        raids: c.raids,
+        losses: c.losses,
+        standings: this.clans
+          .filter((o) => o.id !== c.id && o.members > 0)
+          .map((o) => ({ id: o.id, name: o.name, value: relationOf(c, o) })),
+      }));
   }
 
   /* ---------------- world queries ---------------- */
@@ -586,59 +832,92 @@ export class Colony {
 
   /* ---------------- planning ---------------- */
 
+  /**
+   * Each clan builds its own village, laid out in rings around the spot it
+   * settled, so a place grows outward instead of scattering huts over the map.
+   */
   private planSite() {
-    const unlocked = STRUCTURE_TIERS.filter((s) => this.knowledge >= s.knowledge);
-    if (!unlocked.length) return;
-    const built = this.sites.filter((s) => s.complete);
+    for (const clan of this.clans) {
+      if (clan.members < 3) continue;
+      const pending = this.sites.filter(
+        (s) => !s.complete && s.clanId === clan.id,
+      ).length;
+      if (pending >= 2 + Math.floor(clan.members / 10)) continue;
 
-    // Housing first — a colony that has outgrown its huts builds another one.
-    // Otherwise pick among everything they know, leaning towards the newest
-    // trick so the skyline keeps changing without becoming all monoliths.
-    const huts = built.filter((s) => s.kind === "hut").length;
-    let choice: (typeof STRUCTURE_TIERS)[number];
-    if (this.knowledge >= 25 && huts * 8 < this.thronglets.length) {
-      choice = STRUCTURE_TIERS[1];
-    } else {
-      const weights = unlocked.map((_, i) => (i === unlocked.length - 1 ? 3 : 1));
-      const total = weights.reduce((a, b) => a + b, 0);
-      let roll = this.rand() * total;
-      choice = unlocked[0];
-      for (let i = 0; i < unlocked.length; i++) {
-        roll -= weights[i];
-        if (roll <= 0) {
-          choice = unlocked[i];
-          break;
-        }
-      }
+      const choice = this.chooseStructure(clan);
+      if (!choice) continue;
+      const spot = this.villagePlot(clan, choice.kind);
+      if (!spot) continue;
+
+      this.sites.push({
+        id: this.nextSiteId++,
+        clanId: clan.id,
+        kind: choice.kind,
+        x: spot.x,
+        z: spot.z,
+        y: this.terrain.height(spot.x, spot.z),
+        blocks: layout(choice.kind, this.rand, clan.color),
+        placed: 0,
+        wood: 0,
+        woodNeeded: choice.wood,
+        complete: false,
+      });
+      this.addLog(
+        `The ${clan.name} start a ${choice.label.toLowerCase()}.`,
+        "build",
+      );
     }
+  }
 
-    // Cluster around the existing village if there is one.
-    const anchor = built.length
-      ? built[Math.floor(this.rand() * built.length)]
-      : this.thronglets[Math.floor(this.rand() * Math.max(1, this.thronglets.length))];
-    const spot = findLandSpot(
-      this.rand,
-      this.terrain,
-      anchor ? { x: anchor.x, z: anchor.z } : undefined,
-      built.length ? 14 : 10,
-    );
-    if (this.sites.some((s) => Math.hypot(s.x - spot.x, s.z - spot.z) < 6)) return;
-    if (this.trees.some((tr) => Math.hypot(tr.x - spot.x, tr.z - spot.z) < 2.5)) return;
+  private chooseStructure(clan: Clan) {
+    const unlocked = STRUCTURE_TIERS.filter((s) => this.knowledge >= s.knowledge);
+    if (!unlocked.length) return null;
+    const built = this.sites.filter((s) => s.complete && s.clanId === clan.id);
 
-    const site: BuildSite = {
-      id: this.nextSiteId++,
-      kind: choice.kind,
-      x: spot.x,
-      z: spot.z,
-      y: this.terrain.height(spot.x, spot.z),
-      blocks: layout(choice.kind, this.rand),
-      placed: 0,
-      wood: 0,
-      woodNeeded: choice.wood,
-      complete: false,
-    };
-    this.sites.push(site);
-    this.addLog(`The throng starts a ${choice.label.toLowerCase()}.`, "build");
+    // A people wants somewhere to pray and somewhere to sleep before it wants
+    // a monument.
+    const shrine = STRUCTURE_TIERS.find((t) => t.kind === "shrine")!;
+    if (
+      this.knowledge >= shrine.knowledge &&
+      !built.some((s) => s.kind === "shrine") &&
+      !this.sites.some((s) => s.clanId === clan.id && s.kind === "shrine")
+    )
+      return shrine;
+
+    const hut = STRUCTURE_TIERS.find((t) => t.kind === "hut")!;
+    const huts = built.filter((s) => s.kind === "hut").length;
+    if (this.knowledge >= hut.knowledge && huts * 4 < clan.members) return hut;
+
+    const weights = unlocked.map((_, i) => (i === unlocked.length - 1 ? 3 : 1));
+    const total = weights.reduce((a, b) => a + b, 0);
+    let roll = this.rand() * total;
+    for (let i = 0; i < unlocked.length; i++) {
+      roll -= weights[i];
+      if (roll <= 0) return unlocked[i];
+    }
+    return unlocked[0];
+  }
+
+  private villagePlot(clan: Clan, kind: StructureKind) {
+    const clear = (x: number, z: number, gap: number) =>
+      Math.hypot(x, z) < WORLD_RADIUS * 0.93 &&
+      this.terrain.height(x, z) >= WATER_LEVEL + 0.6 &&
+      !this.sites.some((s) => Math.hypot(s.x - x, s.z - z) < gap) &&
+      !this.trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.5);
+
+    // The shrine takes the middle of the village; everything else rings it.
+    if (kind === "shrine" && clear(clan.home.x, clan.home.z, 4.5))
+      return { x: clan.home.x, z: clan.home.z };
+
+    for (let attempt = 0; attempt < 90; attempt++) {
+      const ring = 1 + Math.floor(attempt / 18);
+      const radius = 4.6 + ring * 3.4 + this.rand() * 1.6;
+      const a = this.rand() * Math.PI * 2;
+      const x = clan.home.x + Math.cos(a) * radius;
+      const z = clan.home.z + Math.sin(a) * radius;
+      if (clear(x, z, 5.2)) return { x, z };
+    }
+    return null;
   }
 
   /* ---------------- main tick ---------------- */
@@ -647,6 +926,9 @@ export class Colony {
     this.time += dt;
 
     this.rebuildGrid();
+    this.countClans();
+    driftRelations(this.clans, dt);
+    this.updateWars(dt);
     this.updateFlora(dt);
     this.updateEggs(dt);
 
@@ -659,7 +941,7 @@ export class Colony {
       this.thronglets.splice(i, 1);
       this.deaths++;
       this.knowledge += 2; // what one learned, the throng keeps
-      this.addLog(`${t.name} returns to the throng.`, "death");
+      if (!t.slain) this.addLog(`${t.name} returns to the throng.`, "death");
     }
 
     for (let i = this.drops.length - 1; i >= 0; i--) {
@@ -688,10 +970,149 @@ export class Colony {
 
     this.planCooldown -= dt;
     if (this.planCooldown <= 0) {
-      this.planCooldown = 25;
-      const pending = this.sites.filter((s) => !s.complete).length;
-      if (pending < 1 + Math.floor(this.thronglets.length / 25)) this.planSite();
+      this.planCooldown = 18;
+      this.planSite();
     }
+
+    this.contactTimer -= dt;
+    if (this.contactTimer <= 0) {
+      this.contactTimer = 2;
+      this.crossClanContact();
+    }
+
+    this.schismCooldown -= dt;
+    if (this.schismCooldown <= 0) {
+      this.schismCooldown = 50;
+      this.maybeSchism();
+    }
+  }
+
+  /* ---------------- peoples ---------------- */
+
+  private countClans() {
+    for (const c of this.clans) c.members = 0;
+    for (const t of this.thronglets) {
+      const c = this.clanOf(t);
+      if (c) c.members++;
+    }
+  }
+
+  /** Declarations, peace, and the weariness that eventually ends a feud. */
+  private updateWars(dt: number) {
+    const live = this.clans.filter((c) => c.members > 0);
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i];
+        const b = live[j];
+        const key = `${Math.min(a.id, b.id)}-${Math.max(a.id, b.id)}`;
+        const warring = atWar(a, b);
+
+        if (warring && !this.wars.has(key)) {
+          this.wars.add(key);
+          // A declaration commits both sides: without this the feud flickers
+          // back to peace before any raiding party has walked there.
+          adjustRelation(a, b, -0.15);
+          this.addLog(
+            `The ${a.name} and the ${b.name} take up stones over ${a.faith.deity} and ${b.faith.deity}.`,
+            "war",
+          );
+        } else if (!warring && this.wars.has(key)) {
+          this.wars.delete(key);
+          this.addLog(`The ${a.name} and the ${b.name} put the stones down.`, "peace");
+        }
+
+        // Grief is the only thing that reliably ends a war.
+        if (warring) {
+          const grief = Math.min(1, (a.losses + b.losses) / 6);
+          adjustRelation(a, b, (0.02 + grief * 0.06) * dt);
+        }
+      }
+    }
+  }
+
+  /**
+   * A clan that grows past a certain size stops agreeing with itself. The most
+   * devout member walks out with whoever is standing nearby and founds a new
+   * village around a sharper version of the old god.
+   */
+  private maybeSchism() {
+    if (this.clans.filter((c) => c.members > 0).length >= MAX_CLANS) return;
+    for (const clan of this.clans) {
+      if (clan.members < SCHISM_SIZE) continue;
+      if (this.rand() > 0.35) continue;
+
+      const members = this.thronglets.filter(
+        (t) => t.clanId === clan.id && t.stage !== "baby",
+      );
+      if (members.length < 6) continue;
+
+      const prophet = members.reduce((a, b) =>
+        a.genome.devotion > b.genome.devotion ? a : b,
+      );
+      const home = this.newVillageSpot(prophet);
+      const faith = splinterFaith(this.rand, this.nextFaithId++, clan.faith);
+      const splinter = this.foundClan(home, faith);
+
+      const followers = members
+        .filter((t) => t !== prophet)
+        .sort(
+          (a, b) =>
+            Math.hypot(a.x - prophet.x, a.z - prophet.z) -
+            Math.hypot(b.x - prophet.x, b.z - prophet.z),
+        )
+        .slice(0, Math.max(3, Math.floor(members.length * 0.35)));
+
+      prophet.clanId = splinter.id;
+      for (const f of followers) f.clanId = splinter.id;
+      splinter.members = followers.length + 1;
+
+      this.addLog(
+        `${prophet.name} walks out with ${followers.length} others and founds the ${splinter.name}.`,
+        "schism",
+      );
+      this.addLog(
+        `The ${splinter.name} give their god the name ${faith.deity}: "${faith.creed}"`,
+        "faith",
+      );
+      return;
+    }
+  }
+
+  /**
+   * Wherever two clans are standing close enough to talk, one of them may end
+   * up carrying the other's god home. This runs on proximity rather than on
+   * anyone choosing to preach, which is what makes faith actually spread.
+   */
+  private crossClanContact() {
+    for (const t of this.thronglets) {
+      if (t.stage === "baby" || t.task === "raid" || t.task === "flee") continue;
+      if (this.rand() > 0.25) continue;
+      let met: Thronglet | null = null;
+      this.eachNeighbour(t, (o) => {
+        if (met || o === t || o.clanId === t.clanId || o.stage === "baby") return;
+        if (Math.hypot(o.x - t.x, o.z - t.z) < 1.9) met = o;
+      });
+      if (met) this.maybeConvert(t, met);
+    }
+  }
+
+  /** Nearest living member of a clan we are at war with. */
+  nearestEnemy(t: Thronglet, radius: number): Thronglet | null {
+    const clan = this.clanOf(t);
+    if (!clan) return null;
+    let best: Thronglet | null = null;
+    let bestD = radius;
+    for (const o of this.thronglets) {
+      if (o.clanId === t.clanId || !o.alive || o.stage === "baby") continue;
+      const other = this.clanOf(o);
+      if (!other || !atWar(clan, other)) continue;
+      const d = Math.hypot(o.x - t.x, o.z - t.z);
+      if (d < bestD) {
+        bestD = d;
+        best = o;
+      }
+    }
+    return best;
   }
 
   /* ---------------- spatial index ---------------- */
@@ -758,6 +1179,8 @@ export class Colony {
         e.parents,
         0,
         e.parentNames,
+        e.family,
+        e.clanId,
       );
       this.births++;
       this.addLog(
@@ -780,10 +1203,13 @@ export class Colony {
 
     const babyFactor = t.stage === "baby" ? 0.6 : 1;
     t.hunger = Math.min(1, t.hunger + dt * 0.011 * babyFactor);
-    t.thirst = Math.min(1, t.thirst + dt * 0.015 * babyFactor);
+    t.thirst = Math.min(1, t.thirst + dt * 0.012 * babyFactor);
     t.energy = Math.min(1, t.energy + dt * (this.isNight ? 0.016 : 0.006));
     t.social = Math.min(1, t.social + dt * 0.013 * t.genome.sociability);
     t.joy = Math.min(1, t.joy + dt * 0.009);
+    t.spirit = Math.min(1, t.spirit + dt * 0.008 * (0.4 + t.genome.devotion));
+    if (t.hurt > 0) t.hurt = Math.max(0, t.hurt - dt * 1.6);
+    if (t.combatTimer > 0) t.combatTimer -= dt;
 
     if (t.hunger > 0.97 || t.thirst > 0.97) t.health -= dt * 0.06;
     else if (t.hunger < 0.5 && t.thirst < 0.5) t.health = Math.min(1, t.health + dt * 0.03);
@@ -823,6 +1249,39 @@ export class Colony {
       wander: 0.1 + g.curiosity * 0.1,
     };
 
+    const clan = this.clanOf(t);
+    if (clan) {
+      // Devotion only bids once there is somewhere to take it.
+      const shrine = this.shrineOf(clan);
+      scores.worship = shrine
+        ? Math.pow(t.spirit, 1.7) *
+          (0.55 + g.devotion) *
+          (this.isRitualHour ? 1.9 : 0.8)
+        : 0;
+
+      // Raiding: only adults, only in a war, and only while they can stand.
+      const warring = this.clans.some(
+        (o) => o.members > 0 && o.id !== clan.id && atWar(clan, o),
+      );
+      if (
+        warring &&
+        t.stage === "adult" &&
+        t.health > 0.6 &&
+        g.aggression > 0.45
+      ) {
+        const enemy = this.nearestEnemy(t, 34);
+        scores.raid =
+          0.55 *
+          (0.2 + g.aggression) *
+          (0.4 + clan.faith.zeal * 0.7) *
+          (enemy ? 1.15 : 0.5) *
+          Math.max(0, 1 - Math.max(t.hunger, t.thirst));
+      }
+    }
+
+    // Being badly hurt overrides everything else.
+    if (t.health < 0.5) scores.flee = 2.2;
+
     // Work happens when nothing is pressing. Squaring the loudest need keeps a
     // half-full belly from stopping the build entirely, and tiredness is left
     // out on purpose: it bids for sleep on its own, and folding it in here
@@ -850,7 +1309,7 @@ export class Colony {
       // Crowding damps the urge to breed, so the population settles into an
       // S-curve instead of slamming into the cap and starving.
       const room = 1 - (this.thronglets.length + this.eggs.length) / POP_CAP;
-      scores.mate = 0.55 * g.sociability * calm * Math.max(0.05, room);
+      scores.mate = 1.25 * (0.5 + g.sociability) * calm * Math.max(0.05, room);
     }
 
     let bestKey = "wander";
@@ -889,6 +1348,12 @@ export class Colony {
         return "build";
       case "mate":
         return "mate";
+      case "worship":
+        return "worship";
+      case "raid":
+        return "raid";
+      case "flee":
+        return "flee";
       default:
         return "wander";
     }
@@ -970,6 +1435,32 @@ export class Colony {
         return;
       }
       case "socialize": {
+        // The devout will walk a long way to talk to somebody who worships
+        // the wrong thing.
+        const clan = this.clanOf(t);
+        if (
+          clan &&
+          t.stage === "adult" &&
+          t.genome.devotion * clan.faith.zeal > 0.4 &&
+          this.rand() < 0.35
+        ) {
+          const stranger = this.thronglets.find(
+            (o) =>
+              o.clanId !== t.clanId &&
+              o.alive &&
+              o.stage !== "baby" &&
+              Math.hypot(o.x - t.x, o.z - t.z) < 60 &&
+              !atWar(clan, this.clanOf(o)),
+          );
+          if (stranger) {
+            t.task = "socialize";
+            t.partner = stranger.id;
+            t.target = { x: stranger.x, z: stranger.z };
+            t.thought = `${stranger.name} has not heard of ${clan.faith.deity}.`;
+            return;
+          }
+        }
+
         const friend = this.nearbyFriend(t, 22);
         if (friend) {
           t.task = "socialize";
@@ -1025,7 +1516,7 @@ export class Colony {
             o.stage === "adult" &&
             o.mateCooldown <= 0 &&
             o.hunger < 0.55 &&
-            Math.hypot(o.x - t.x, o.z - t.z) < 25,
+            Math.hypot(o.x - t.x, o.z - t.z) < 34,
         );
         if (partner) {
           t.task = "mate";
@@ -1033,6 +1524,59 @@ export class Colony {
           t.target = { x: partner.x, z: partner.z };
           t.thought = `${partner.name}?`;
         } else this.startTask(t, "wander");
+        return;
+      }
+      case "worship": {
+        const clan = this.clanOf(t);
+        const shrine = clan ? this.shrineOf(clan) : null;
+        if (!shrine) {
+          this.startTask(t, "wander");
+          return;
+        }
+        const a = this.rand() * Math.PI * 2;
+        const r = FOOTPRINT.shrine + range(this.rand, 0.4, 1.3);
+        t.task = "worship";
+        t.target = { x: shrine.x + Math.cos(a) * r, z: shrine.z + Math.sin(a) * r };
+        t.thought = `${clan!.faith.deity} is watching.`;
+        return;
+      }
+      case "raid": {
+        const clan = this.clanOf(t);
+        const enemy = this.nearestEnemy(t, 40);
+        if (enemy) {
+          t.task = "raid";
+          t.foe = enemy.id;
+          t.target = { x: enemy.x, z: enemy.z };
+          t.thought = `${enemy.name} is not one of ours.`;
+          return;
+        }
+        // Nobody in reach — march on the nearest hostile village instead.
+        const rival = this.clans
+          .filter((o) => o.members > 0 && clan && o.id !== clan.id && atWar(clan, o))
+          .sort(
+            (a, b) =>
+              Math.hypot(a.home.x - t.x, a.home.z - t.z) -
+              Math.hypot(b.home.x - t.x, b.home.z - t.z),
+          )[0];
+        if (rival) {
+          t.task = "raid";
+          t.foe = null;
+          t.target = {
+            x: rival.home.x + range(this.rand, -2, 2),
+            z: rival.home.z + range(this.rand, -2, 2),
+          };
+          t.thought = `march on the ${rival.name}.`;
+        } else this.startTask(t, "wander");
+        return;
+      }
+      case "flee": {
+        const clan = this.clanOf(t);
+        t.task = "flee";
+        t.foe = null;
+        t.target = clan
+          ? { x: clan.home.x + range(this.rand, -3, 3), z: clan.home.z + range(this.rand, -3, 3) }
+          : this.wanderTarget(t);
+        t.thought = "get away. get home.";
         return;
       }
       default: {
@@ -1043,9 +1587,36 @@ export class Colony {
     }
   }
 
+  /**
+   * Villagers, not nomads: most wandering circles the clan's own village, and
+   * only the curious strike out. Without this the colony diffuses across the
+   * island, stops running into each other, and quietly stops breeding.
+   */
   private wanderTarget(t: Thronglet) {
+    const clan = this.clanOf(t);
     const curious = t.genome.curiosity;
-    const spread = 5 + curious * 16;
+
+    // The very devout occasionally set out for somebody else's village.
+    if (
+      clan &&
+      t.stage === "adult" &&
+      t.genome.devotion * clan.faith.zeal > 0.45 &&
+      this.rand() < 0.18
+    ) {
+      const others = this.clans.filter(
+        (c) => c.members > 0 && c.id !== clan.id && !atWar(clan, c),
+      );
+      if (others.length) {
+        const target = pick(this.rand, others);
+        t.thought = `carry ${clan.faith.deity} to the ${target.name}.`;
+        return findLandSpot(this.rand, this.terrain, target.home, 6);
+      }
+    }
+
+    if (clan && this.rand() > curious * 0.55) {
+      return findLandSpot(this.rand, this.terrain, clan.home, 9 + curious * 6);
+    }
+    const spread = 6 + curious * 18;
     return findLandSpot(this.rand, this.terrain, { x: t.x, z: t.z }, spread);
   }
 
@@ -1128,6 +1699,7 @@ export class Colony {
           t.emote = { icon: "heart", t: 1.5 };
           // Chatter spreads what each of them knows.
           for (const m of p.memory) this.remember(t, m.x, m.z, m.kind);
+          if (p.clanId !== t.clanId) this.maybeConvert(t, p);
           t.task = "idle";
           t.thinkTimer = 0;
         }
@@ -1234,7 +1806,7 @@ export class Colony {
         if (Math.hypot(p.x - t.x, p.z - t.z) > 1.6) return;
         t.taskTimer += dt;
         if (t.taskTimer > 2.5) {
-          t.mateCooldown = range(this.rand, 70, 120);
+          t.mateCooldown = range(this.rand, 40, 75);
           p.mateCooldown = t.mateCooldown;
           t.childCount++;
           p.childCount++;
@@ -1246,14 +1818,90 @@ export class Colony {
               x: t.x + range(this.rand, -0.7, 0.7),
               z: t.z + range(this.rand, -0.7, 0.7),
               y: this.terrain.height(t.x, t.z),
-              timer: range(this.rand, 18, 28),
+              timer: range(this.rand, 13, 20),
               genome: this.mixGenome(t.genome, p.genome),
               parents: [t.id, p.id],
               parentNames: [t.name, p.name],
+              family: this.rand() < 0.5 ? t.family : p.family,
+              clanId: t.clanId,
               gen,
             });
             this.generation = Math.max(this.generation, gen);
           }
+          t.task = "idle";
+          t.thinkTimer = 0;
+        }
+        return;
+      }
+      case "worship": {
+        if (!atTarget) return;
+        const clan = this.clanOf(t);
+        t.spirit = Math.max(0, t.spirit - dt * 0.35);
+        t.joy = Math.max(0, t.joy - dt * 0.05);
+        t.taskTimer += dt;
+        this.knowledge += dt * 0.05;
+        t.thought = `${clan?.faith.deity ?? "something"}, hold us.`;
+        if (t.taskTimer > 3.5) {
+          t.emote = { icon: "faith", t: 1.6 };
+          t.task = "idle";
+          t.thinkTimer = 0;
+        }
+        return;
+      }
+      case "raid": {
+        const clan = this.clanOf(t);
+        if (!clan) {
+          t.task = "idle";
+          return;
+        }
+        const foe = this.nearestEnemy(t, 1.5);
+        if (foe) {
+          t.foe = foe.id;
+          t.target = { x: foe.x, z: foe.z };
+          this.trade(t, foe, dt);
+          return;
+        }
+
+        // No one to hit: pull the enemy's shrine apart instead.
+        const shrine = this.sites.find(
+          (site) =>
+            site.kind === "shrine" &&
+            site.placed > 0 &&
+            site.clanId !== t.clanId &&
+            Math.hypot(site.x - t.x, site.z - t.z) < 3 &&
+            atWar(clan, this.clans.find((c) => c.id === site.clanId)!),
+        );
+        if (shrine) {
+          t.taskTimer += dt;
+          t.hop = Math.max(t.hop, 0.9);
+          if (t.taskTimer > 1.2) {
+            t.taskTimer = 0;
+            shrine.placed = Math.max(0, shrine.placed - 1);
+            shrine.complete = false;
+            const victim = this.clans.find((c) => c.id === shrine.clanId);
+            if (victim) {
+              adjustRelation(clan, victim, -0.06);
+              if (this.rand() < 0.12)
+                this.addLog(
+                  `The ${clan.name} pull stones from the ${victim.name}'s shrine.`,
+                  "war",
+                );
+            }
+          }
+          return;
+        }
+
+        const enemy = this.nearestEnemy(t, 40);
+        if (enemy) t.target = { x: enemy.x, z: enemy.z };
+        else if (atTarget) {
+          t.task = "idle";
+          t.thinkTimer = 0;
+        }
+        return;
+      }
+      case "flee": {
+        t.health = Math.min(1, t.health + dt * 0.02);
+        if (atTarget || t.health > 0.7) {
           t.task = "idle";
           t.thinkTimer = 0;
         }
@@ -1266,6 +1914,83 @@ export class Colony {
         }
       }
     }
+  }
+
+  /**
+   * Two creatures from different clans got talking. The more devout one may
+   * carry the other's god home with them — the quiet way a faith spreads, and
+   * a reliable way to make the losing clan furious.
+   */
+  private maybeConvert(speaker: Thronglet, listener: Thronglet) {
+    const mine = this.clanOf(speaker);
+    const theirs = this.clanOf(listener);
+    if (!mine || !theirs || mine.id === theirs.id) return;
+    if (atWar(mine, theirs)) return; // nobody is listening during a war
+
+    const push = speaker.genome.devotion * mine.faith.zeal;
+    const hold = listener.genome.devotion * theirs.faith.zeal;
+    if (push <= hold * 1.4) return;
+    if (this.rand() > 0.12) return;
+
+    listener.clanId = mine.id;
+    listener.spirit = 0.2;
+    listener.emote = { icon: "faith", t: 2 };
+    mine.converts++;
+    this.converted++;
+    adjustRelation(mine, theirs, -0.05);
+    this.addLog(
+      `${listener.name} leaves the ${theirs.name} for ${mine.faith.deity}.`,
+      "convert",
+    );
+  }
+
+  /** One exchange of blows. The struck one either answers or runs. */
+  private trade(attacker: Thronglet, foe: Thronglet, dt: number) {
+    attacker.taskTimer += dt;
+    attacker.heading = Math.atan2(foe.x - attacker.x, foe.z - attacker.z);
+    if (attacker.combatTimer > 0) return;
+
+    attacker.combatTimer = 0.7;
+    attacker.hop = Math.max(attacker.hop, 1.1);
+    attacker.emote = { icon: "clash", t: 0.9 };
+    this.skirmishes++;
+    foe.hurt = 1;
+    // Standing fights mostly end in someone running. It is the chasing down
+    // afterwards that actually kills.
+    const rout = foe.task === "flee" ? 1.9 : 1;
+    foe.health -= (0.045 + attacker.genome.aggression * 0.07) * rout;
+
+    const mine = this.clanOf(attacker);
+    const theirs = this.clanOf(foe);
+
+    if (foe.health <= 0) {
+      foe.alive = false;
+      foe.slain = true;
+      attacker.kills++;
+      this.killed++;
+      if (theirs) theirs.losses++;
+      if (mine && theirs) adjustRelation(mine, theirs, -0.12);
+      this.addLog(
+        `${foe.name} of the ${theirs?.name ?? "lost"} falls to ${attacker.name}.`,
+        "kill",
+      );
+      attacker.foe = null;
+      attacker.task = "idle";
+      attacker.thinkTimer = 0;
+      return;
+    }
+
+    // Answer or run, depending on how much fight is left in them.
+    if (foe.health < 0.55 || foe.genome.aggression < 0.35) {
+      this.startTask(foe, "flee");
+    } else if (foe.task !== "raid") {
+      foe.task = "raid";
+      foe.foe = attacker.id;
+      foe.target = { x: attacker.x, z: attacker.z };
+      foe.thought = `${attacker.name} started it.`;
+      foe.stuck = 0;
+    }
+    if (mine && theirs) adjustRelation(mine, theirs, -0.01);
   }
 
   private feed(t: Thronglet, amount: number) {
@@ -1303,6 +2028,20 @@ export class Colony {
       if (rim > WORLD_RADIUS * 0.93) {
         dx -= (t.x / rim) * 1.4;
         dz -= (t.z / rim) * 1.4;
+      }
+
+      // A gentle tether to the village for anyone not on an errand elsewhere.
+      if (t.task === "wander") {
+        const clan = this.clanOf(t);
+        if (clan) {
+          const hx = clan.home.x - t.x;
+          const hz = clan.home.z - t.z;
+          const hd = Math.hypot(hx, hz);
+          if (hd > 16) {
+            dx += (hx / hd) * 0.8;
+            dz += (hz / hd) * 0.8;
+          }
+        }
       }
 
       // Walls are solid — steer around anything that has been built up.
