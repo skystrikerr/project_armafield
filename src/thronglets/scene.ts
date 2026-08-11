@@ -14,9 +14,15 @@ import {
   blockGeometry,
   bushGeometry,
   eggGeometry,
+  morphGeometries,
+  MORPHS,
   NECK_HEIGHT,
+  oakGeometry,
+  palmGeometry,
+  pineGeometry,
   plankGeometry,
-  throngletGeometries,
+  rockGeometry,
+  stoneLoadGeometry,
   treeGeometry,
   tubGeometry,
 } from "./models";
@@ -24,6 +30,9 @@ import { buildTerrain, WORLD_RADIUS } from "./world";
 import { mulberry32 } from "./random";
 
 export type Tool = "inspect" | "food" | "plant";
+
+/** Colour scheme names, in genome order. */
+export const MORPH_NAMES = MORPHS.map((m) => m.name);
 
 export type SimSnapshot = ColonyStats & {
   time: number;
@@ -69,8 +78,15 @@ export class ThrongletSim {
   private hemi: THREE.HemisphereLight;
   private ambient: THREE.AmbientLight;
 
+  /** One body/head pair per colour scheme; creatures are bucketed by morph. */
+  private morphs: { body: THREE.InstancedMesh; head: THREE.InstancedMesh }[] = [];
+  /** Per-morph instance index → creature, so picking can resolve a hit. */
+  private morphIndex: Thronglet[][] = [];
   private bodies!: THREE.InstancedMesh;
   private heads!: THREE.InstancedMesh;
+  private rockMesh!: THREE.InstancedMesh;
+  private stoneLoads!: THREE.InstancedMesh;
+  private treeMeshes: Record<string, THREE.InstancedMesh> = {};
   private eggMesh!: THREE.InstancedMesh;
   private blocks!: THREE.InstancedMesh;
   private apples!: THREE.InstancedMesh;
@@ -162,28 +178,31 @@ export class ThrongletSim {
   /* ---------------- setup ---------------- */
 
   private buildScene() {
-    const { body, head } = throngletGeometries();
     const lambert = () =>
       new THREE.MeshLambertMaterial({ vertexColors: true });
 
-    this.bodies = new THREE.InstancedMesh(body, lambert(), MAX_AGENTS);
-    this.heads = new THREE.InstancedMesh(head, lambert(), MAX_AGENTS);
-    for (const m of [this.bodies, this.heads]) {
-      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      m.castShadow = true;
-      m.frustumCulled = false;
-      m.count = 0;
-      this.worldGroup.add(m);
+    // One instanced pair per colour scheme, so a moss thronglet is genuinely
+    // green rather than a yellow one behind a filter.
+    for (const geo of morphGeometries()) {
+      const bodyMesh = new THREE.InstancedMesh(geo.body, lambert(), MAX_AGENTS);
+      const headMesh = new THREE.InstancedMesh(geo.head, lambert(), MAX_AGENTS);
+      for (const m of [bodyMesh, headMesh]) {
+        m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        m.castShadow = true;
+        m.frustumCulled = false;
+        m.count = 0;
+        m.instanceColor = new THREE.InstancedBufferAttribute(
+          new Float32Array(MAX_AGENTS * 3).fill(1),
+          3,
+        );
+        this.worldGroup.add(m);
+      }
+      this.morphs.push({ body: bodyMesh, head: headMesh });
+      this.morphIndex.push([]);
     }
-    // Per-instance tint carries each thronglet's inherited hue.
-    this.bodies.instanceColor = new THREE.InstancedBufferAttribute(
-      new Float32Array(MAX_AGENTS * 3).fill(1),
-      3,
-    );
-    this.heads.instanceColor = new THREE.InstancedBufferAttribute(
-      new Float32Array(MAX_AGENTS * 3).fill(1),
-      3,
-    );
+    // The first pair doubles as the picking target set alongside the rest.
+    this.bodies = this.morphs[0].body;
+    this.heads = this.morphs[0].head;
 
     this.eggMesh = new THREE.InstancedMesh(eggGeometry(), lambert(), MAX_EGGS);
     this.eggMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -229,11 +248,35 @@ export class ThrongletSim {
     this.banners.count = 0;
     this.worldGroup.add(this.banners);
 
-    this.treeMesh = new THREE.InstancedMesh(treeGeometry(), lambert(), 900);
-    this.treeMesh.castShadow = true;
-    this.treeMesh.receiveShadow = true;
-    this.treeMesh.frustumCulled = false;
-    this.worldGroup.add(this.treeMesh);
+    // A mesh per tree kind — apple, oak, pine, palm.
+    for (const [kind, geo] of [
+      ["apple", treeGeometry()],
+      ["oak", oakGeometry()],
+      ["pine", pineGeometry()],
+      ["palm", palmGeometry()],
+    ] as [string, THREE.BufferGeometry][]) {
+      const mesh = new THREE.InstancedMesh(geo, lambert(), 700);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.frustumCulled = false;
+      mesh.count = 0;
+      this.treeMeshes[kind] = mesh;
+      this.worldGroup.add(mesh);
+    }
+    this.treeMesh = this.treeMeshes.apple;
+
+    this.rockMesh = new THREE.InstancedMesh(rockGeometry(), lambert(), 300);
+    this.rockMesh.castShadow = true;
+    this.rockMesh.receiveShadow = true;
+    this.rockMesh.frustumCulled = false;
+    this.worldGroup.add(this.rockMesh);
+
+    this.stoneLoads = new THREE.InstancedMesh(stoneLoadGeometry(), lambert(), MAX_AGENTS);
+    this.stoneLoads.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.stoneLoads.castShadow = true;
+    this.stoneLoads.frustumCulled = false;
+    this.stoneLoads.count = 0;
+    this.worldGroup.add(this.stoneLoads);
 
     this.bushMesh = new THREE.InstancedMesh(bushGeometry(), lambert(), 500);
     this.bushMesh.castShadow = true;
@@ -253,8 +296,8 @@ export class ThrongletSim {
       side: THREE.BackSide,
       fog: false,
     });
-    const ob = new THREE.Mesh(body, outlineMat);
-    const oh = new THREE.Mesh(head, outlineMat);
+    const ob = new THREE.Mesh(this.morphs[0].body.geometry, outlineMat);
+    const oh = new THREE.Mesh(this.morphs[0].head.geometry, outlineMat);
     this.outline.add(ob, oh);
     this.outline.visible = false;
     this.worldGroup.add(this.outline);
@@ -342,16 +385,7 @@ export class ThrongletSim {
     const c = this.colony;
     this.worldGroup.add(c.terrain.mesh, c.terrain.water);
 
-    c.trees.forEach((t, i) => {
-      this.dummy.position.set(t.x, t.y - 0.1, t.z);
-      this.dummy.rotation.set(0, t.rot, 0);
-      this.dummy.scale.setScalar(t.scale);
-      this.dummy.updateMatrix();
-      this.treeMesh.setMatrixAt(i, this.dummy.matrix);
-    });
-    this.treeMesh.count = c.trees.length;
-    this.treeMesh.instanceMatrix.needsUpdate = true;
-    this.lastTreeCount = c.trees.length;
+    this.mountFlora();
 
     c.bushes.forEach((b, i) => {
       this.dummy.position.set(b.x, b.y - 0.05, b.z);
@@ -397,6 +431,43 @@ export class ThrongletSim {
     this.controls.target.set(x, ground + 0.6, z);
     this.camera.position.set(x, ground + 23, z + 10.7);
     this.controls.update();
+  }
+
+  /** Trees are drawn per kind, so each kind gets its own instance buffer. */
+  private mountFlora() {
+    const c = this.colony;
+    const counts: Record<string, number> = { apple: 0, oak: 0, pine: 0, palm: 0 };
+    for (const t of c.trees) {
+      const mesh = this.treeMeshes[t.kind];
+      if (!mesh) continue;
+      const i = counts[t.kind]++;
+      if (i >= mesh.instanceMatrix.count) continue;
+      this.dummy.position.set(t.x, t.y - 0.1, t.z);
+      this.dummy.rotation.set(0, t.rot, 0);
+      this.dummy.scale.setScalar(t.scale);
+      this.dummy.updateMatrix();
+      mesh.setMatrixAt(i, this.dummy.matrix);
+    }
+    for (const kind of Object.keys(this.treeMeshes)) {
+      const mesh = this.treeMeshes[kind];
+      mesh.count = Math.min(counts[kind] ?? 0, mesh.instanceMatrix.count);
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+    this.lastTreeCount = c.trees.length;
+
+    c.rocks.forEach((r, i) => {
+      if (i >= this.rockMesh.instanceMatrix.count) return;
+      this.dummy.position.set(r.x, r.y - 0.08, r.z);
+      this.dummy.rotation.set(0, r.rot, 0);
+      this.dummy.scale.setScalar(r.scale);
+      this.dummy.updateMatrix();
+      this.rockMesh.setMatrixAt(i, this.dummy.matrix);
+    });
+    this.rockMesh.count = Math.min(
+      c.rocks.length,
+      this.rockMesh.instanceMatrix.count,
+    );
+    this.rockMesh.instanceMatrix.needsUpdate = true;
   }
 
   /* ---------------- events ---------------- */
@@ -470,11 +541,17 @@ export class ThrongletSim {
   private pickThronglet(e: PointerEvent): Thronglet | null {
     this.setPointer(e);
     this.ray.setFromCamera(this.pointer, this.camera);
+    const targets: THREE.Object3D[] = [];
+    for (const m of this.morphs) targets.push(m.body, m.head);
     const hit = this.ray
-      .intersectObjects([this.bodies, this.heads], false)
+      .intersectObjects(targets, false)
       .sort((a, b) => a.distance - b.distance)[0];
     if (!hit || hit.instanceId === undefined) return null;
-    return this.colony.thronglets[hit.instanceId] ?? null;
+    const morph = this.morphs.findIndex(
+      (m) => m.body === hit.object || m.head === hit.object,
+    );
+    if (morph < 0) return null;
+    return this.morphIndex[morph][hit.instanceId] ?? null;
   }
 
   /** Where the cursor meets the ground. */
@@ -490,11 +567,16 @@ export class ThrongletSim {
 
     if (this.tool === "inspect") {
       // The head is most of the silhouette, so both halves have to be pickable.
+      const targets: THREE.Object3D[] = [];
+      for (const m of this.morphs) targets.push(m.body, m.head);
       const hit = this.ray
-        .intersectObjects([this.bodies, this.heads], false)
+        .intersectObjects(targets, false)
         .sort((a, b) => a.distance - b.distance)[0];
       if (hit && hit.instanceId !== undefined) {
-        const t = this.colony.thronglets[hit.instanceId];
+        const morph = this.morphs.findIndex(
+          (m) => m.body === hit.object || m.head === hit.object,
+        );
+        const t = morph >= 0 ? this.morphIndex[morph][hit.instanceId] : null;
         if (t) {
           if (this.selectedId === t.id) this.colony.pet(t);
           this.selectedId = t.id;
@@ -590,6 +672,7 @@ export class ThrongletSim {
     this.lastBlockCount = -1;
     this.lastAppleKey = -1;
     this.lastSiteCount = -1;
+    this.lastTreeCount = -1;
     this.blocks.count = 0;
     this.siteMarkers.clear();
     this.mountWorld();
@@ -689,17 +772,33 @@ export class ThrongletSim {
 
   private syncAgents() {
     const list = this.colony.thronglets;
-    const n = Math.min(list.length, MAX_AGENTS);
-    const bodyColors = this.bodies.instanceColor!;
-    const headColors = this.heads.instanceColor!;
-
-    let emote = 0;
-    let carried = 0;
     const tex = emoteTextures();
 
-    for (let i = 0; i < n; i++) {
-      const t = list[i];
+    // Creatures are bucketed by colour scheme, so each morph mesh only draws
+    // its own. The index arrays let picking map an instance back to whoever
+    // it belongs to.
+    const counts = new Array(this.morphs.length).fill(0);
+    for (const arr of this.morphIndex) arr.length = 0;
+
+    let carried = 0;
+    let stoned = 0;
+    let emote = 0;
+
+    for (const t of list) {
+      const mi = Math.max(
+        0,
+        Math.min(this.morphs.length - 1, Math.floor(t.genome.morph)),
+      );
+      const set = this.morphs[mi];
+      const i = counts[mi];
+      if (i >= MAX_AGENTS) continue;
+      counts[mi]++;
+      this.morphIndex[mi].push(t);
+
+      const bodyColors = set.body.instanceColor!;
+      const headColors = set.head.instanceColor!;
       const s = t.scale;
+
       if (t === this.dragging) {
         // Dangling: hovering above the cursor, legs kicking.
         const swing = Math.sin(t.bob * 3) * 0.18;
@@ -711,11 +810,11 @@ export class ThrongletSim {
         this.dummy.rotation.set(swing * 0.5, t.heading + swing, swing);
         this.dummy.scale.setScalar(s);
         this.dummy.updateMatrix();
-        this.bodies.setMatrixAt(i, this.dummy.matrix);
+        set.body.setMatrixAt(i, this.dummy.matrix);
         this.dummy.position.y += NECK_HEIGHT * s;
         this.dummy.rotation.set(swing * 0.3, t.heading + swing * 1.4, swing * 1.2);
         this.dummy.updateMatrix();
-        this.heads.setMatrixAt(i, this.dummy.matrix);
+        set.head.setMatrixAt(i, this.dummy.matrix);
         t.x = this.dragPoint.x;
         t.z = this.dragPoint.z;
         t.y = this.dragPoint.y;
@@ -723,6 +822,7 @@ export class ThrongletSim {
         headColors.setXYZ(i, 1, 1, 1);
         continue;
       }
+
       const moving = Math.hypot(t.vx, t.vz);
       const walk = Math.sin(t.bob * 2.2);
       const asleep = t.task === "sleep";
@@ -738,15 +838,11 @@ export class ThrongletSim {
         this.dummy.position.y = t.y;
       }
       this.dummy.updateMatrix();
-      this.bodies.setMatrixAt(i, this.dummy.matrix);
+      set.body.setMatrixAt(i, this.dummy.matrix);
 
       // Head: same transform, lagged, with an idle sway.
       const sway = Math.sin(t.bob * 1.6 - 0.5);
-      this.dummy.position.set(
-        t.x,
-        t.y + lift + NECK_HEIGHT * s * squash,
-        t.z,
-      );
+      this.dummy.position.set(t.x, t.y + lift + NECK_HEIGHT * s * squash, t.z);
       this.dummy.rotation.set(
         sway * 0.04,
         t.heading + sway * 0.09,
@@ -762,26 +858,19 @@ export class ThrongletSim {
         );
       }
       this.dummy.updateMatrix();
-      this.heads.setMatrixAt(i, this.dummy.matrix);
+      set.head.setMatrixAt(i, this.dummy.matrix);
 
-      // Inherited hue, then the clan's colour washed over the top, then a
-      // sickly cast when a thronglet is failing and a red flash when it is hit.
-      const hue = t.genome.hue;
-      const ill = THREE.MathUtils.clamp(t.health, 0.35, 1);
-      this.tmpColor.setRGB(
-        (1 + hue * 1.4) * ill,
-        (1 - Math.abs(hue) * 0.5) * ill,
-        (1 - hue * 2.2) * ill,
-      );
+      // The morph already carries the colour, so the instance tint only has
+      // to whisper the clan's banner over it, dim the sick and flash the hit.
+      const ill = THREE.MathUtils.clamp(t.health, 0.45, 1);
+      this.tmpColor.setRGB(ill, ill, ill);
       const clan = this.colony.clanOf(t);
       if (clan) {
-        // Normalise the clan colour first, or a deep hue would just darken
-        // the creature instead of tinting it.
         this.tmpTint.setHex(clan.color);
         const peak =
           Math.max(this.tmpTint.r, this.tmpTint.g, this.tmpTint.b) || 1;
         this.tmpTint.multiplyScalar(1 / peak);
-        this.tmpColor.lerp(this.tmpTint, 0.4);
+        this.tmpColor.lerp(this.tmpTint, 0.16);
       }
       if (t.hurt > 0) {
         this.tmpTint.setRGB(1.4, 0.25, 0.2);
@@ -790,8 +879,9 @@ export class ThrongletSim {
       bodyColors.setXYZ(i, this.tmpColor.r, this.tmpColor.g, this.tmpColor.b);
       headColors.setXYZ(i, this.tmpColor.r, this.tmpColor.g, this.tmpColor.b);
 
-      // Logs held out in front, bobbing with the walk.
-      if (t.carryingWood > 0) {
+      // Whatever they are hauling, held out in front.
+      const load = t.carryingWood > 0 ? "wood" : t.carryingStone > 0 ? "stone" : null;
+      if (load) {
         const fx = Math.sin(t.heading);
         const fz = Math.cos(t.heading);
         this.dummy.position.set(
@@ -802,7 +892,8 @@ export class ThrongletSim {
         this.dummy.rotation.set(walk * 0.12 * Math.min(1, moving), t.heading, 0);
         this.dummy.scale.setScalar(s);
         this.dummy.updateMatrix();
-        this.planks.setMatrixAt(carried++, this.dummy.matrix);
+        if (load === "wood") this.planks.setMatrixAt(carried++, this.dummy.matrix);
+        else this.stoneLoads.setMatrixAt(stoned++, this.dummy.matrix);
       }
 
       // Emote bubble.
@@ -817,40 +908,33 @@ export class ThrongletSim {
       }
     }
 
+    for (let m = 0; m < this.morphs.length; m++) {
+      const set = this.morphs[m];
+      set.body.count = counts[m];
+      set.head.count = counts[m];
+      set.body.instanceMatrix.needsUpdate = true;
+      set.head.instanceMatrix.needsUpdate = true;
+      set.body.instanceColor!.needsUpdate = true;
+      set.head.instanceColor!.needsUpdate = true;
+      // three caches an instanced bounding sphere on first raycast; drop it so
+      // picking stays accurate while everyone is walking around.
+      set.body.boundingSphere = null;
+      set.head.boundingSphere = null;
+    }
+
     for (let i = emote; i < this.emotePool.length; i++)
       this.emotePool[i].visible = false;
 
     this.planks.count = carried;
     this.planks.instanceMatrix.needsUpdate = true;
+    this.stoneLoads.count = stoned;
+    this.stoneLoads.instanceMatrix.needsUpdate = true;
 
     this.syncBanners();
 
-    this.bodies.count = n;
-    this.heads.count = n;
-    this.bodies.instanceMatrix.needsUpdate = true;
-    this.heads.instanceMatrix.needsUpdate = true;
-    // three caches an instanced bounding sphere on first raycast; drop it so
-    // picking stays accurate while everyone is walking around.
-    this.bodies.boundingSphere = null;
-    this.heads.boundingSphere = null;
-    bodyColors.needsUpdate = true;
-    headColors.needsUpdate = true;
-
-    // New trees can be planted at runtime.
-    if (this.colony.trees.length !== this.lastTreeCount) {
-      const c = this.colony;
-      for (let i = this.lastTreeCount; i < c.trees.length; i++) {
-        const t = c.trees[i];
-        this.dummy.position.set(t.x, t.y - 0.1, t.z);
-        this.dummy.rotation.set(0, t.rot, 0);
-        this.dummy.scale.setScalar(t.scale);
-        this.dummy.updateMatrix();
-        this.treeMesh.setMatrixAt(i, this.dummy.matrix);
-      }
-      this.treeMesh.count = c.trees.length;
-      this.treeMesh.instanceMatrix.needsUpdate = true;
-      this.lastTreeCount = c.trees.length;
-    }
+    // Trees can be planted at runtime, so the flora buffers get rebuilt when
+    // the count moves.
+    if (this.colony.trees.length !== this.lastTreeCount) this.mountFlora();
   }
 
   /** A pole in each clan's colour, planted where that clan settled. */
@@ -1001,6 +1085,14 @@ export class ThrongletSim {
     const s = t.scale;
     this.outline.visible = true;
     const [ob, oh] = this.outline.children as THREE.Mesh[];
+    const set =
+      this.morphs[
+        Math.max(0, Math.min(this.morphs.length - 1, Math.floor(t.genome.morph)))
+      ];
+    if (ob.geometry !== set.body.geometry) {
+      ob.geometry = set.body.geometry;
+      oh.geometry = set.head.geometry;
+    }
     ob.position.set(t.x, t.y, t.z);
     ob.rotation.set(0, t.heading, 0);
     ob.scale.setScalar(s * 1.09);

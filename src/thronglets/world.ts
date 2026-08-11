@@ -6,8 +6,34 @@ export const WATER_LEVEL = -0.22;
 
 export type Pond = { x: number; z: number; r: number };
 
+export type TreeKind = "apple" | "oak" | "pine" | "palm";
+
+/** What each kind is worth to a colony. */
+export const TREE_TRAITS: Record<
+  TreeKind,
+  { wood: number; fruit: number; regrow: number; scale: [number, number] }
+> = {
+  apple: { wood: 55, fruit: 6, regrow: 26, scale: [0.82, 1.25] },
+  oak: { wood: 130, fruit: 0, regrow: 0, scale: [0.85, 1.2] },
+  pine: { wood: 90, fruit: 0, regrow: 0, scale: [0.8, 1.3] },
+  palm: { wood: 35, fruit: 3, regrow: 40, scale: [0.9, 1.25] },
+};
+
+export type Rock = {
+  id: number;
+  x: number;
+  z: number;
+  y: number;
+  scale: number;
+  rot: number;
+  /** Stone left in the boulder. Quarrying does not grow back quickly. */
+  stone: number;
+  capacity: number;
+};
+
 export type Tree = {
   id: number;
+  kind: TreeKind;
   x: number;
   z: number;
   y: number;
@@ -193,6 +219,25 @@ export function scatterPonds(rand: Rand): Pond[] {
   return ponds;
 }
 
+/**
+ * Where a tree of each kind belongs. Palms hug the shore, pines take the high
+ * ground, oaks fill the deep inland, apples grow anywhere temperate — so the
+ * island reads as having places rather than one uniform forest.
+ */
+function treeKindFor(rand: Rand, y: number, distanceFromCentre: number): TreeKind {
+  // Judge position by how far out it is rather than by absolute height: the
+  // island's inland plateau sits low enough that a height rule put palms
+  // everywhere and pines nowhere.
+  const out = distanceFromCentre / WORLD_RADIUS;
+  if (out > 0.74 && rand() < 0.75) return "palm";
+  if (y > 1.35 && rand() < 0.65) return "pine";
+  if (out < 0.58 && rand() < 0.45) return "oak";
+  const roll = rand();
+  if (roll < 0.6) return "apple";
+  if (roll < 0.82) return "oak";
+  return "pine";
+}
+
 export function scatterTrees(rand: Rand, terrain: Terrain): Tree[] {
   const trees: Tree[] = [];
   let id = 0;
@@ -205,25 +250,71 @@ export function scatterTrees(rand: Rand, terrain: Terrain): Tree[] {
     if (y < WATER_LEVEL + 0.35) continue;
     if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.9)) continue;
 
-    const scale = range(rand, 0.82, 1.25);
-    const capacity = 3 + Math.floor(rand() * 4);
-    const fruitSlots = fruitSlotsFor(rand, capacity, scale);
+    const kind = treeKindFor(rand, y, d);
+    const traits = TREE_TRAITS[kind];
+    const scale = range(rand, traits.scale[0], traits.scale[1]);
+    const capacity = traits.fruit
+      ? Math.max(1, Math.round(range(rand, traits.fruit * 0.5, traits.fruit)))
+      : 0;
+    const fruitSlots = capacity ? fruitSlotsFor(rand, capacity, scale) : [];
 
     trees.push({
       id: id++,
+      kind,
       x,
       z,
       y,
       scale,
       rot: rand() * Math.PI * 2,
-      fruit: Math.floor(range(rand, 1, capacity + 1)),
+      fruit: capacity ? Math.floor(range(rand, 1, capacity + 1)) : 0,
       capacity,
       regrow: range(rand, 0, 40),
-      wood: 40 + Math.floor(rand() * 40),
+      wood: Math.round(traits.wood * range(rand, 0.7, 1.2)),
       fruitSlots,
     });
   }
   return trees;
+}
+
+/**
+ * Boulders, clustered the way rock actually outcrops: a few fields of them
+ * rather than an even sprinkle, and more of it on the high ground.
+ */
+export function scatterRocks(rand: Rand, terrain: Terrain, trees: Tree[]): Rock[] {
+  const rocks: Rock[] = [];
+  const fields: { x: number; z: number; r: number }[] = [];
+  for (let i = 0; i < 9; i++) {
+    const a = rand() * Math.PI * 2;
+    const d = Math.sqrt(rand()) * WORLD_RADIUS * 0.8;
+    fields.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: range(rand, 7, 16) });
+  }
+
+  let id = 0;
+  for (let i = 0; i < 9000 && rocks.length < 190; i++) {
+    const field = fields[Math.floor(rand() * fields.length)];
+    const a = rand() * Math.PI * 2;
+    const d = Math.sqrt(rand()) * field.r;
+    const x = field.x + Math.cos(a) * d;
+    const z = field.z + Math.sin(a) * d;
+    if (Math.hypot(x, z) > WORLD_RADIUS * 0.93) continue;
+    const y = terrain.height(x, z);
+    if (y < WATER_LEVEL + 0.25) continue;
+    if (rocks.some((r) => Math.hypot(r.x - x, r.z - z) < 2.2)) continue;
+    if (trees.some((t) => Math.hypot(t.x - x, t.z - z) < 1.6)) continue;
+
+    const capacity = Math.round(range(rand, 60, 190) * (y > 1.6 ? 1.3 : 1));
+    rocks.push({
+      id: id++,
+      x,
+      z,
+      y,
+      scale: range(rand, 0.7, 1.5),
+      rot: rand() * Math.PI * 2,
+      stone: capacity,
+      capacity,
+    });
+  }
+  return rocks;
 }
 
 /**

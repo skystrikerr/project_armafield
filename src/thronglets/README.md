@@ -6,9 +6,9 @@ that follows — where they settle, what they build, who they pair off with,
 whether the colony grows or dwindles — falls out of each individual scoring its
 own drives and acting on the loudest one.
 
-The island is a bit over 140 units across, carries five or six hundred apple
-trees, a couple of dozen ponds and pools, and supports up to ten clans and
-around three hundred and fifty creatures at once.
+The island is a bit over 140 units across, carrying five or six hundred trees
+of four kinds, a couple of hundred boulders, a couple of dozen ponds, and up to
+ten clans and three hundred and fifty creatures at once.
 
 ## Files
 
@@ -16,7 +16,7 @@ around three hundred and fifty creatures at once.
 | --- | --- |
 | `voxel.ts` | Voxel grid → `BufferGeometry` baker. Culls hidden faces, bakes flat pixel-art colours into vertex colours. |
 | `models.ts` | Every model in the world, authored voxel by voxel: the thronglet (body + head as separate pieces so the head can nod), eggs, apple trees, bushes, the enamel tub. |
-| `world.ts` | Island heightmap, ponds, shoreline colouring, and the scatter passes that place trees, bushes and tubs. |
+| `world.ts` | Island heightmap, ponds, shoreline colouring, and the scatter passes that place trees, rocks, bushes and tubs. |
 | `colony.ts` | The simulation. No three.js in here — agents, needs, utility AI, building, breeding, the day/night clock. |
 | `emotes.ts` | Pixel-art emote icons drawn onto a canvas at runtime (no image assets). |
 | `scene.ts` | Rendering and input: instanced meshes, the sun's arc, picking, camera. |
@@ -112,6 +112,53 @@ authored beyond that.
 
 Words are held with a strength that use reinforces, so a firmly-held word
 resists replacement and a shaky one gets overwritten by the neighbours'.
+
+## The island's materials
+
+- **Four kinds of tree**, placed by where they belong rather than at random:
+  palms on the outer ring by the shore, pines on the high ground, oaks through
+  the deep inland, apples everywhere temperate. Only apples and palms fruit;
+  oak and pine are what you build from, and give half again as much timber per
+  trip.
+- **Boulders** outcrop in fields rather than an even sprinkle, and hold stone
+  that does not grow back. Quarrying is slower than chopping.
+- **Two materials.** Every block in a plan is timber, stone or free thatch, and
+  a site's cost is counted off the plan rather than guessed. Gatherers fetch
+  whichever material their town is shortest of, and a builder can only lay the
+  next block if that pile has something in it.
+
+## Towns
+
+A clan's first settlement rings its shrine. Once a town has six finished
+buildings and twenty people, it breaks ground on a second one — an outpost of
+the same clan, not a schism — and builds around both. Three per clan is the
+limit before they would rather split.
+
+Two buildings exist purely because colonies kept dying:
+
+- A **well**, placed on the near side of the closest pond, so nobody has to
+  cross the island for a drink.
+- A **granary**, which anyone with a spare afternoon fills with fruit, and
+  which the hungry eat from when the trees near town have been picked bare.
+
+## What they learn
+
+Each clan keeps a tally of what has actually killed its people — thirst,
+famine, raids — and builds against it. Two deaths from thirst and they dig a
+well before anything else; two from hunger and they raise a granary; three
+raids and they put up a watchtower. Nothing tells them to; the counters come
+from the deaths themselves, so a clan on good ground never bothers with any
+of it and a clan on bad ground is all wells and stores.
+
+## Colour schemes
+
+Creatures come in seven morphs — amber, moss, tide, rose, ash, ember, dusk —
+each baked as its own geometry rather than tinted, so a moss thronglet really
+has a green body and a pale belly. Morph is inherited whole from one parent,
+with a six percent chance of a child turning up wearing something neither of
+them had, so a town drifts towards a look of its own over generations. The
+clan's banner colour is washed lightly over the top so you can still tell who
+belongs to whom.
 
 ## Living and surviving
 

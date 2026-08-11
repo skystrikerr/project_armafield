@@ -24,11 +24,14 @@ import {
   fruitSlotsFor,
   scatterBushes,
   scatterPonds,
+  scatterRocks,
   scatterTrees,
   scatterTubs,
+  TREE_TRAITS,
   WATER_LEVEL,
   WORLD_RADIUS,
   type Bush,
+  type Rock,
   type Terrain,
   type Tree,
   type Tub,
@@ -43,6 +46,9 @@ import {
 
 export const BLOCK = 0.3;
 
+/** How many colour schemes creatures come in. */
+export const MORPH_COUNT = 7;
+
 /** Side of one spatial-index cell, a little wider than the separation radius. */
 const CELL = 1.6;
 
@@ -51,6 +57,8 @@ const FOOTPRINT: Record<StructureKind, number> = {
   cairn: 0.7,
   hut: 1.5,
   shrine: 1.2,
+  well: 0.8,
+  granary: 1.3,
   farm: 0,
   tower: 1.0,
   monolith: 1.2,
@@ -80,7 +88,8 @@ export type Task =
   | "mate"
   | "worship"
   | "raid"
-  | "flee";
+  | "flee"
+  | "stock";
 
 export type Genome = {
   speed: number;
@@ -92,6 +101,8 @@ export type Genome = {
   aggression: number;
   /** How readily this one takes the clan's god to heart. */
   devotion: number;
+  /** Which colour scheme this one wears. Inherited, occasionally mutated. */
+  morph: number;
   hue: number;
   lifespan: number;
 };
@@ -145,6 +156,11 @@ export type Thronglet = {
   stuck: number;
 
   carryingWood: number;
+  carryingStone: number;
+  carryingFood: number;
+  /** Which material this trip is for. */
+  hauling: Material;
+  targetRock: number | null;
   blocksPlaced: number;
   mealsEaten: number;
   childCount: number;
@@ -159,6 +175,8 @@ export type Thronglet = {
   homeSite: number | null;
 
   memory: Memory[];
+  /** What is currently killing this one, if anything. */
+  dyingOf: "hunger" | "thirst" | null;
   /** Set while the player is holding this one off the ground. */
   held: boolean;
   /** Little animation helpers the renderer reads. */
@@ -181,12 +199,22 @@ export type Egg = {
   gen: number;
 };
 
-export type Block = { x: number; y: number; z: number; color: number };
+export type Material = "wood" | "stone" | "thatch";
+
+export type Block = {
+  x: number;
+  y: number;
+  z: number;
+  color: number;
+  mat: Material;
+};
 
 export type StructureKind =
   | "cairn"
   | "hut"
   | "shrine"
+  | "well"
+  | "granary"
   | "farm"
   | "tower"
   | "monolith";
@@ -200,9 +228,14 @@ export type BuildSite = {
   y: number;
   blocks: Block[];
   placed: number;
+  /** Materials delivered and still on site. */
   wood: number;
+  stone: number;
   woodNeeded: number;
+  stoneNeeded: number;
   complete: boolean;
+  /** Granaries hold food; wells hold nothing but count as water. */
+  store: number;
 };
 
 export type LogEntry = { t: number; text: string; kind: string };
@@ -224,6 +257,8 @@ export type ColonyStats = {
   converted: number;
   skirmishes: number;
   words: number;
+  towns: number;
+  stoneLeft: number;
 };
 
 export type ClanReport = {
@@ -240,6 +275,8 @@ export type ClanReport = {
   raids: number;
   losses: number;
   standings: { id: number; name: string; value: number }[];
+  outposts: number;
+  lessons: { thirst: number; famine: number; raided: number };
   tongue: { concept: string; word: string; borrowedFrom: string | null }[];
   /** How far each neighbour's tongue has drifted from this one. */
   drift: { name: string; value: number }[];
@@ -287,14 +324,15 @@ const STRUCTURE_TIERS: {
   kind: StructureKind;
   label: string;
   knowledge: number;
-  wood: number;
 }[] = [
-  { kind: "cairn", label: "Cairn", knowledge: 0, wood: 12 },
-  { kind: "hut", label: "Hut", knowledge: 25, wood: 70 },
-  { kind: "shrine", label: "Shrine", knowledge: 55, wood: 80 },
-  { kind: "farm", label: "Grove plot", knowledge: 90, wood: 60 },
-  { kind: "tower", label: "Watchtower", knowledge: 220, wood: 130 },
-  { kind: "monolith", label: "Monolith", knowledge: 450, wood: 190 },
+  { kind: "cairn", label: "Cairn", knowledge: 0 },
+  { kind: "hut", label: "Hut", knowledge: 25 },
+  { kind: "well", label: "Well", knowledge: 40 },
+  { kind: "shrine", label: "Shrine", knowledge: 55 },
+  { kind: "granary", label: "Granary", knowledge: 70 },
+  { kind: "farm", label: "Grove plot", knowledge: 90 },
+  { kind: "tower", label: "Watchtower", knowledge: 220 },
+  { kind: "monolith", label: "Monolith", knowledge: 450 },
 ];
 
 export const TIER_NAMES = [
@@ -320,8 +358,15 @@ function layout(kind: StructureKind, rand: Rand, accent: number): Block[] {
   const dirt = 0x6d5133;
   const dark = 0x22262b;
 
+  // Thatch and turf are free: it is the timber and the stone they have to
+  // fetch, so those are the only colours that cost anything.
+  const matOf = (color: number): Material => {
+    if (color === leaf || color === dirt) return "thatch";
+    if (color === wood || color === woodDark || color === accent) return "wood";
+    return "stone";
+  };
   const push = (x: number, y: number, z: number, color: number) =>
-    b.push({ x, y, z, color });
+    b.push({ x, y, z, color, mat: matOf(color) });
 
   if (kind === "cairn") {
     push(0, 0, 0, stone);
@@ -369,6 +414,41 @@ function layout(kind: StructureKind, rand: Rand, accent: number): Block[] {
     push(0, 2, 0, stoneDark);
     push(0, 3, 0, accent);
     push(0, 4, 0, accent);
+  } else if (kind === "well") {
+    // A stone ring with a thatched roof over it — water in the town, so
+    // nobody has to cross the island for a drink.
+    for (let x = -1; x <= 1; x++)
+      for (let z = -1; z <= 1; z++) {
+        if (x === 0 && z === 0) continue;
+        push(x, 0, z, stone);
+        push(x, 1, z, stoneDark);
+      }
+    push(-1, 2, -1, wood);
+    push(1, 2, 1, wood);
+    push(-1, 3, -1, wood);
+    push(1, 3, 1, wood);
+    for (let x = -1; x <= 1; x++)
+      for (let z = -1; z <= 1; z++) push(x, 4, z, leaf);
+  } else if (kind === "granary") {
+    // A raised store on stone footings: what a colony builds once it has
+    // learned that a bad week kills.
+    for (const [x, z] of [
+      [-1, -1],
+      [1, -1],
+      [-1, 1],
+      [1, 1],
+    ] as [number, number][])
+      push(x, 0, z, stoneDark);
+    for (let x = -2; x <= 2; x++)
+      for (let z = -2; z <= 2; z++) push(x, 1, z, woodDark);
+    for (let y = 2; y <= 4; y++)
+      for (let x = -2; x <= 2; x++)
+        for (let z = -2; z <= 2; z++) {
+          if (Math.abs(x) === 2 || Math.abs(z) === 2) push(x, y, z, wood);
+        }
+    for (let x = -2; x <= 2; x++)
+      for (let z = -2; z <= 2; z++) push(x, 5, z, leaf);
+    push(0, 6, 0, leaf);
   } else if (kind === "farm") {
     for (let x = -3; x <= 3; x++)
       for (let z = -3; z <= 3; z++) {
@@ -419,6 +499,7 @@ export class Colony {
   terrain: Terrain;
   trees: Tree[] = [];
   bushes: Bush[] = [];
+  rocks: Rock[] = [];
   tubs: Tub[] = [];
   thronglets: Thronglet[] = [];
   eggs: Egg[] = [];
@@ -460,6 +541,7 @@ export class Colony {
     this.terrain = makeTerrain(seed, ponds);
     this.trees = scatterTrees(this.rand, this.terrain);
     this.bushes = scatterBushes(this.rand, this.terrain);
+    this.rocks = scatterRocks(this.rand, this.terrain, this.trees);
     this.tubs = scatterTubs(this.rand, this.terrain, this.trees);
 
     const start = this.newVillageSpot();
@@ -500,6 +582,7 @@ export class Colony {
       industry: range(r, 0.2, 0.95),
       aggression: range(r, 0.05, 0.7),
       devotion: range(r, 0.1, 0.9),
+      morph: Math.floor(r() * MORPH_COUNT),
       hue: range(r, -0.05, 0.05),
       lifespan: range(r, 540, 820),
     };
@@ -519,6 +602,14 @@ export class Colony {
       industry: mix("industry", 0.05, 1),
       aggression: mix("aggression", 0.02, 1),
       devotion: mix("devotion", 0.02, 1),
+      // Colour is inherited whole from one parent, and now and then a child
+      // turns up wearing something neither of them had.
+      morph:
+        r() < 0.06
+          ? Math.floor(r() * MORPH_COUNT)
+          : r() < 0.5
+            ? a.morph
+            : b.morph,
       hue: Math.max(-0.12, Math.min(0.12, mix("hue", -0.12, 0.12))),
       lifespan: mix("lifespan", 460, 900),
     };
@@ -572,6 +663,10 @@ export class Colony {
       mateCooldown: 18,
       stuck: 0,
       carryingWood: 0,
+      carryingStone: 0,
+      carryingFood: 0,
+      hauling: "wood",
+      targetRock: null,
       blocksPlaced: 0,
       mealsEaten: 0,
       childCount: 0,
@@ -580,6 +675,7 @@ export class Colony {
       combatTimer: 0,
       hurt: 0,
       slain: false,
+      dyingOf: null,
       homeSite: null,
       memory: [],
       held: false,
@@ -673,6 +769,23 @@ export class Colony {
     return best;
   }
 
+  /** The clan's nearest finished granary, if they have built one. */
+  granaryOf(t: Thronglet, needsStock = false): BuildSite | null {
+    let best: BuildSite | null = null;
+    let bestD = Infinity;
+    for (const s of this.sites) {
+      if (!s.complete || s.kind !== "granary" || s.clanId !== t.clanId) continue;
+      if (needsStock && s.store <= 0) continue;
+      if (!needsStock && s.store >= 40) continue;
+      const d = Math.hypot(s.x - t.x, s.z - t.z);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
   /** The clan's finished shrine, if they have got one up yet. */
   shrineOf(clan: Clan): BuildSite | null {
     return (
@@ -706,12 +819,17 @@ export class Colony {
    * close enough to water and trees to survive there. Settling a clan on a dry
    * hill is a slow death sentence for it.
    */
-  private newVillageSpot(near?: { x: number; z: number }) {
+  private newVillageSpot(near?: { x: number; z: number }, spread?: number) {
     let best: { x: number; z: number } | null = null;
     let bestScore = -Infinity;
 
     for (let i = 0; i < 200; i++) {
-      const spot = findLandSpot(this.rand, this.terrain, near, WORLD_RADIUS * 0.85);
+      const spot = findLandSpot(
+        this.rand,
+        this.terrain,
+        near,
+        spread ?? WORLD_RADIUS * 0.85,
+      );
       const spacing = this.clans.length
         ? Math.min(
             ...this.clans.map((c) =>
@@ -793,6 +911,10 @@ export class Colony {
       words: this.clans
         .filter((c) => c.members > 0)
         .reduce((n, c) => n + c.lexicon.size, 0),
+      towns: this.clans
+        .filter((c) => c.members > 0)
+        .reduce((n, c) => n + 1 + c.outposts.length, 0),
+      stoneLeft: Math.round(this.rocks.reduce((n, r) => n + r.stone, 0)),
     };
   }
 
@@ -817,6 +939,8 @@ export class Colony {
         standings: this.clans
           .filter((o) => o.id !== c.id && o.members > 0)
           .map((o) => ({ id: o.id, name: o.name, value: relationOf(c, o) })),
+        outposts: c.outposts.length,
+        lessons: { ...c.lessons },
         tongue: Array.from(c.lexicon.entries()).map(([concept, w]) => ({
           concept,
           word: w.word,
@@ -868,6 +992,20 @@ export class Colony {
     return best;
   }
 
+  nearestRock(t: Thronglet) {
+    let best: Rock | null = null;
+    let bestD = Infinity;
+    for (const r of this.rocks) {
+      if (r.stone <= 4) continue;
+      const d = Math.hypot(r.x - t.x, r.z - t.z);
+      if (d < bestD) {
+        bestD = d;
+        best = r;
+      }
+    }
+    return best;
+  }
+
   nearestBushWithBerries(t: Thronglet) {
     let best: Bush | null = null;
     let bestD = Infinity;
@@ -901,12 +1039,39 @@ export class Colony {
         best = { x: tub.x + 1.2, z: tub.z + 0.9 };
       }
     }
+    // A finished well is the whole point of digging one: water in the town.
+    for (const site of this.sites) {
+      if (!site.complete || site.kind !== "well") continue;
+      const d = Math.hypot(site.x - t.x, site.z - t.z) - 1.4;
+      if (d < bestD) {
+        bestD = d;
+        best = { x: site.x + 1.5, z: site.z + 1.1 };
+      }
+    }
     return best;
   }
 
   activeSite(): BuildSite | null {
     for (const s of this.sites) if (!s.complete) return s;
     return null;
+  }
+
+  /**
+   * The unfinished site this one should be working on: their own clan's
+   * nearest, so nobody walks across the island to help strangers build.
+   */
+  siteFor(t: Thronglet): BuildSite | null {
+    let best: BuildSite | null = null;
+    let bestD = Infinity;
+    for (const s of this.sites) {
+      if (s.complete || s.clanId !== t.clanId) continue;
+      const d = Math.hypot(s.x - t.x, s.z - t.z);
+      if (d < bestD) {
+        bestD = d;
+        best = s;
+      }
+    }
+    return best;
   }
 
   nearbyFriend(t: Thronglet, radius: number): Thronglet | null {
@@ -937,11 +1102,13 @@ export class Colony {
       ).length;
       if (pending >= 2 + Math.floor(clan.members / 10)) continue;
 
+      this.maybeOutpost(clan);
       const choice = this.chooseStructure(clan);
       if (!choice) continue;
       const spot = this.villagePlot(clan, choice.kind);
       if (!spot) continue;
 
+      const blocks = layout(choice.kind, this.rand, clan.color);
       this.sites.push({
         id: this.nextSiteId++,
         clanId: clan.id,
@@ -949,11 +1116,15 @@ export class Colony {
         x: spot.x,
         z: spot.z,
         y: this.terrain.height(spot.x, spot.z),
-        blocks: layout(choice.kind, this.rand, clan.color),
+        blocks,
         placed: 0,
         wood: 0,
-        woodNeeded: choice.wood,
+        stone: 0,
+        // What it actually takes to put this thing up, counted off the plan.
+        woodNeeded: blocks.filter((b) => b.mat === "wood").length,
+        stoneNeeded: blocks.filter((b) => b.mat === "stone").length,
         complete: false,
+        store: 0,
       });
       this.addLog(
         `The ${clan.name} start a ${choice.label.toLowerCase()}.`,
@@ -966,15 +1137,30 @@ export class Colony {
     const unlocked = STRUCTURE_TIERS.filter((s) => this.knowledge >= s.knowledge);
     if (!unlocked.length) return null;
     const built = this.sites.filter((s) => s.complete && s.clanId === clan.id);
+    const has = (k: StructureKind) => built.some((s) => s.kind === k);
+    const planned = (k: StructureKind) =>
+      this.sites.some((s) => s.clanId === clan.id && s.kind === k && !s.complete);
+    const know = (k: StructureKind) =>
+      this.knowledge >= STRUCTURE_TIERS.find((t) => t.kind === k)!.knowledge;
+
+    // Everything they have buried teaches them something. A clan that has
+    // watched people die of thirst digs a well before it raises a monument.
+    if (clan.lessons.thirst >= 2 && know("well") && !has("well") && !planned("well"))
+      return STRUCTURE_TIERS.find((t) => t.kind === "well")!;
+    if (
+      clan.lessons.famine >= 2 &&
+      know("granary") &&
+      !has("granary") &&
+      !planned("granary")
+    )
+      return STRUCTURE_TIERS.find((t) => t.kind === "granary")!;
+    if (clan.lessons.raided >= 3 && know("tower") && !planned("tower"))
+      return STRUCTURE_TIERS.find((t) => t.kind === "tower")!;
 
     // A people wants somewhere to pray and somewhere to sleep before it wants
     // a monument.
     const shrine = STRUCTURE_TIERS.find((t) => t.kind === "shrine")!;
-    if (
-      this.knowledge >= shrine.knowledge &&
-      !built.some((s) => s.kind === "shrine") &&
-      !this.sites.some((s) => s.clanId === clan.id && s.kind === "shrine")
-    )
+    if (this.knowledge >= shrine.knowledge && !has("shrine") && !planned("shrine"))
       return shrine;
 
     const hut = STRUCTURE_TIERS.find((t) => t.kind === "hut")!;
@@ -991,6 +1177,31 @@ export class Colony {
     return unlocked[0];
   }
 
+  /** Every centre this clan builds around: the town, plus any outposts. */
+  private centresOf(clan: Clan) {
+    return [clan.home, ...clan.outposts];
+  }
+
+  /**
+   * A town that has filled its rings sends people out to start another one.
+   * This is how a clan spreads across the island without splitting in two.
+   */
+  private maybeOutpost(clan: Clan) {
+    if (clan.members < 20) return;
+    const built = this.sites.filter((s) => s.complete && s.clanId === clan.id).length;
+    if (built < 6 + clan.outposts.length * 5) return;
+    if (clan.outposts.length >= 3) return;
+    if (this.rand() > 0.4) return;
+
+    const spot = this.newVillageSpot(clan.home, 20);
+    if (!spot) return;
+    clan.outposts.push(spot);
+    this.addLog(
+      `The ${clan.name} break ground on a second settlement.`,
+      "expand",
+    );
+  }
+
   private villagePlot(clan: Clan, kind: StructureKind) {
     const clear = (x: number, z: number, gap: number) =>
       Math.hypot(x, z) < WORLD_RADIUS * 0.93 &&
@@ -998,16 +1209,35 @@ export class Colony {
       !this.sites.some((s) => Math.hypot(s.x - x, s.z - z) < gap) &&
       !this.trees.some((t) => Math.hypot(t.x - x, t.z - z) < 2.5);
 
-    // The shrine takes the middle of the village; everything else rings it.
+    // The shrine takes the middle of the town; everything else rings it.
     if (kind === "shrine" && clear(clan.home.x, clan.home.z, 4.5))
       return { x: clan.home.x, z: clan.home.z };
 
-    for (let attempt = 0; attempt < 90; attempt++) {
-      const ring = 1 + Math.floor(attempt / 18);
+    const centres = this.centresOf(clan);
+    // Wells go where the water is, if there is any near a centre.
+    if (kind === "well") {
+      for (const centre of centres) {
+        const pond = this.terrain.ponds
+          .map((p) => ({ p, d: Math.hypot(p.x - centre.x, p.z - centre.z) }))
+          .sort((a, b) => a.d - b.d)[0];
+        if (!pond || pond.d > 26) continue;
+        const a = Math.atan2(centre.z - pond.p.z, centre.x - pond.p.x);
+        for (let step = 0; step < 8; step++) {
+          const r = pond.p.r + 1.4 + step * 1.2;
+          const x = pond.p.x + Math.cos(a) * r;
+          const z = pond.p.z + Math.sin(a) * r;
+          if (clear(x, z, 4.4)) return { x, z };
+        }
+      }
+    }
+
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const centre = centres[Math.floor(this.rand() * centres.length)];
+      const ring = 1 + Math.floor(attempt / 20);
       const radius = 4.6 + ring * 3.4 + this.rand() * 1.6;
       const a = this.rand() * Math.PI * 2;
-      const x = clan.home.x + Math.cos(a) * radius;
-      const z = clan.home.z + Math.sin(a) * radius;
+      const x = centre.x + Math.cos(a) * radius;
+      const z = centre.z + Math.sin(a) * radius;
       if (clear(x, z, 5.2)) return { x, z };
     }
     return null;
@@ -1320,11 +1550,22 @@ export class Colony {
     if (t.hurt > 0) t.hurt = Math.max(0, t.hurt - dt * 1.6);
     if (t.combatTimer > 0) t.combatTimer -= dt;
 
-    if (t.hunger > 0.97 || t.thirst > 0.97) t.health -= dt * 0.06;
-    else if (t.hunger < 0.5 && t.thirst < 0.5) t.health = Math.min(1, t.health + dt * 0.03);
+    if (t.hunger > 0.97 || t.thirst > 0.97) {
+      t.health -= dt * 0.06;
+      t.dyingOf = t.thirst > t.hunger ? "thirst" : "hunger";
+    } else if (t.hunger < 0.5 && t.thirst < 0.5) {
+      t.health = Math.min(1, t.health + dt * 0.03);
+      t.dyingOf = null;
+    }
 
     if (t.health <= 0 || t.age > t.genome.lifespan) {
       t.alive = false;
+      // A clan remembers what took its people, and builds accordingly.
+      const clan = this.clanOf(t);
+      if (clan && t.health <= 0 && t.dyingOf) {
+        if (t.dyingOf === "thirst") clan.lessons.thirst++;
+        else clan.lessons.famine++;
+      }
       return;
     }
 
@@ -1395,17 +1636,27 @@ export class Colony {
     // half-full belly from stopping the build entirely, and tiredness is left
     // out on purpose: it bids for sleep on its own, and folding it in here
     // leaves nobody willing to work by mid-afternoon.
-    const site = this.activeSite();
+    const site = this.siteFor(t);
     const pressure = Math.max(t.hunger, t.thirst);
     const calm = Math.max(0, 1 - pressure * pressure);
     if (site && t.stage !== "baby") {
-      const needsWood = site.wood < site.woodNeeded;
-      scores.gather = needsWood ? 0.95 * g.industry * calm : 0;
-      scores.build =
-        site.wood > 0 && site.placed < site.blocks.length
-          ? (t.carryingWood > 0 ? 1.1 : 0.9) * g.industry * calm
+      const short =
+        site.wood < site.woodNeeded || site.stone < site.stoneNeeded;
+      const next = site.blocks[site.placed];
+      const canLay =
+        next &&
+        (next.mat === "thatch" ||
+          (next.mat === "wood" ? site.wood > 0 : site.stone > 0));
+      scores.gather = short ? 0.95 * g.industry * calm : 0;
+      // Filling the store is what they do with a good day.
+      const store = this.granaryOf(t);
+      scores.stock =
+        store && t.hunger < 0.4 && this.nearestTreeWithFruit(t)
+          ? 0.6 * g.industry * calm
           : 0;
-      if (t.carryingWood > 0) scores.build = Math.max(scores.build, 1.2 * calm);
+      scores.build = canLay ? 1.0 * g.industry * calm : 0;
+      if (t.carryingWood > 0 || t.carryingStone > 0)
+        scores.build = Math.max(scores.build, 1.2 * calm);
     }
 
     if (
@@ -1463,6 +1714,8 @@ export class Colony {
         return "raid";
       case "flee":
         return "flee";
+      case "stock":
+        return "stock";
       default:
         return "wander";
     }
@@ -1490,10 +1743,22 @@ export class Colony {
           t.thought = "food fell from the sky!";
           return;
         }
+        // The granary is the point of having one: in a lean week it is
+        // closer than any tree still carrying fruit.
+        const store = this.granaryOf(t, true);
         const tree = this.nearestTreeWithFruit(t);
         const bush = this.nearestBushWithBerries(t);
         const dt_ = tree ? Math.hypot(tree.x - t.x, tree.z - t.z) : Infinity;
         const db = bush ? Math.hypot(bush.x - t.x, bush.z - t.z) : Infinity;
+        const ds = store ? Math.hypot(store.x - t.x, store.z - t.z) : Infinity;
+        if (store && ds < Math.min(dt_, db)) {
+          t.task = "seekFood";
+          t.targetSite = store.id;
+          t.targetTree = null;
+          t.target = { x: store.x + 1.4, z: store.z + 1.2 };
+          t.thought = "the store will have some.";
+          return;
+        }
         if (tree && dt_ <= db) {
           t.task = "seekFood";
           t.targetTree = tree.id;
@@ -1586,11 +1851,35 @@ export class Colony {
         return;
       }
       case "gather": {
+        const site = this.siteFor(t);
+        if (!site) {
+          this.startTask(t, "wander");
+          return;
+        }
+        // Fetch whatever the site is shortest of.
+        const woodShort = Math.max(0, site.woodNeeded - site.wood);
+        const stoneShort = Math.max(0, site.stoneNeeded - site.stone);
+        const wantStone = stoneShort > woodShort;
+
+        if (wantStone) {
+          const rock = this.nearestRock(t);
+          if (rock) {
+            t.task = "gather";
+            t.hauling = "stone";
+            t.targetRock = rock.id;
+            t.targetTree = null;
+            t.targetSite = site.id;
+            t.target = { x: rock.x + 0.9, z: rock.z + 0.6 };
+            t.thought = "stone for the build.";
+            return;
+          }
+        }
         const tree = this.nearestTreeWithWood(t);
-        const site = this.activeSite();
-        if (tree && site) {
+        if (tree) {
           t.task = "gather";
+          t.hauling = "wood";
           t.targetTree = tree.id;
+          t.targetRock = null;
           t.targetSite = site.id;
           t.target = { x: tree.x + 0.8, z: tree.z + 0.5 };
           t.thought = "wood for the build.";
@@ -1598,7 +1887,7 @@ export class Colony {
         return;
       }
       case "build": {
-        const site = this.activeSite();
+        const site = this.siteFor(t);
         if (site) {
           t.task = "build";
           t.targetSite = site.id;
@@ -1671,6 +1960,20 @@ export class Colony {
         } else this.startTask(t, "wander");
         return;
       }
+      case "stock": {
+        const store = this.granaryOf(t);
+        const tree = this.nearestTreeWithFruit(t);
+        if (!store || !tree) {
+          this.startTask(t, "wander");
+          return;
+        }
+        t.task = "stock";
+        t.targetSite = store.id;
+        t.targetTree = tree.id;
+        t.target = { x: tree.x + 0.9, z: tree.z + 0.6 };
+        t.thought = "put some by.";
+        return;
+      }
       case "flee": {
         const clan = this.clanOf(t);
         t.task = "flee";
@@ -1729,6 +2032,15 @@ export class Colony {
     switch (t.task) {
       case "seekFood": {
         if (!atTarget) return;
+        const store = this.sites.find(
+          (s) => s.id === t.targetSite && s.kind === "granary" && s.store > 0,
+        );
+        if (store) {
+          store.store--;
+          this.feed(t, 0.7);
+          t.targetSite = null;
+          return;
+        }
         const drop = this.drops.findIndex(
           (d) => Math.hypot(d.x - t.x, d.z - t.z) < 1.4,
         );
@@ -1838,17 +2150,44 @@ export class Colony {
           t.thinkTimer = 0;
           return;
         }
-        if (t.carryingWood > 0) {
+
+        // Loaded: take it back to the site.
+        if (t.carryingWood > 0 || t.carryingStone > 0) {
           t.target = { x: site.x + 0.8, z: site.z + 0.8 };
           if (Math.hypot(site.x - t.x, site.z - t.z) < 2.2) {
             site.wood += t.carryingWood;
+            site.stone += t.carryingStone;
             t.carryingWood = 0;
+            t.carryingStone = 0;
             t.emote = { icon: "wood", t: 1.2 };
             t.task = "build";
             t.thinkTimer = 0.4;
           }
           return;
         }
+
+        if (t.hauling === "stone") {
+          const rock = this.rocks.find((r) => r.id === t.targetRock);
+          if (!rock || rock.stone <= 4) {
+            t.task = "idle";
+            t.thinkTimer = 0;
+            return;
+          }
+          t.target = { x: rock.x + 0.9, z: rock.z + 0.6 };
+          if (Math.hypot(rock.x - t.x, rock.z - t.z) > 1.9) return;
+          t.taskTimer += dt;
+          t.hop = Math.max(t.hop, 0.7);
+          if (t.taskTimer > 3.2) {
+            this.name(t, "stone");
+            const take = Math.min(7, Math.floor(rock.stone));
+            rock.stone -= take;
+            t.carryingStone = take;
+            t.taskTimer = 0;
+            t.thought = "carrying stone.";
+          }
+          return;
+        }
+
         const tree = this.trees.find((tr) => tr.id === t.targetTree);
         if (!tree || tree.wood <= 4) {
           t.task = "idle";
@@ -1861,7 +2200,9 @@ export class Colony {
         t.hop = Math.max(t.hop, 0.6);
         if (t.taskTimer > 2.4) {
           this.name(t, "wood");
-          const take = Math.min(9, Math.floor(tree.wood));
+          // Oak and pine give more per trip than an apple tree does.
+          const yield_ = tree.kind === "oak" ? 14 : tree.kind === "pine" ? 11 : 9;
+          const take = Math.min(yield_, Math.floor(tree.wood));
           tree.wood -= take;
           t.carryingWood = take;
           t.taskTimer = 0;
@@ -1870,7 +2211,7 @@ export class Colony {
         return;
       }
       case "build": {
-        const site = this.sites.find((s) => s.id === t.targetSite) ?? this.activeSite();
+        const site = this.sites.find((s) => s.id === t.targetSite) ?? this.siteFor(t);
         if (!site || site.complete) {
           t.task = "idle";
           t.thinkTimer = 0;
@@ -1881,11 +2222,18 @@ export class Colony {
           t.target = { x: site.x + range(this.rand, -1.8, 1.8), z: site.z + range(this.rand, -1.8, 1.8) };
           return;
         }
-        if (t.carryingWood > 0) {
+        if (t.carryingWood > 0 || t.carryingStone > 0) {
           site.wood += t.carryingWood;
+          site.stone += t.carryingStone;
           t.carryingWood = 0;
+          t.carryingStone = 0;
         }
-        if (site.wood <= 0 || site.placed >= site.blocks.length) {
+        const next = site.blocks[site.placed];
+        const haveMaterial =
+          !next ||
+          next.mat === "thatch" ||
+          (next.mat === "wood" ? site.wood > 0 : site.stone > 0);
+        if (!next || !haveMaterial) {
           t.task = "idle";
           t.thinkTimer = 0;
           return;
@@ -1895,7 +2243,8 @@ export class Colony {
         if (t.taskTimer > 0.9) {
           t.taskTimer = 0;
           site.placed++;
-          site.wood -= 1;
+          if (next.mat === "wood") site.wood -= 1;
+          else if (next.mat === "stone") site.stone -= 1;
           t.blocksPlaced++;
           if (this.rand() < 0.05) this.name(t, "build");
           this.knowledge += 0.4;
@@ -1996,6 +2345,7 @@ export class Colony {
             shrine.complete = false;
             const victim = this.clans.find((c) => c.id === shrine.clanId);
             if (victim) {
+              victim.lessons.raided++;
               adjustRelation(clan, victim, -0.06);
               if (this.rand() < 0.12)
                 this.addLog(
@@ -2012,6 +2362,42 @@ export class Colony {
         else if (atTarget) {
           t.task = "idle";
           t.thinkTimer = 0;
+        }
+        return;
+      }
+      case "stock": {
+        const store = this.sites.find((s) => s.id === t.targetSite);
+        if (!store || !store.complete) {
+          t.task = "idle";
+          t.thinkTimer = 0;
+          return;
+        }
+        if (t.carryingFood > 0) {
+          t.target = { x: store.x + 1.2, z: store.z + 1.0 };
+          if (Math.hypot(store.x - t.x, store.z - t.z) < 2.4) {
+            store.store += t.carryingFood;
+            t.carryingFood = 0;
+            t.emote = { icon: "apple", t: 1.2 };
+            t.task = "idle";
+            t.thinkTimer = 0;
+          }
+          return;
+        }
+        const tree = this.trees.find((tr) => tr.id === t.targetTree);
+        if (!tree || tree.fruit <= 0) {
+          t.task = "idle";
+          t.thinkTimer = 0;
+          return;
+        }
+        t.target = { x: tree.x + 0.9, z: tree.z + 0.6 };
+        if (Math.hypot(tree.x - t.x, tree.z - t.z) > 1.8) return;
+        t.taskTimer += dt;
+        if (t.taskTimer > 1.6) {
+          const take = Math.min(3, tree.fruit);
+          tree.fruit -= take;
+          t.carryingFood = take;
+          t.taskTimer = 0;
+          t.thought = "carrying it back.";
         }
         return;
       }
@@ -2109,7 +2495,10 @@ export class Colony {
       foe.slain = true;
       attacker.kills++;
       this.killed++;
-      if (theirs) theirs.losses++;
+      if (theirs) {
+        theirs.losses++;
+        theirs.lessons.raided++;
+      }
       if (mine && theirs) adjustRelation(mine, theirs, -0.12);
       this.addLog(
         `${foe.name} of the ${theirs?.name ?? "lost"} falls to ${attacker.name}.`,
@@ -2322,6 +2711,7 @@ export class Colony {
     const fruitSlots = fruitSlotsFor(this.rand, capacity, 0.9);
     this.trees.push({
       id,
+      kind: "apple",
       x,
       z,
       y,
@@ -2330,7 +2720,7 @@ export class Colony {
       fruit: 2,
       capacity,
       regrow: 0,
-      wood: 45,
+      wood: TREE_TRAITS.apple.wood,
       fruitSlots,
     });
     return true;

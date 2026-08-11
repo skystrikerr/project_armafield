@@ -17,7 +17,12 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { ThrongletSim, type SimSnapshot, type Tool } from "@/thronglets/scene";
+import {
+  MORPH_NAMES,
+  ThrongletSim,
+  type SimSnapshot,
+  type Tool,
+} from "@/thronglets/scene";
 import type { ClanReport, Thronglet } from "@/thronglets/colony";
 import { TIER_NAMES } from "@/thronglets/colony";
 import { relationLabel } from "@/thronglets/clans";
@@ -39,6 +44,7 @@ const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 
 const TASK_LABEL: Record<string, string> = {
   worship: "at the shrine",
+  stock: "filling the store",
   raid: "raiding",
   flee: "fleeing",
   idle: "thinking",
@@ -186,6 +192,11 @@ function PeoplesPanel({
                 </span>
               </button>
               <p className="mt-1 text-[10px] text-white/50">
+                {c.outposts > 0 && (
+                  <span className="text-emerald-300/70">
+                    {c.outposts + 1} towns ·{" "}
+                  </span>
+                )}
                 worship {c.deity}
                 {c.heresy && (
                   <span className="text-rose-300/70"> · heresy</span>
@@ -195,6 +206,20 @@ function PeoplesPanel({
                 )}
               </p>
               <p className="text-[10px] italic text-white/35">“{c.creed}”</p>
+              {(c.lessons.thirst > 0 ||
+                c.lessons.famine > 0 ||
+                c.lessons.raided > 0) && (
+                <p className="mt-1 text-[10px] text-amber-200/60">
+                  learned:{" "}
+                  {[
+                    c.lessons.thirst > 0 && `thirst ×${c.lessons.thirst}`,
+                    c.lessons.famine > 0 && `famine ×${c.lessons.famine}`,
+                    c.lessons.raided > 0 && `raids ×${c.lessons.raided}`,
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
               {c.tongue.length > 0 && (
                 <div className="mt-1.5 border-t border-white/10 pt-1.5">
                   <p className="mb-1 text-[9px] uppercase tracking-wider text-white/30">
@@ -510,6 +535,8 @@ export default function Thronglets() {
             <Stat label="Clans" value={snapshot?.clans ?? 0} />
             <Stat label="Gods" value={snapshot?.faiths ?? 0} />
             <Stat label="Words" value={snapshot?.words ?? 0} />
+            <Stat label="Towns" value={snapshot?.towns ?? 0} />
+            <Stat label="Stone" value={snapshot?.stoneLeft ?? 0} />
             <Stat
               label="Wars"
               value={`${snapshot?.wars ?? 0}${snapshot?.killed ? ` · ${snapshot.killed}†` : ""}`}
@@ -671,7 +698,8 @@ export default function Thronglets() {
                 {Math.floor(selected.age)}s old
               </p>
               <p className="mt-0.5 text-[10px] text-white/35">
-                of the {selected.family} line ·{" "}
+                {MORPH_NAMES[Math.floor(selected.genome.morph)] ?? "amber"} ·{" "}
+                {selected.family} line ·{" "}
                 {selected.parentNames
                   ? `child of ${selected.parentNames[0]} & ${selected.parentNames[1]}`
                   : "one of the first"}
@@ -732,6 +760,21 @@ export default function Thronglets() {
             <Trait label="Devotion" value={selected.genome.devotion} />
             <Trait label="Temper" value={selected.genome.aggression} />
           </div>
+
+          {(selected.carryingWood > 0 ||
+            selected.carryingStone > 0 ||
+            selected.carryingFood > 0) && (
+            <p className="mt-2 text-[10px] text-amber-200/70">
+              carrying{" "}
+              {[
+                selected.carryingWood > 0 && `${selected.carryingWood} wood`,
+                selected.carryingStone > 0 && `${selected.carryingStone} stone`,
+                selected.carryingFood > 0 && `${selected.carryingFood} food`,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+            </p>
+          )}
 
           <div className="mt-2 flex justify-between border-t border-white/10 pt-2 text-[10px] text-white/40">
             <span>{selected.blocksPlaced} blocks</span>

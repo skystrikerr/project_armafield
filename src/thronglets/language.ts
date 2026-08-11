@@ -25,7 +25,9 @@ export type Concept =
   | "wood"
   | "play"
   | "fight"
-  | "hunger";
+  | "hunger"
+  | "stone"
+  | "town";
 
 export const CONCEPTS: Concept[] = [
   "food",
@@ -42,6 +44,8 @@ export const CONCEPTS: Concept[] = [
   "play",
   "fight",
   "hunger",
+  "stone",
+  "town",
 ];
 
 /** What each concept means, for the glosses in the UI. */
@@ -60,6 +64,8 @@ export const CONCEPT_GLOSS: Record<Concept, string> = {
   play: "play",
   fight: "to fight",
   hunger: "hunger",
+  stone: "stone",
+  town: "town",
 };
 
 const ONSETS = [

@@ -41,6 +41,13 @@ export type Clan = {
   phonology: Phonology;
   /** Everything they have found a word for. */
   lexicon: Lexicon;
+  /**
+   * What this clan has learned the hard way. Each is a count of the deaths or
+   * raids that taught it, and each biases what they build next.
+   */
+  lessons: { thirst: number; famine: number; raided: number };
+  /** Daughter settlements: extra centres this clan builds around. */
+  outposts: { x: number; z: number }[];
 };
 
 const CLAN_HEAD = [
@@ -202,6 +209,8 @@ export function makeClan(
     converts: 0,
     phonology: makePhonology(rand),
     lexicon: new Map(),
+    lessons: { thirst: 0, famine: 0, raided: 0 },
+    outposts: [],
   };
 }
 

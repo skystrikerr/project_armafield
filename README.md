@@ -56,6 +56,27 @@ somebody running. Grief is the only thing that reliably ends a war.
 The peoples panel lists who is alive, what they worship, and how each clan
 feels about the others; click one to fly to its village.
 
+## An island with materials
+
+Four kinds of tree, placed where they belong: palms along the shore, pines on
+the high ground, oaks through the deep inland, apples everywhere temperate.
+Only apples and palms fruit — oak and pine are what you build from. Boulders
+outcrop in fields and hold stone that does not grow back.
+
+Every block in a building is timber, stone or free thatch, so gatherers fetch
+whichever their town is short of, and quarrying stone is slower than chopping
+wood. A town that fills its rings breaks ground on a second settlement nearby.
+Wells go by the water; granaries get filled on good days and emptied on bad
+ones.
+
+Each clan tallies what has actually killed its people and builds against it —
+two deaths from thirst and they dig a well before anything else, three raids
+and they put up a watchtower. A clan on good ground never bothers with any of
+it.
+
+Creatures come in seven colour schemes, inherited from a parent with a small
+chance of something new, so towns drift towards a look of their own.
+
 ## Their own language
 
 Each clan invents its own words. It gets a sound system when it is founded,
