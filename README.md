@@ -4,9 +4,11 @@ A colony of little yellow voxel creatures that live, learn and build on their
 own, rendered in three.js. Inspired by the Tamagotchi-like creatures in the
 *Black Mirror* episode "Plaything" — an unaffiliated fan project.
 
-It opens as **THRONG.SYS**: a colony process someone left running unattended.
-Black screen, phosphor green, scanlines, `do not terminate`. That is the frame,
-and the colony eventually notices it — see [Being watched](#being-watched).
+It opens as a naturalist's monograph — printed paper, Garamond, ruled data
+tables, red annotations — because every simulation and AI toy reaches for the
+same two skins, dark glass or a green terminal, and both say *software* rather
+than *place*. You are whoever is keeping the notebook. That is the frame, and
+the colony eventually notices it — see [Being watched](#being-watched).
 
 The island runs 230 units across, with around fourteen hundred trees of four
 kinds, four hundred boulders in fields, thirty ponds, room for fourteen clans
@@ -20,7 +22,7 @@ build, who they pair off with and whether the colony thrives are all emergent.
 Watch long enough and you'll see a village appear, generations turn over, and
 inherited traits drift across the population.
 
-![day 2: sixty alive, a granary up, a heresy already split off, and one of them looking up](docs/colony.png)
+![day 8 of the second year: 344 alive across fourteen peoples, the age of Settled four-fifths done, sixteen feuds open, and a third of them aware they are being observed](docs/colony.png)
 
 ## Running it
 
@@ -47,7 +49,10 @@ The sim opens on a top-down view of the island.
 | `f` | Focus the selected creature |
 
 Speed runs up to 8×, and the refresh button in the corner grows a brand new
-island. `pixel` and `shadows` toggle the look and the expensive lighting.
+island. `plate`, `shadow` and `names` toggle the pixel look, the expensive
+lighting, and the town names lettered onto the island — which are the words
+the clans coined for themselves, so the island reads as a map of somewhere
+rather than scenery.
 
 ## Peoples, gods and war
 
@@ -61,6 +66,36 @@ somebody running. Grief is the only thing that reliably ends a war.
 
 The peoples panel lists who is alive, what they worship, and how each clan
 feels about the others; click one to fly to its village.
+
+## The long climb
+
+Seventeen technologies over six ages, and none of them on a timer.
+
+| Age | What they work out |
+| --- | --- |
+| **Wandering** | fire · knapping · burial |
+| **Hearth** | cooking · baskets · weaving |
+| **Settled** | sowing · pottery · masonry |
+| **Craft** | the kiln · the wheel · counting |
+| **Forge** | smelting · writing · medicine |
+| **Watching** | astronomy · law |
+
+A technology accrues effort only while somebody is *actually standing in the
+situation that would suggest it* — awake and freezing beside a woodpile,
+hungry within reach of a fire, hauling a load too heavy, burying a third
+sibling, laying a stone that will not sit flat. A people on easy ground climbs
+slowly because nothing is pressing it. An age is a floor: nothing above it
+starts until the one below is finished, so the ladder is climbed in order.
+
+Being taught beats inventing. Where two peoples on good terms live close
+enough to see each other work, the one behind picks up the one ahead about
+three times faster than working it out alone — so an island of feuds does not
+climb, and a friendly neighbour is worth more than a good quarry. A schism
+carries the whole toolkit out with it.
+
+Each age brings buildings: hearths, then granaries and wells and grove plots,
+then a kiln, then a forge and an archive, and finally a hall and an
+observatory — which is a people deliberately looking for whatever is up there.
 
 ## Weather, and working things out
 
@@ -76,9 +111,9 @@ and it is logged with their name:
 > **First fire on the island — Snool of the Cinderhollow.**
 > *Snool of the Cinderhollow works out fire on a bitter night.*
 
-Fire, then cooking at a fire, then baskets from somebody who has hauled enough
-loads to resent it, then burial from a clan that has buried enough of its own.
-Hearths cannot be built by a people who have not worked fire out.
+Hearths cannot be built by a people who have not worked fire out; wells and
+watchtowers wait on masonry; grove plots on sowing. Nothing in the world is
+available because a number went up.
 
 Knowing a word is personal too: each creature only knows what it has said or
 heard, and picks words up one at a time from whoever it is standing next to.
@@ -90,10 +125,12 @@ first snow, the first rain: each logged as news once, and never again.
 
 The colony slowly works out that something is looking at it.
 
-Attention builds with the throng's shared knowledge, with every monolith
-finished, and with how many peoples are on the island — a small, distracted
-society never notices, a clever and crowded one always does. It eases towards
-its target rather than jumping, so the island takes days to arrive at the idea.
+Attention is driven by how far they have **climbed** — the age the leading
+people has reached — plus every monolith and observatory they finish. Scoring
+it off raw activity made a big colony suspect it was watched inside a week
+purely by laying a lot of blocks; an age is the honest measure, because it is
+the thing that takes weeks to move. It eases towards its target rather than
+jumping, so the island takes days to arrive at the idea.
 
 As it climbs, individuals start catching it. One stops mid-job, turns to face
 wherever your camera actually is, tips its head back and holds there, thinking:
@@ -103,11 +140,16 @@ wherever your camera actually is, tips its head back and holds there, thinking:
 > put him back. · hello? · you.*
 
 The first few times the island reaches for the thought it is logged as news,
-alongside first fire and first snow. A red readout appears — **they are aware
-of you**, with a count of how many are looking up right now — and the screen
-picks up an interference wash that worsens the higher it goes. Move the camera
-and their heads follow it, because they are tracking the camera and not a
-marker on the ground.
+alongside first fire and first snow. A red line is struck through the
+observer's own record — **they are aware of being observed** — with a count of
+how many are looking up right now.
+
+And then their words start appearing in the margins of your page: real
+coinages out of their own lexicon, scrawled in red, more of them the higher it
+goes, multiplied into the paper so they read as ink soaking through rather
+than an overlay. The notebook stops being solely yours. Move the camera and
+their heads follow it, because they are tracking the camera and not a marker
+on the ground.
 
 Picking one up and putting it back down feeds this. So does doing nothing at
 all, eventually.
@@ -178,15 +220,20 @@ name their own gods, word their own creeds and invent their own vocabulary
 procedurally. Or connect a **language model** and it writes the scripture
 instead. Open the brain icon and pick:
 
-| Provider | Endpoint | Notes |
+| Provider | Models offered | Notes |
 | --- | --- | --- |
-| Local (Ollama) | `http://localhost:11434` | `ollama serve`, `ollama pull llama3.2`. Start with `OLLAMA_ORIGINS=*` so the page may call it. No key needed. |
-| OpenAI-compatible | `/v1/chat/completions` | OpenAI, LM Studio, vLLM, OpenRouter. |
-| Anthropic | `/v1/messages` | Called from the browser with the direct-browser-access header. |
+| **Claude** | Opus 5 · Sonnet 5 · Haiku 4.5 | Called from the browser with the direct-browser-access header. |
+| OpenAI | GPT-4o · 4o-mini · 4.1-mini | The standard `/v1/chat/completions` API. |
+| Gemini | 2.0 Flash · Flash-Lite · 1.5 Pro | Google AI Studio. A free-tier key works. |
+| Local (Ollama) | whatever you have pulled | `ollama serve` with `OLLAMA_ORIGINS=*`. No key, nothing leaves the machine. |
+| Anything OpenAI-compatible | — | LM Studio, vLLM, llama.cpp, OpenRouter, your own proxy. |
 
-It can name the gods and word their creeds, speak for whichever creature you
-have selected, read a clan's invented language back to you, or turn the event
-log into a chronicle. It is off by default,
+**Ask the endpoint** fetches the real model list where the API allows it, and
+**test the connection** does one tiny round trip so you find out the key is
+wrong now rather than the first time a clan tries to name its god. It can then
+name the gods and word their creeds, speak for whichever creature you have
+under observation, read the age they have reached, read a clan's invented
+language back to you, or turn the record into a chronicle. It is off by default,
 every piece of text has a procedural fallback, and the endpoint, model and key
 stay in your browser's localStorage.
 
@@ -221,6 +268,7 @@ src/
   Thronglets.tsx        the page: canvas + HUD
   thronglets/
     colony.ts           the simulation — needs, AI, building, breeding, attention (no three.js)
+    tech.ts             the ladder: 17 technologies over 6 ages
     scene.ts            rendering and input
     models.ts           every model, authored voxel by voxel
     voxel.ts            voxel grid → geometry baker

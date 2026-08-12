@@ -25,11 +25,20 @@ import {
   makeClan,
   makeFaith,
   relationOf,
+  clanEra,
   splinterFaith,
   type Clan,
   type Discovery,
   type Faith,
 } from "./clans";
+import {
+  ERAS,
+  reachable,
+  TEACH_RATE,
+  TECH_BY_ID,
+  TECHS,
+  type Tech,
+} from "./tech";
 import {
   findLandSpot,
   fruitSlotsFor,
@@ -76,13 +85,28 @@ const FOOTPRINT: Record<StructureKind, number> = {
   granary: 1.3,
   farm: 0,
   tower: 1.0,
+  kiln: 0.9,
+  forge: 1.2,
+  archive: 1.3,
+  hall: 1.6,
+  observatory: 1.4,
   monolith: 1.2,
 };
 export const DAY_LENGTH = 150; // sim seconds for a full day/night cycle
 export const POP_CAP = 560;
 
-/** A clan this big starts looking for reasons to split. */
-const SCHISM_SIZE = 30;
+/**
+ * A clan this big starts looking for reasons to split.
+ *
+ * This has to sit well above the island's average clan size or the colony
+ * never gets anywhere: at 30, with room for fourteen peoples and five
+ * hundred creatures, every people that grew large enough to attempt anything
+ * immediately shed a third of itself, and the island spent forever as a
+ * dozen villages of twenty who could not finish a granary between them.
+ */
+const SCHISM_SIZE = 58;
+/** And it has to have been a people for a while before it can stop being one. */
+const SCHISM_MIN_AGE = DAY_LENGTH * 2;
 /** Past this many living clans the island stops splintering further. */
 const MAX_CLANS = 14;
 /** Villages are kept at least this far apart. */
@@ -267,6 +291,11 @@ export type StructureKind =
   | "granary"
   | "farm"
   | "tower"
+  | "kiln"
+  | "forge"
+  | "archive"
+  | "hall"
+  | "observatory"
   | "monolith";
 
 export type BuildSite = {
@@ -317,6 +346,28 @@ export type ColonyStats = {
   discoveries: number;
   attention: number;
   watching: number;
+  /** The age the most advanced people on the island has reached. */
+  era: number;
+  eraName: string;
+  /** How far that people is through the age it is in, 0–1. */
+  eraProgress: number;
+};
+
+/** One line of a clan's tech tree, for the HUD. */
+export type TechReport = {
+  id: string;
+  label: string;
+  era: number;
+  known: boolean;
+  /** Whether they could be working on it right now. */
+  open: boolean;
+  /** 0–1 through its cost. */
+  progress: number;
+  by: string | null;
+  day: number | null;
+  effect: string;
+  pressure: string;
+  needs: string[];
 };
 
 export type ClanReport = {
@@ -348,6 +399,12 @@ export type ClanReport = {
   discoveries: { what: string; by: string; day: number }[];
   /** How far each neighbour's tongue has drifted from this one. */
   drift: { name: string; value: number }[];
+  /** The age this people has reached, and its whole ladder. */
+  era: number;
+  eraName: string;
+  tech: TechReport[];
+  /** Set while a friendlier, cleverer neighbour is showing them something. */
+  taughtBy: string | null;
 };
 
 /** What they think when they notice. Deliberately not cute. */
@@ -401,22 +458,41 @@ function makeName(rand: Rand) {
   return n[0].toUpperCase() + n.slice(1);
 }
 
+/**
+ * What a people can raise, and what it takes to be allowed to.
+ *
+ * Almost everything past a pile of sticks is gated on a *technology* rather
+ * than on the throng's knowledge score. The knowledge floor that remains is
+ * there so a clan cannot put up a monolith the week it works out writing —
+ * it still has to be a substantial people first.
+ */
 const STRUCTURE_TIERS: {
   kind: StructureKind;
   label: string;
   knowledge: number;
+  tech: Tech | null;
 }[] = [
-  { kind: "cairn", label: "Cairn", knowledge: 0 },
-  { kind: "hearth", label: "Hearth", knowledge: 0 },
-  { kind: "hut", label: "Hut", knowledge: 25 },
-  { kind: "well", label: "Well", knowledge: 40 },
-  { kind: "shrine", label: "Shrine", knowledge: 55 },
-  { kind: "granary", label: "Granary", knowledge: 70 },
-  { kind: "farm", label: "Grove plot", knowledge: 90 },
-  { kind: "tower", label: "Watchtower", knowledge: 220 },
-  { kind: "monolith", label: "Monolith", knowledge: 450 },
+  { kind: "cairn", label: "Cairn", knowledge: 0, tech: null },
+  { kind: "hearth", label: "Hearth", knowledge: 0, tech: "fire" },
+  { kind: "hut", label: "Hut", knowledge: 25, tech: null },
+  { kind: "shrine", label: "Shrine", knowledge: 55, tech: null },
+  { kind: "granary", label: "Granary", knowledge: 60, tech: "baskets" },
+  { kind: "well", label: "Well", knowledge: 40, tech: "masonry" },
+  { kind: "farm", label: "Grove plot", knowledge: 90, tech: "sowing" },
+  { kind: "tower", label: "Watchtower", knowledge: 200, tech: "masonry" },
+  { kind: "kiln", label: "Kiln", knowledge: 260, tech: "kiln" },
+  { kind: "forge", label: "Forge", knowledge: 400, tech: "smelting" },
+  { kind: "archive", label: "Archive", knowledge: 460, tech: "writing" },
+  { kind: "hall", label: "Hall", knowledge: 520, tech: "law" },
+  { kind: "observatory", label: "Observatory", knowledge: 600, tech: "astronomy" },
+  { kind: "monolith", label: "Monolith", knowledge: 700, tech: "writing" },
 ];
 
+/**
+ * The old knowledge tiers, kept for the throng's own readout. A clan's age
+ * comes from what it knows how to do (`tech.ts`); this is the island-wide
+ * scoreboard the throng keeps of itself.
+ */
 export const TIER_NAMES = [
   "Scattered",
   "Nesting",
@@ -439,6 +515,8 @@ function layout(kind: StructureKind, rand: Rand, accent: number): Block[] {
   const leaf = 0x4f9b3d;
   const dirt = 0x6d5133;
   const dark = 0x22262b;
+  const clay = 0xb0653f;
+  const iron = 0x8e9aa6;
 
   // Thatch and turf are free: it is the timber and the stone they have to
   // fetch, so those are the only colours that cost anything.
@@ -569,6 +647,113 @@ function layout(kind: StructureKind, rand: Rand, accent: number): Block[] {
         if (Math.abs(x) === 2 || Math.abs(z) === 2) push(x, 12, z, wood);
       }
     push(0, 13, 0, 0xf0d264);
+  } else if (kind === "kiln") {
+    // A domed oven: a fire they have finally stopped letting escape.
+    for (let x = -2; x <= 2; x++)
+      for (let z = -2; z <= 2; z++) push(x, 0, z, stoneDark);
+    for (let y = 1; y <= 3; y++)
+      for (let x = -2; x <= 2; x++)
+        for (let z = -2; z <= 2; z++) {
+          if (Math.abs(x) < 2 && Math.abs(z) < 2) continue;
+          if (y < 3 && x === 0 && z === 2) continue; // the mouth
+          push(x, y, z, y === 2 ? clay : stone);
+        }
+    for (let x = -1; x <= 1; x++)
+      for (let z = -1; z <= 1; z++) push(x, 4, z, clay);
+    push(0, 5, 0, stoneDark);
+    push(0, 1, 1, 0xff9a3c);
+    push(0, 0, 2, 0xff7a20);
+  } else if (kind === "forge") {
+    // A stone shed with a chimney and a quench trough. The first building on
+    // the island that exists to make other things.
+    for (let x = -3; x <= 3; x++)
+      for (let z = -2; z <= 2; z++) push(x, 0, z, stoneDark);
+    for (let y = 1; y <= 4; y++)
+      for (let x = -3; x <= 3; x++)
+        for (let z = -2; z <= 2; z++) {
+          const edge = Math.abs(x) === 3 || Math.abs(z) === 2;
+          if (!edge) continue;
+          if (y < 3 && x >= 0 && x <= 1 && z === 2) continue; // doorway
+          push(x, y, z, y === 1 ? stoneDark : stone);
+        }
+    for (let x = -3; x <= 3; x++)
+      for (let z = -2; z <= 2; z++) push(x, 5, z, woodDark);
+    for (let y = 5; y <= 8; y++) push(-2, y, -1, stoneDark);
+    push(-2, 9, -1, 0x4a4f56);
+    // the fire inside, seen through the door
+    push(2, 1, 0, 0xff7a20);
+    push(2, 2, 0, 0xffb347);
+    push(-1, 1, 0, iron);
+    push(0, 1, 0, iron);
+  } else if (kind === "archive") {
+    // Low, thick-walled, windowless: the first thing they build to outlast
+    // the people who remember why.
+    for (let x = -3; x <= 3; x++)
+      for (let z = -3; z <= 3; z++)
+        push(x, 0, z, (x + z) % 2 === 0 ? stone : stoneDark);
+    for (let y = 1; y <= 4; y++)
+      for (let x = -3; x <= 3; x++)
+        for (let z = -3; z <= 3; z++) {
+          const edge = Math.abs(x) === 3 || Math.abs(z) === 3;
+          if (!edge) continue;
+          if (y < 3 && x === 0 && z === 3) continue; // doorway
+          // Cut marks: their own writing, in the clan's colour.
+          const carved = y === 2 && Math.abs(x) !== 3 && (x + y) % 3 === 0;
+          push(x, y, z, carved ? accent : y === 4 ? stoneDark : stone);
+        }
+    for (let x = -3; x <= 3; x++)
+      for (let z = -3; z <= 3; z++) push(x, 5, z, stoneDark);
+    for (let x = -1; x <= 1; x++)
+      for (let z = -1; z <= 1; z++) push(x, 6, z, stone);
+    push(0, 7, 0, accent);
+  } else if (kind === "hall") {
+    // A long roofed room with a fire down the middle and the clan's banner at
+    // the gable. Where the arguing stops being fights.
+    for (let x = -5; x <= 5; x++)
+      for (let z = -3; z <= 3; z++) push(x, 0, z, woodDark);
+    for (let y = 1; y <= 4; y++)
+      for (let x = -5; x <= 5; x++)
+        for (let z = -3; z <= 3; z++) {
+          const edge = Math.abs(x) === 5 || Math.abs(z) === 3;
+          if (!edge) continue;
+          if (y < 3 && Math.abs(x) <= 1 && z === 3) continue; // wide doorway
+          push(x, y, z, Math.abs(x) === 5 ? stone : wood);
+        }
+    for (let x = -5; x <= 5; x++)
+      for (let z = -3; z <= 3; z++) push(x, 5, z, woodDark);
+    for (let x = -4; x <= 4; x++)
+      for (let z = -2; z <= 2; z++)
+        if (Math.abs(z) <= 1) push(x, 6, z, leaf);
+    for (let x = -3; x <= 3; x++) push(x, 7, 0, leaf);
+    push(0, 8, 0, accent);
+    push(0, 9, 0, accent);
+    // the long fire
+    for (const x of [-2, 0, 2]) push(x, 1, 0, 0xff9a3c);
+  } else if (kind === "observatory") {
+    // A stepped drum with an open eye at the top, aimed at whatever it is
+    // they have decided is up there.
+    for (let y = 0; y <= 7; y++) {
+      const r = y < 2 ? 3 : y < 5 ? 2 : 2;
+      for (let x = -r; x <= r; x++)
+        for (let z = -r; z <= r; z++) {
+          const rim = Math.abs(x) === r || Math.abs(z) === r;
+          if (y === 0) push(x, y, z, stoneDark);
+          else if (rim) {
+            if (y < 3 && x === 0 && z === r) continue; // doorway
+            push(x, y, z, y % 3 === 0 ? stoneDark : stone);
+          }
+        }
+    }
+    // the ring at the top, and the lens looking out of it
+    for (let x = -2; x <= 2; x++)
+      for (let z = -2; z <= 2; z++) {
+        if (Math.abs(x) === 2 || Math.abs(z) === 2) push(x, 8, z, stoneDark);
+      }
+    push(0, 8, 0, dark);
+    push(0, 9, 0, dark);
+    push(0, 10, 0, 0x63e0b6);
+    push(1, 9, 0, accent);
+    push(-1, 9, 0, accent);
   } else {
     // The monolith: a black slab of stacked "compute" the colony feeds.
     for (let y = 0; y < 14; y++)
@@ -631,6 +816,8 @@ export class Colony {
   /** Population sampled over time, for the chart in the HUD. */
   history: number[] = [];
   private historyTimer = 0;
+  /** Time banked since the last pass over who is inventing what. */
+  private techAccum = 0;
   knowledge = 0;
   births = 0;
   deaths = 0;
@@ -814,6 +1001,12 @@ export class Colony {
       emote: null,
     };
     this.updateStage(t);
+    // A people that has written its language down does not hand it over one
+    // word at a time any more: it teaches the lot, on day one. This is the
+    // moment a tongue stops eroding between generations.
+    const clan = this.clans.find((c) => c.id === clanId);
+    if (clan?.discoveries.has("writing"))
+      clan.lexicon.forEach((_, concept) => t.known.add(concept));
     this.thronglets.push(t);
     this.generation = Math.max(this.generation, gen);
     return t;
@@ -878,6 +1071,48 @@ export class Colony {
             ? 0.96
             : 1;
     t.scale = growth * t.genome.size;
+  }
+
+  /* ---------------- what their technology buys them ---------------- */
+
+  /**
+   * How much faster this people works than a people with nothing. Sharp
+   * stone, then fired brick, then metal — each one shaves the time off every
+   * swing, which is why a clan two ages ahead builds towns while its
+   * neighbours are still stacking sticks.
+   */
+  workRate(clan: Clan | null) {
+    if (!clan) return 1;
+    const d = clan.discoveries;
+    return (
+      1 +
+      (d.has("knapping") ? 0.25 : 0) +
+      (d.has("kiln") ? 0.2 : 0) +
+      (d.has("smelting") ? 0.3 : 0)
+    );
+  }
+
+  /** How much one trip carries: an armful, a basket, then a cart. */
+  carryMul(clan: Clan | null) {
+    if (!clan) return 1;
+    return (
+      1 + (clan.discoveries.has("baskets") ? 0.6 : 0) +
+      (clan.discoveries.has("wheel") ? 0.5 : 0)
+    );
+  }
+
+  /** Cloth: the difference between cold being uncomfortable and cold killing. */
+  clothing(clan: Clan | null) {
+    return clan?.discoveries.has("weaving") ? 0.16 : 0;
+  }
+
+  /** How much a granary holds, and how well it keeps it. */
+  storeMul(clan: Clan | null) {
+    if (!clan) return 1;
+    return (
+      1 + (clan.discoveries.has("pottery") ? 0.8 : 0) +
+      (clan.discoveries.has("numbers") ? 0.4 : 0)
+    );
   }
 
   /* ---------------- language ---------------- */
@@ -1013,7 +1248,9 @@ export class Colony {
     for (const s of this.sites) {
       if (!s.complete || s.kind !== "granary" || s.clanId !== t.clanId) continue;
       if (needsStock && s.store <= 0) continue;
-      if (!needsStock && s.store >= 40) continue;
+      // Fired jars hold more than a heap under thatch, and honest counting
+      // means less of it goes missing.
+      if (!needsStock && s.store >= 40 * this.storeMul(this.clanOf(t))) continue;
       const d = Math.hypot(s.x - t.x, s.z - t.z);
       if (d < bestD) {
         bestD = d;
@@ -1178,7 +1415,68 @@ export class Colony {
       ).size,
       attention: this.attention,
       watching: this.thronglets.filter((t) => t.staring > 0).length,
+      era: this.leadEra,
+      eraName: ERAS[this.leadEra].name,
+      eraProgress: this.leadEraProgress,
     };
+  }
+
+  /** The age the furthest-along people on the island has reached. */
+  get leadEra() {
+    let best = 0;
+    for (const c of this.clans) {
+      if (c.members <= 0) continue;
+      best = Math.max(best, clanEra(c));
+    }
+    return best;
+  }
+
+  /**
+   * How far the leading people is through the age above the one it has
+   * finished — counted in banked effort, not in techs held, so the bar moves
+   * every day rather than jumping four times a week.
+   */
+  get leadEraProgress() {
+    const era = this.leadEra;
+    if (era >= ERAS.length - 1) return 1;
+    const next = TECHS.filter((t) => t.era === era);
+    if (!next.length) return 1;
+    let best = 0;
+    for (const c of this.clans) {
+      if (c.members <= 0 || clanEra(c) !== era) continue;
+      let done = 0;
+      let total = 0;
+      for (const t of next) {
+        total += t.cost;
+        done += c.discoveries.has(t.id)
+          ? t.cost
+          : Math.min(t.cost, c.effort.get(t.id) ?? 0);
+      }
+      best = Math.max(best, total ? done / total : 0);
+    }
+    return best;
+  }
+
+  /** A clan's whole ladder — known, in progress, and out of reach. */
+  techReport(c: Clan): TechReport[] {
+    const known = new Set(c.discoveries.keys());
+    return TECHS.map((def) => {
+      const got = c.discoveries.get(def.id);
+      const open = reachable(known, def.id);
+      return {
+        id: def.id,
+        label: def.label,
+        era: def.era,
+        known: !!got,
+        open,
+        progress: got ? 1 : Math.min(1, (c.effort.get(def.id) ?? 0) / def.cost),
+        by: got?.by ?? null,
+        day: got?.day ?? null,
+        effect: def.effect,
+        pressure: def.pressure,
+        needs: def.needs.filter((n) => !known.has(n)).map((n) => TECH_BY_ID.get(n)!.label),
+      };
+    });
   }
 
   /** Everything the HUD needs to draw the peoples panel. */
@@ -1235,6 +1533,10 @@ export class Colony {
             name: o.name,
             value: distance(c.lexicon, o.lexicon),
           })),
+        era: clanEra(c),
+        eraName: ERAS[clanEra(c)].name,
+        tech: this.techReport(c),
+        taughtBy: c.taughtBy,
       }));
   }
 
@@ -1417,64 +1719,66 @@ export class Colony {
   }
 
   private chooseStructure(clan: Clan) {
+    // You cannot build a thing you have not worked out. Everything past a
+    // pile of sticks waits on a technology this particular people holds.
     const unlocked = STRUCTURE_TIERS.filter(
       (s) =>
         this.knowledge >= s.knowledge &&
-        // You cannot build a fire you have not worked out.
-        (s.kind !== "hearth" || clan.discoveries.has("fire")),
+        (!s.tech || clan.discoveries.has(s.tech)),
     );
     if (!unlocked.length) return null;
     const built = this.sites.filter((s) => s.complete && s.clanId === clan.id);
     const has = (k: StructureKind) => built.some((s) => s.kind === k);
     const planned = (k: StructureKind) =>
       this.sites.some((s) => s.clanId === clan.id && s.kind === k && !s.complete);
-    const know = (k: StructureKind) =>
-      this.knowledge >= STRUCTURE_TIERS.find((t) => t.kind === k)!.knowledge;
+    const spec = (k: StructureKind) => STRUCTURE_TIERS.find((t) => t.kind === k)!;
+    const know = (k: StructureKind) => {
+      const s = spec(k);
+      return this.knowledge >= s.knowledge && (!s.tech || clan.discoveries.has(s.tech));
+    };
+
+    // Anything the age just opened up gets raised once, before the town goes
+    // back to housing. These are the buildings that mark a people's climb.
+    for (const k of [
+      "observatory",
+      "hall",
+      "archive",
+      "forge",
+      "kiln",
+    ] as StructureKind[]) {
+      if (know(k) && !has(k) && !planned(k)) return spec(k);
+    }
 
     // Everything they have buried teaches them something. A clan that has
     // watched people die of thirst digs a well before it raises a monument.
     if (clan.lessons.thirst >= 2 && know("well") && !has("well") && !planned("well"))
-      return STRUCTURE_TIERS.find((t) => t.kind === "well")!;
+      return spec("well");
     if (
       clan.lessons.famine >= 2 &&
       know("granary") &&
       !has("granary") &&
       !planned("granary")
     )
-      return STRUCTURE_TIERS.find((t) => t.kind === "granary")!;
+      return spec("granary");
     if (clan.lessons.raided >= 3 && know("tower") && !planned("tower"))
-      return STRUCTURE_TIERS.find((t) => t.kind === "tower")!;
+      return spec("tower");
 
     // A people wants somewhere to pray and somewhere to sleep before it wants
     // a monument.
-    const shrine = STRUCTURE_TIERS.find((t) => t.kind === "shrine")!;
-    if (this.knowledge >= shrine.knowledge && !has("shrine") && !planned("shrine"))
-      return shrine;
+    if (know("shrine") && !has("shrine") && !planned("shrine")) return spec("shrine");
 
     // Fire first, once they have it and the cold is real.
     const hearths = built.filter((s) => s.kind === "hearth").length;
-    if (
-      clan.discoveries.has("fire") &&
-      hearths * 14 < clan.members + 8 &&
-      !planned("hearth")
-    )
-      return STRUCTURE_TIERS.find((t) => t.kind === "hearth")!;
+    if (know("hearth") && hearths * 14 < clan.members + 8 && !planned("hearth"))
+      return spec("hearth");
 
     // A town that only ever builds housing never becomes a town. Once there
     // is somewhere to sleep, the store and the fields come before more huts.
-    const hut = STRUCTURE_TIERS.find((t) => t.kind === "hut")!;
     const huts = built.filter((s) => s.kind === "hut").length;
 
-    const granary = STRUCTURE_TIERS.find((t) => t.kind === "granary")!;
-    if (
-      know("granary") &&
-      huts >= 2 &&
-      !has("granary") &&
-      !planned("granary")
-    )
-      return granary;
+    if (know("granary") && huts >= 2 && !has("granary") && !planned("granary"))
+      return spec("granary");
 
-    const farm = STRUCTURE_TIERS.find((t) => t.kind === "farm")!;
     const farms = built.filter((s) => s.kind === "farm").length;
     if (
       know("farm") &&
@@ -1482,13 +1786,12 @@ export class Colony {
       farms < 1 + Math.floor(clan.members / 25) &&
       !planned("farm")
     )
-      return farm;
+      return spec("farm");
 
-    const wellKnown = know("well");
-    if (wellKnown && huts >= 1 && !has("well") && !planned("well"))
-      return STRUCTURE_TIERS.find((t) => t.kind === "well")!;
+    if (know("well") && huts >= 1 && !has("well") && !planned("well"))
+      return spec("well");
 
-    if (this.knowledge >= hut.knowledge && huts * 5 < clan.members) return hut;
+    if (know("hut") && huts * 5 < clan.members) return spec("hut");
 
     const weights = unlocked.map((_, i) => (i === unlocked.length - 1 ? 3 : 1));
     const total = weights.reduce((a, b) => a + b, 0);
@@ -1583,6 +1886,7 @@ export class Colony {
     this.countClans();
     driftRelations(this.clans, dt);
     this.updateWars(dt);
+    this.updateTeaching(dt);
     this.updateFlora(dt);
     this.updateSites(dt);
     this.updateEggs(dt);
@@ -1599,6 +1903,12 @@ export class Colony {
       if (!t.slain) this.addLog(`${t.name} returns to the throng.`, "death");
       // A people that has learned burial marks the spot.
       const clan = this.clanOf(t);
+      // Grief is the pressure behind burial, and behind medicine: a clan
+      // that keeps losing people keeps turning the problem over.
+      if (clan) {
+        this.effort(clan, "burial", 9, null);
+        this.effort(clan, "medicine", 22, null);
+      }
       if (
         clan &&
         clan.discoveries.has("burial") &&
@@ -1696,9 +2006,23 @@ export class Colony {
     const monoliths = this.sites.filter(
       (s) => s.complete && s.kind === "monolith",
     ).length;
+    // An observatory is a people deliberately looking for whatever is up
+    // there, and it finds it much faster than a hunch does.
+    const eyes = this.sites.filter(
+      (s) => s.complete && s.kind === "observatory",
+    ).length;
+    // What drives this is how far they have *climbed*, not how busy they are.
+    // Scoring it off raw knowledge made a big colony suspect it was watched
+    // inside a week purely by laying a lot of blocks; an age is the honest
+    // measure, because it is the thing that takes weeks to move.
+    const era = this.leadEra / Math.max(1, ERAS.length - 1);
     const target = Math.min(
       1,
-      this.knowledge / 2600 + monoliths * 0.22 + this.clans.length * 0.01,
+      era * 0.42 +
+        this.knowledge / 120000 +
+        monoliths * 0.18 +
+        eyes * 0.3 +
+        this.clans.length * 0.004,
     );
     this.attention += (target - this.attention) * Math.min(1, dt * 0.05);
 
@@ -1759,90 +2083,225 @@ export class Colony {
   }
 
   /**
-   * Invention. Nobody is granted anything: a particular creature works a
-   * particular thing out because of the situation it is standing in, and the
-   * island hears about it afterwards.
+   * Grant a technology to a clan, crediting whoever happened to be standing
+   * in the situation when the effort finally added up.
    */
-  private checkDiscoveries(dt: number) {
-    if (this.rand() > dt * 4) return;
-    // Sample a handful rather than one, so a pressure that only a few are
-    // under still gets noticed.
-    let t: Thronglet | null = null;
-    for (let i = 0; i < 6 && !t; i++) {
-      const pick_ = this.thronglets[
-        Math.floor(this.rand() * this.thronglets.length)
-      ];
-      if (pick_ && pick_.stage !== "baby" && !pick_.held) t = pick_;
-    }
-    if (!t) return;
-    const clan = this.clanOf(t);
-    if (!clan) return;
+  private grantTech(clan: Clan, t: Thronglet | null, id: Tech, taught: string | null) {
+    if (clan.discoveries.has(id)) return;
+    const def = TECH_BY_ID.get(id)!;
+    const eraBefore = clanEra(clan);
+    clan.discoveries.set(id, { by: t?.name ?? "the throng", day: this.day });
+    clan.effort.delete(id);
+    this.knowledge += 25 + def.era * 20;
 
-    const learn = (what: Discovery, story: string) => {
-      if (clan.discoveries.has(what)) return false;
-      clan.discoveries.set(what, { by: t.name, day: this.day });
-      this.knowledge += 25;
-      this.remember(t, story);
+    if (taught) {
       this.addLog(
-        `${t.name} of the ${clan.name} ${story}`,
+        `The ${clan.name} learn ${def.label} from the ${taught}.`,
         "discovery",
       );
+    } else if (t) {
+      this.remember(t, def.story);
+      this.addLog(`${t.name} of the ${clan.name} ${def.story}`, "discovery");
       this.first(
-        `discovery:${what}`,
-        `First ${what} on the island — ${t.name} of the ${clan.name}.`,
+        `discovery:${id}`,
+        `First ${def.label} on the island — ${t.name} of the ${clan.name}.`,
         "first",
       );
-      return true;
-    };
+      if (id === "fire") this.name(t, "fire");
+    }
 
+    const eraAfter = clanEra(clan);
+    if (eraAfter > eraBefore) {
+      this.addLog(
+        `The ${clan.name} pass into the age of ${ERAS[eraAfter].name.toLowerCase()} — ${ERAS[eraAfter].blurb}.`,
+        "era",
+      );
+      this.first(
+        `era:${eraAfter}`,
+        `The island enters the age of ${ERAS[eraAfter].name} — ${ERAS[eraAfter].blurb}.`,
+        "first",
+      );
+    }
+  }
+
+  /** Bank effort towards something a clan has not worked out yet. */
+  private effort(clan: Clan, id: Tech, amount: number, who: Thronglet | null) {
+    if (amount <= 0) return;
+    if (!reachable(new Set(clan.discoveries.keys()), id)) return;
+    const def = TECH_BY_ID.get(id)!;
+    const next = (clan.effort.get(id) ?? 0) + amount;
+    if (next >= def.cost) this.grantTech(clan, who, id, null);
+    else clan.effort.set(id, next);
+  }
+
+  /**
+   * Invention. Nobody is granted anything and nothing is on a timer: a
+   * technology accrues effort only while somebody is actually standing in the
+   * situation that would suggest it, and the amounts are small enough that
+   * the ladder takes a very long time to climb.
+   */
+  private checkDiscoveries(dt: number) {
+    // Sampling a handful of creatures turned out to miss the pressures that
+    // only a few people are ever under — a colony would sit at 76% of
+    // knapping forever because the sample never landed on its one quarrier.
+    // So this is an exact pass over everybody, on a fixed throttle instead,
+    // which costs the same whether the island holds twenty or five hundred.
+    this.techAccum += dt;
+    if (this.techAccum < 0.5) return;
+    const step = this.techAccum;
+    this.techAccum = 0;
+    if (this.thronglets.length === 0) return;
+
+    // Twenty more pairs of hands is not twenty more ideas. Without this
+    // damping a big colony sprints through the ages in an afternoon.
+    const pop = this.thronglets.length;
+    const weight = step * Math.sqrt(20 / Math.max(20, pop));
     const cold = chill(this.weather);
+    const night = this.dayPhase > 0.72 || this.dayPhase < 0.06;
+    // Which towns have a fire going, and which have walled one in.
+    const hasHearth = new Set<number>();
+    const hasKiln = new Set<number>();
+    for (const s of this.sites) {
+      if (!s.complete) continue;
+      if (s.kind === "hearth") hasHearth.add(s.clanId);
+      else if (s.kind === "kiln") hasKiln.add(s.clanId);
+    }
 
-    // Fire: worked out by somebody awake and freezing, with wood to hand.
-    if (
-      !clan.discoveries.has("fire") &&
-      cold > 0.55 &&
-      t.task !== "sleep" &&
-      this.warmthAt(t.x, t.z) < 0.1 &&
-      (t.carryingWood > 0 || this.nearestTreeWithWood(t)) &&
-      this.rand() < 0.5 * (0.3 + t.genome.curiosity)
-    ) {
-      if (learn("fire", "works out fire on a bitter night.")) {
-        this.name(t, "fire");
-        return;
+    for (const t of this.thronglets) {
+      if (t.stage === "baby" || t.held) continue;
+      const clan = this.clanOf(t);
+      if (!clan) continue;
+      // A curious mind gets there sooner. Nobody gets there alone.
+      const wit = weight * (0.55 + t.genome.curiosity * 0.9);
+      const warm = this.warmthAt(t.x, t.z);
+
+      /* --- age of wandering --- */
+
+      // Fire: anybody awake and cold away from a fire. Any cold night starts
+      // them thinking; a bitter one is worth many ordinary ones, which is why
+      // fire usually arrives with the first real winter rather than before it.
+      if (cold > 0.08 && t.task !== "sleep" && warm < 0.15)
+        this.effort(clan, "fire", wit * cold * 2.6, t);
+      // Knapping: hands on stone. Quarriers keep at it even between trips.
+      if (t.role === "quarrier" || (t.task === "gather" && t.hauling === "stone"))
+        this.effort(clan, "knapping", wit * 0.9, t);
+      // Burial comes out of grief, so it is counted at the graveside instead.
+
+      /* --- age of the hearth --- */
+
+      if (warm > 0.3 && t.hunger > 0.35) this.effort(clan, "cooking", wit * 1.2, t);
+      if (t.carryingWood > 0 || t.carryingStone > 0)
+        this.effort(clan, "baskets", wit * 0.5, t);
+      // Cloth is worked out by people already indoors and still cold.
+      if (cold > 0.08 && t.task === "sleep")
+        this.effort(clan, "weaving", wit * cold * 2.2, t);
+
+      /* --- age of settlement --- */
+
+      // Sowing is mostly banked where seed actually goes into the ground —
+      // scoring it off the farmer role deadlocks, because there are no
+      // farmers until there is a field and no field until they can sow.
+      // Hunger is the other half of it: walking further every season for
+      // fruit is what makes somebody wonder about growing it on purpose.
+      if (t.task === "tend") this.effort(clan, "sowing", wit * 1.4, t);
+      else if (t.task === "seekFood" && t.hunger > 0.6)
+        this.effort(clan, "sowing", wit * 0.35, t);
+      // Pottery wants wet ground and a fire burning in the same town.
+      if (
+        hasHearth.has(clan.id) &&
+        this.terrain.ponds.some((p) => Math.hypot(p.x - t.x, p.z - t.z) < p.r + 8)
+      )
+        this.effort(clan, "pottery", wit * 0.9, t);
+      // Masonry is mostly banked in the build handler, per stone block laid.
+      // It needs this trickle as well, though: a people that has finished its
+      // shrine has nothing stone left to build until it learns to cut stone,
+      // and gating the lesson on the buildings it unlocks deadlocks the whole
+      // ladder above it. Anybody who works stone at all keeps turning it over.
+      if (clan.discoveries.has("knapping") && (t.role === "quarrier" || t.role === "builder"))
+        this.effort(clan, "masonry", wit * 0.5, t);
+
+      /* --- age of craft --- */
+
+      if (hasHearth.has(clan.id) && (t.task === "build" || t.role === "builder"))
+        this.effort(clan, "kiln", wit * 0.9, t);
+      // The wheel comes out of distance, not effort: long hauls, again and again.
+      if ((t.carryingWood > 0 || t.carryingStone > 0) && t.target) {
+        const far = Math.hypot(t.target.x - t.x, t.target.z - t.z);
+        if (far > 12) this.effort(clan, "wheel", wit * 0.9, t);
       }
-    }
+      if (t.task === "stock" || t.task === "trade" || t.task === "worship")
+        this.effort(clan, "numbers", wit * 1.2, t);
 
-    // Cooking follows fire, once somebody hungry is sitting at one.
-    if (
-      clan.discoveries.has("fire") &&
-      !clan.discoveries.has("cooking") &&
-      this.warmthAt(t.x, t.z) > 0.4 &&
-      t.hunger > 0.5 &&
-      this.rand() < 0.3
-    ) {
-      learn("cooking", "holds food to the fire and finds it is better for it.");
-      return;
-    }
+      /* --- age of the forge --- */
 
-    // Baskets: worked out by somebody who has carried enough loads to resent it.
-    if (
-      !clan.discoveries.has("baskets") &&
-      t.blocksPlaced > 12 &&
-      (t.carryingWood > 0 || t.carryingStone > 0) &&
-      this.rand() < 0.12
-    ) {
-      learn("baskets", "weaves something to carry more in.");
-      return;
-    }
+      if (hasKiln.has(clan.id) && (t.role === "quarrier" || t.task === "build"))
+        this.effort(clan, "smelting", wit * 1.1, t);
+      // Writing comes out of the few who keep the clan's records — its
+      // priests. Counting every builder who ever laid thirty blocks made it
+      // the fastest thing on the ladder instead of the slowest.
+      if (t.role === "priest" || t.task === "worship")
+        this.effort(clan, "writing", wit * 0.7, t);
+      if (t.health < 0.75 || t.hurt > 0)
+        this.effort(clan, "medicine", wit * 1.6, t);
 
-    // Burial: after a clan has buried enough of its own.
-    if (
-      !clan.discoveries.has("burial") &&
-      clan.losses + clan.lessons.famine + clan.lessons.thirst >= 3 &&
-      this.rand() < 0.1
-    ) {
-      learn("burial", "stacks stones over the dead so the place is remembered.");
-      return;
+      /* --- age of watching --- */
+
+      if (night && t.task !== "sleep" && this.attention > 0.15)
+        this.effort(clan, "astronomy", wit * (0.6 + this.attention * 2.2), t);
+      if (clan.members > 24 && (t.task === "socialize" || t.task === "worship"))
+        this.effort(clan, "law", wit * 0.9, t);
+    }
+  }
+
+  /**
+   * Teaching. Where two peoples on good terms stand close enough to talk, the
+   * one that is behind starts picking up what the other one does — faster
+   * than working it out alone, but nowhere near free. This is why an island
+   * of friendly neighbours climbs and an island of feuds does not.
+   */
+  private updateTeaching(dt: number) {
+    const live = this.clans.filter((c) => c.members > 0);
+    for (const c of live) c.taughtBy = null;
+    if (live.length < 2) return;
+
+    for (let i = 0; i < live.length; i++) {
+      for (let j = 0; j < live.length; j++) {
+        if (i === j) continue;
+        const learner = live[i];
+        const teacher = live[j];
+        const standing = relationOf(learner, teacher);
+        if (standing < 0.25) continue;
+        // They have to be within walking distance of each other to see it done.
+        const gap = Math.hypot(
+          learner.home.x - teacher.home.x,
+          learner.home.z - teacher.home.z,
+        );
+        if (gap > 78) continue;
+
+        // The oldest thing the teacher knows that the learner is ready for.
+        // You cannot be shown a kiln before you have a hearth to compare it
+        // to, so the learner's own age gates this exactly as invention does.
+        const ready = new Set(learner.discoveries.keys());
+        const target = TECHS.find(
+          (t) => teacher.discoveries.has(t.id) && reachable(ready, t.id),
+        );
+        if (!target) continue;
+
+        learner.taughtBy = teacher.name;
+        const closeness = (standing - 0.25) / 0.75;
+        const reach = 1 - gap / 78;
+        this.effort(
+          learner,
+          target.id,
+          dt * TEACH_RATE * closeness * reach * (0.5 + learner.members / 40),
+          null,
+        );
+        if (learner.discoveries.has(target.id)) {
+          // grantTech logged it as invention; correct the record to a lesson.
+          this.log[this.log.length - 1].text = `The ${learner.name} learn ${target.label} by watching the ${teacher.name}.`;
+        }
+        break;
+      }
     }
   }
 
@@ -1880,10 +2339,13 @@ export class Colony {
           this.addLog(`The ${a.name} and the ${b.name} put the stones down.`, "peace");
         }
 
-        // Grief is the only thing that reliably ends a war.
+        // Grief is the only thing that reliably ends a war — until somebody
+        // writes down what is owed, after which so does law.
         if (warring) {
           const grief = Math.min(1, (a.losses + b.losses) / 6);
-          adjustRelation(a, b, (0.02 + grief * 0.06) * dt);
+          const lawful =
+            (a.discoveries.has("law") ? 1 : 0) + (b.discoveries.has("law") ? 1 : 0);
+          adjustRelation(a, b, (0.02 + grief * 0.06 + lawful * 0.045) * dt);
         }
       }
     }
@@ -1897,8 +2359,14 @@ export class Colony {
   private maybeSchism() {
     if (this.clans.filter((c) => c.members > 0).length >= MAX_CLANS) return;
     for (const clan of this.clans) {
-      if (clan.members < SCHISM_SIZE) continue;
-      if (this.rand() > 0.35) continue;
+      // A people with law written down can hold a much larger argument
+      // together before it becomes two peoples.
+      const limit = SCHISM_SIZE + (clan.discoveries.has("law") ? 30 : 0);
+      if (clan.members < limit) continue;
+      // A village founded the day before yesterday has not had time to
+      // disagree with itself yet.
+      if (this.time - clan.founded < SCHISM_MIN_AGE) continue;
+      if (this.rand() > (clan.discoveries.has("law") ? 0.12 : 0.35)) continue;
 
       const members = this.thronglets.filter(
         (t) => t.clanId === clan.id && t.stage !== "baby",
@@ -1911,6 +2379,10 @@ export class Colony {
       const home = this.newVillageSpot(prophet);
       const faith = splinterFaith(this.rand, this.nextFaithId++, clan.faith);
       const splinter = this.foundClan(home, faith);
+      // People who walk out over a god do not forget how to make fire. A
+      // schism takes the whole toolkit with it, and half the unfinished work.
+      clan.discoveries.forEach((d, id) => splinter.discoveries.set(id, d));
+      clan.effort.forEach((v, id) => splinter.effort.set(id, v * 0.5));
 
       const followers = members
         .filter((t) => t !== prophet)
@@ -2102,7 +2574,8 @@ export class Colony {
     // hearth, or a hut at night — keeps it off them.
     const bite = chill(this.weather);
     if (bite > 0.05 && !t.held) {
-      const warm = this.warmthAt(t.x, t.z);
+      const clan = this.clanOf(t);
+      const warm = Math.min(1, this.warmthAt(t.x, t.z) + this.clothing(clan));
       const exposure = bite * (1 - warm);
       if (exposure > 0.02) {
         t.energy = Math.min(1, t.energy + dt * exposure * 0.05);
@@ -2128,11 +2601,14 @@ export class Colony {
     if (t.hurt > 0) t.hurt = Math.max(0, t.hurt - dt * 1.6);
     if (t.combatTimer > 0) t.combatTimer -= dt;
 
+    // Medicine does not save the starving — it saves the ones who would
+    // otherwise have taken too long to mend.
+    const healing = this.clanOf(t)?.discoveries.has("medicine") ? 2.4 : 1;
     if (t.hunger > 0.97 || t.thirst > 0.97) {
       t.health -= dt * 0.06;
       t.dyingOf = t.thirst > t.hunger ? "thirst" : "hunger";
     } else if (t.hunger < 0.5 && t.thirst < 0.5) {
-      t.health = Math.min(1, t.health + dt * 0.03);
+      t.health = Math.min(1, t.health + dt * 0.03 * healing);
       t.dyingOf = null;
     }
 
@@ -2845,11 +3321,14 @@ export class Colony {
           }
           t.target = { x: rock.x + 0.9, z: rock.z + 0.6 };
           if (Math.hypot(rock.x - t.x, rock.z - t.z) > 1.9) return;
-          t.taskTimer += dt;
+          t.taskTimer += dt * this.workRate(this.clanOf(t));
           t.hop = Math.max(t.hop, 0.7);
           if (t.taskTimer > 3.2) {
             this.name(t, "stone");
-            const take = Math.min(7, Math.floor(rock.stone));
+            const take = Math.min(
+              Math.round(7 * this.carryMul(this.clanOf(t))),
+              Math.floor(rock.stone),
+            );
             rock.stone -= take;
             t.carryingStone = take;
             t.taskTimer = 0;
@@ -2866,15 +3345,13 @@ export class Colony {
         }
         t.target = { x: tree.x + 0.8, z: tree.z + 0.5 };
         if (Math.hypot(tree.x - t.x, tree.z - t.z) > 1.7) return;
-        t.taskTimer += dt;
+        t.taskTimer += dt * this.workRate(this.clanOf(t));
         t.hop = Math.max(t.hop, 0.6);
         if (t.taskTimer > 2.4) {
           this.name(t, "wood");
           // Oak and pine give more per trip than an apple tree does.
           const base = tree.kind === "oak" ? 14 : tree.kind === "pine" ? 11 : 9;
-          const yield_ = this.clanOf(t)?.discoveries.has("baskets")
-            ? Math.round(base * 1.6)
-            : base;
+          const yield_ = Math.round(base * this.carryMul(this.clanOf(t)));
           const take = Math.min(yield_, Math.floor(tree.wood));
           tree.wood -= take;
           t.carryingWood = take;
@@ -2911,13 +3388,19 @@ export class Colony {
           t.thinkTimer = 0;
           return;
         }
-        t.taskTimer += dt;
+        t.taskTimer += dt * this.workRate(this.clanOf(t));
         t.hop = Math.max(t.hop, 0.8);
         if (t.taskTimer > 0.9) {
           t.taskTimer = 0;
           site.placed++;
           if (next.mat === "wood") site.wood -= 1;
-          else if (next.mat === "stone") site.stone -= 1;
+          else if (next.mat === "stone") {
+            site.stone -= 1;
+            // Every stone that will not sit flat on the last one is an
+            // argument for learning to cut them.
+            const clan = this.clanOf(t);
+            if (clan) this.effort(clan, "masonry", 2.2, t);
+          }
           t.blocksPlaced++;
           if (this.rand() < 0.05) this.name(t, "build");
           this.knowledge += 0.4;
@@ -3342,6 +3825,10 @@ export class Colony {
         if (this.plantTree(spot.x, spot.z)) {
           t.emote = { icon: "spark", t: 1.4 };
           this.knowledge += 0.5;
+          // Burying seed and watching what comes up is the whole of farming.
+          // It has to be counted here: a clan cannot put anybody on a field
+          // it has not learned to make yet.
+          this.effort(clan, "sowing", 14, t);
           if (this.rand() < 0.25)
             this.addLog(`${t.name} buries a seed near the ${clan.name}.`, "grow");
         }

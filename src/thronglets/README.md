@@ -12,9 +12,11 @@ clans and five hundred and sixty creatures at once. A seed takes about a week
 of colony time to fill the near half of it, and the far shores stay empty until
 somebody's grandchildren decide to walk out there.
 
-The page presents itself as **THRONG.SYS**, a colony process left running
-unattended — black screen, phosphor green, scanlines. That framing is not only
-a skin: see [Being watched](#being-watched).
+The interface is a naturalist's monograph — printed paper, Garamond, ruled
+data tables, red annotations — because every simulation reaches for dark glass
+or a green terminal and both of them say "software" rather than "place". You
+are whoever is keeping the notebook. That framing is not only a skin: see
+[Being watched](#being-watched).
 
 ## Files
 
@@ -23,6 +25,7 @@ a skin: see [Being watched](#being-watched).
 | `voxel.ts` | Voxel grid → `BufferGeometry` baker. Culls hidden faces, bakes flat pixel-art colours into vertex colours. |
 | `models.ts` | Every model in the world, authored voxel by voxel: the thronglet (body + head as separate pieces so the head can nod), eggs, apple trees, bushes, the enamel tub. |
 | `world.ts` | Island heightmap, ponds, shoreline colouring, and the scatter passes that place trees, rocks, bushes and tubs. |
+| `tech.ts` | The ladder: seventeen technologies over six ages, their prerequisites and what each one costs in effort. |
 | `colony.ts` | The simulation. No three.js in here — agents, needs, utility AI, building, breeding, the day/night clock. |
 | `emotes.ts` | Pixel-art emote icons drawn onto a canvas at runtime (no image assets). |
 | `scene.ts` | Rendering and input: instanced meshes, the sun's arc, picking, camera. |
@@ -85,10 +88,15 @@ A clan is a village, a bloodline pool and a religion at once.
 - **Conversion.** Wherever two clans rub shoulders, the more devout may carry
   their god home with the other — defections are logged, and they make the
   losing clan resent the winner.
-- **Schism.** A clan that grows past thirty stops agreeing with itself. Its
-  most devout member walks out with whoever is standing nearby and founds a
-  new village around a sharper version of the old god. Heresies run hotter
-  than the orthodoxy they left, which is what turns theology into feuds.
+- **Schism.** A clan that grows past fifty-eight, and has been a people for at
+  least two days, stops agreeing with itself. Its most devout member walks out
+  with whoever is standing nearby and founds a new village around a sharper
+  version of the old god. Heresies run hotter
+  than the orthodoxy they left, which is what turns theology into feuds. The
+  threshold has to sit well above the island's average clan size: at thirty,
+  every people that grew large enough to attempt anything immediately shed a
+  third of itself, and the island spent forever as a dozen villages of twenty
+  who could not finish a granary between them.
 - **War.** Relations drift on shared gods, heresy and how crowded the island
   is. Past a threshold a feud is declared and commits both sides. Warriors —
   adults with the temper for it — march on the rival village, fight whoever
@@ -158,38 +166,67 @@ Weather is not decoration. Warmth falls with the season and again at night,
 and an exposed creature on a cold night burns energy, loses condition, and
 **cannot sleep through it**. That is the pressure everything else answers to.
 
-## Invention
+## The long climb
 
-Nothing is unlocked by a progress bar. Somebody works a thing out, because of
-the situation they happen to be standing in, and the island hears about it
-afterwards with their name attached:
+Seventeen technologies over six ages. Nothing is unlocked by a progress bar,
+and nothing is on a timer.
 
-| Discovery | Who works it out |
-| --- | --- |
-| **Fire** | Somebody awake and freezing on a bitter night, with wood to hand. |
-| **Cooking** | Somebody hungry sitting at a fire that already exists. |
-| **Baskets** | Somebody who has hauled enough loads to resent it. |
-| **Burial** | A clan that has buried enough of its own. |
+| Age | What they hold | What it buys |
+| --- | --- | --- |
+| **Wandering** | fire · knapping · burial | hearths; cutting edges; cairns |
+| **Hearth** | cooking · baskets · weaving | food goes further; bigger loads; cold stops killing |
+| **Settled** | sowing · pottery · masonry | grove plots; granaries that hold; wells and towers |
+| **Craft** | the kiln · the wheel · counting | a kiln; carts; honest stores |
+| **Forge** | smelting · writing · medicine | a forge; an archive; the hurt mend |
+| **Watching** | astronomy · law | an observatory; a hall |
 
-Each is held by the clan that worked it out, and each changes what they can
-do: fire lets them build hearths, which give warmth and light and make a
-winter night survivable; cooking makes food go half again as far near one;
-baskets raise how much a trip carries; burial has them stack a cairn where
-somebody fell.
+**Effort, not time.** A technology accrues only while somebody is *actually
+standing in the situation that would suggest it* — awake and freezing beside a
+woodpile, hungry within reach of a fire, hauling a load too heavy, burying a
+third sibling, laying a stone that will not sit flat. A clan on easy ground
+climbs slowly because nothing is pressing it; a clan on hard ground invents its
+way out or dies.
 
-In one run *Snool of the Cinderhollow works out fire on a bitter night* on day
-7, and *Thrum weaves something to carry more in* on day 8 — with hearths
-appearing in the town only after Snool had the idea.
+**An age is a floor, not a badge.** A technology waits both on its own
+prerequisites *and* on its people having finished the age below it. Without
+that second gate the ages stopped meaning anything: a clan that picked up
+counting early was inventing writing while it still had nothing to cook on.
+
+**Teaching beats inventing.** Where two peoples on good terms stand close
+enough to see each other work, the one behind starts picking up the one ahead —
+about three times faster than working it out alone, but nowhere near free. A
+neighbour is worth more than a good quarry, and an island of feuds does not
+climb. A schism takes the whole toolkit with it and half the unfinished work,
+because people who walk out over a god do not forget how to make fire.
+
+Each discovery is credited to the individual who happened to be standing there:
+*Snool of the Cinderhollow works out fire on a bitter night.* Passing into a new
+age is logged as news for the whole island.
+
+### Two deadlocks worth knowing about
+
+Both were found by soak-testing and both are the reason the pressures are
+written where they are:
+
+- **Masonry** could only be earned by laying stone, and the only stone
+  buildings available were the ones masonry unlocks. Every colony froze at
+  ~40% forever, and with it the entire top half of the ladder. It now also
+  accrues from anybody who works stone at all.
+- **Sowing** scored off the farmer role — but there are no farmers until there
+  is a field, and no field until they can sow. It is now banked where seed
+  actually goes into the ground, which is a thing they already did.
 
 ## Being watched
 
 The colony slowly works out that it is being looked at.
 
-Attention builds with the throng's shared knowledge, with every monolith
-finished, and with the number of clans on the island — a small, distracted
-society never notices, and a clever, crowded one always does. It is a single
-number on the colony that only ever eases towards its target, so the island
-takes days to arrive at the idea rather than flipping into it.
+Attention is driven by how far they have **climbed** — the age the leading
+people has reached — plus every monolith and observatory they finish, and only
+a little by raw activity. Scoring it off the throng's knowledge alone made a
+big colony suspect it was watched inside a week purely by laying a lot of
+blocks; an age is the honest measure, because it is the thing that takes weeks
+to move. It only ever eases towards its target, so the island arrives at the
+idea over days rather than flipping into it.
 
 As it climbs, individuals start catching it. One will stop mid-job, turn to
 face wherever your camera actually is, tip its head back and hold there for a
@@ -200,21 +237,28 @@ few seconds, thinking something out of a very short list:
 > put him back. · hello? · you.*
 
 The first three times the island reaches for the thought it is logged as a
-first, alongside fire and the first snow — *something in the throng turns over
-the idea of being looked at*, then *they have started leaving the shrine to
-look upward instead*. The HUD grows a red readout, **they are aware of you**,
-with a count of how many are looking up right now, and the screen picks up an
-interference wash that gets worse the higher it goes. Moving the camera moves
-what they are staring at, because they are tracking the camera, not a marker.
+first, alongside fire and the first snow. A red line is struck through the
+observer's own record — **they are aware of being observed** — with a count of
+how many are looking up right now.
 
-Picking one up and setting it down feeds this. So does doing nothing at all,
-eventually.
+And then their words start appearing in the margins of your page: real
+coinages out of their own lexicon, scrawled in red, more of them the higher it
+goes, multiplied into the paper so they read as ink soaking through rather
+than an overlay. The notebook stops being solely yours. Moving the camera
+moves what they are staring at, because they are tracking the camera and not a
+marker on the ground.
+
+An **observatory** is a people deliberately looking for whatever is up there,
+and it finds it far faster than a hunch does. Picking one up and setting it
+down feeds this too. So does doing nothing at all, eventually.
 
 ## Firsts
 
 The first time anything happens on the island — the first word, the first
-snow, the first rain, the first of each discovery — it is logged as news and
-never again. That is the sentence worth screenshotting.
+snow, the first rain, the first of each discovery, each new age — it is logged
+as news and never again. Those entries are collected into **the record**, a
+stratigraphic column down the observer's page, so a long run can be read at a
+glance.
 
 ## Trades
 
@@ -315,21 +359,31 @@ The sim has two modes, chosen in the Oracle panel and defaulting to the first:
 
 Nothing is sent anywhere unless you switch the second one on.
 
-Open the brain icon in the corner and pick a provider:
+Open the brain icon in the corner and pick whose model:
 
-| Provider | Endpoint | Notes |
+| Provider | Models offered | Notes |
 | --- | --- | --- |
-| Local (Ollama) | `http://localhost:11434` | `ollama serve`, `ollama pull llama3.2`. Start it with `OLLAMA_ORIGINS=*` so the page may call it. No key. |
-| OpenAI-compatible | `/v1/chat/completions` | OpenAI, LM Studio, vLLM, OpenRouter — anything speaking that API. |
-| Anthropic | `/v1/messages` | Called straight from the browser with the direct-browser-access header. |
+| **Claude** | Opus 5, Sonnet 5, Haiku 4.5 | Calls `/v1/messages` straight from the page with the direct-browser-access header. |
+| OpenAI | GPT-4o, 4o-mini, 4.1-mini | The standard `/v1/chat/completions` API. |
+| Gemini | 2.0 Flash, Flash-Lite, 1.5 Pro | Google AI Studio's `generateContent`. A free-tier key works. |
+| Local (Ollama) | whatever you have pulled | `ollama serve` with `OLLAMA_ORIGINS=*`. No key, nothing leaves the machine. |
+| Anything OpenAI-compatible | — | LM Studio, vLLM, llama.cpp's server, OpenRouter, your own proxy. |
+
+Each provider offers a short curated list of models, and **ask the endpoint**
+will fetch the real list where the API allows it (Ollama's `/api/tags`, the
+OpenAI-shaped `/v1/models`); anything else can be typed in. **Test the
+connection** does one tiny round trip so you find out the key is wrong now
+rather than the first time a clan tries to name its god.
 
 Then it can:
 
 - **name the gods** — rewrite every living clan's deity and creed,
-- **voice** — speak for the creature you have selected, from its needs,
-  lineage, faith and current job,
+- **give one a voice** — speak for the creature under observation, from its
+  needs, lineage, faith and current job,
+- **read the age** — what daily life in the leading town is actually like,
+  given what they can and cannot yet do,
 - **read their tongue** — a field note on the largest clan's vocabulary,
-- **write the chronicle** — turn the event log into a passage of history.
+- **write the chronicle** — turn the record into a passage of history.
 
 The endpoint, model and key live in `localStorage` on your machine and are
 never committed or transmitted anywhere except to the endpoint you name.
@@ -370,6 +424,28 @@ generations — the stats bar tracks which one you're on.
   hatched from whom, who laid the last block, and who died.
 - The HUD charts population over the colony's life — booms, plateaus and the
   dips as a generation ages out.
+
+## The page
+
+The interface is set as a printed monograph, and that is a deliberate rejection
+of the two skins every simulation and AI toy reaches for — dark translucent
+glass, and green-on-black terminal. Both say *software*; neither says *place*.
+
+- **Type.** EB Garamond throughout, with small-capital headings and figures set
+  in a tabular monospace so columns line up the way a printed table does.
+- **Paper.** Square corners, hairline ink rules, a real drop shadow, and a
+  laid-paper grain generated by an inline SVG turbulence filter — nothing is
+  fetched for it.
+- **Data as tables and plates.** The census is a ruled table, the population is
+  plotted on graph paper, the ages are a stratigraphic column hatched where
+  they are finished, traits are rows of filled and empty pips, and a creature's
+  current thought is set as a pull quote on a specimen sheet with a plate
+  number.
+- **The journal** carries the day in a ruled margin with entries hanging off
+  it. Firsts and new ages are set in red and gold.
+- **Place names** are lettered onto the island itself, projected from the
+  camera each frame — and they are the words the clans coined for themselves,
+  which is what turns scenery into a map of somewhere. Toggle with `names`.
 
 ## Rendering notes
 

@@ -433,9 +433,12 @@ export class ThrongletSim {
     const pathMat = this.paths.material as THREE.MeshLambertMaterial;
     pathMat.opacity = 0.9 * (1 - lay * 0.8);
 
-    // A light at every lit hearth, so a winter night has somewhere to be.
+    // A light at every fire the town keeps — the hearths first, then the
+    // kilns and forges, which is how you can tell an advanced town at night.
     const hearths = this.colony.sites.filter(
-      (s) => s.complete && s.kind === "hearth",
+      (s) =>
+        s.complete &&
+        (s.kind === "hearth" || s.kind === "kiln" || s.kind === "forge"),
     );
     while (this.hearthLights.length < Math.min(hearths.length, 12)) {
       const light = new THREE.PointLight(0xffa54a, 0, 14, 1.6);
@@ -783,6 +786,61 @@ export class ThrongletSim {
     this.controls.target.set(x, y + 0.6, z);
     this.camera.position.copy(this.controls.target).add(offset);
     this.controls.update();
+  }
+
+  /**
+   * Where the towns are on screen right now, so the page can letter their
+   * names straight onto the island.
+   *
+   * The names are the ones the clans coined for themselves in their own
+   * language, which is the whole reason this is worth doing: an island of
+   * anonymous huts becomes a map of places with names somebody invented.
+   * Anything behind the camera, beyond the far plane, or further off than
+   * `maxDist` is dropped, so a wide shot does not turn into a wall of text.
+   */
+  townLabels(maxDist = 150) {
+    const out: {
+      key: string;
+      name: string;
+      clan: string;
+      color: number;
+      members: number;
+      x: number;
+      y: number;
+      /** 1 nearby → 0 at the cutoff, for fading distant places out. */
+      near: number;
+    }[] = [];
+    const v = new THREE.Vector3();
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    for (const clan of this.colony.clans) {
+      if (clan.members <= 0) continue;
+      const centres = [clan.home, ...clan.outposts];
+      for (let i = 0; i < centres.length; i++) {
+        const name = clan.townNames[i - 1];
+        // The first settlement carries the clan's own name; the outposts
+        // carry the words they coined when they broke ground.
+        const label = i === 0 ? clan.name : name;
+        if (!label) continue;
+        const c = centres[i];
+        v.set(c.x, this.colony.terrain.height(c.x, c.z) + 3.4, c.z);
+        const dist = v.distanceTo(this.camera.position);
+        if (dist > maxDist) continue;
+        v.project(this.camera);
+        if (v.z > 1) continue; // behind the camera
+        out.push({
+          key: `${clan.id}-${i}`,
+          name: label,
+          clan: clan.name,
+          color: clan.color,
+          members: clan.members,
+          x: ((v.x + 1) / 2) * w,
+          y: ((1 - v.y) / 2) * h,
+          near: Math.max(0, 1 - dist / maxDist),
+        });
+      }
+    }
+    return out;
   }
 
   focusSelected() {

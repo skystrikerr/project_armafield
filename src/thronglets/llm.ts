@@ -11,7 +11,12 @@
  * nothing about the configuration leaves the machine.
  */
 
-export type LlmProvider = "ollama" | "openai" | "anthropic";
+export type LlmProvider =
+  | "anthropic"
+  | "openai"
+  | "gemini"
+  | "ollama"
+  | "compatible";
 
 export type LlmConfig = {
   enabled: boolean;
@@ -23,39 +28,101 @@ export type LlmConfig = {
 
 const STORAGE_KEY = "thronglets-llm";
 
-export const PROVIDER_DEFAULTS: Record<
-  LlmProvider,
-  { baseUrl: string; model: string; needsKey: boolean; label: string; hint: string }
-> = {
+export type ProviderSpec = {
+  label: string;
+  baseUrl: string;
+  model: string;
+  needsKey: boolean;
+  hint: string;
+  /** Where to go and get a key, when one is needed. */
+  keyUrl?: string;
+  /** Known models, newest and most capable first. Always overridable. */
+  models: { id: string; note: string }[];
+};
+
+/**
+ * The providers you can point this at. Claude is first because it is the one
+ * most people reading this will want; everything here is a direct call from
+ * your browser to whichever endpoint you name, with no server in between.
+ */
+export const PROVIDER_DEFAULTS: Record<LlmProvider, ProviderSpec> = {
+  anthropic: {
+    label: "Claude",
+    baseUrl: "https://api.anthropic.com",
+    model: "claude-sonnet-5",
+    needsKey: true,
+    keyUrl: "https://console.anthropic.com/settings/keys",
+    hint: "Calls /v1/messages straight from the page, which needs the direct-browser-access header — it is sent for you.",
+    models: [
+      { id: "claude-opus-5", note: "most capable" },
+      { id: "claude-sonnet-5", note: "the balanced one" },
+      { id: "claude-haiku-4-5-20251001", note: "fastest, cheapest" },
+    ],
+  },
+  openai: {
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com",
+    model: "gpt-4o-mini",
+    needsKey: true,
+    keyUrl: "https://platform.openai.com/api-keys",
+    hint: "The standard /v1/chat/completions API.",
+    models: [
+      { id: "gpt-4o", note: "most capable" },
+      { id: "gpt-4o-mini", note: "cheap and quick" },
+      { id: "gpt-4.1-mini", note: "cheaper still" },
+    ],
+  },
+  gemini: {
+    label: "Gemini",
+    baseUrl: "https://generativelanguage.googleapis.com",
+    model: "gemini-2.0-flash",
+    needsKey: true,
+    keyUrl: "https://aistudio.google.com/apikey",
+    hint: "Google AI Studio's generateContent endpoint. A free-tier key works.",
+    models: [
+      { id: "gemini-2.0-flash", note: "quick" },
+      { id: "gemini-2.0-flash-lite", note: "cheapest" },
+      { id: "gemini-1.5-pro", note: "most capable" },
+    ],
+  },
   ollama: {
     label: "Local (Ollama)",
     baseUrl: "http://localhost:11434",
     model: "llama3.2",
     needsKey: false,
-    hint: "Run `ollama serve`, then `ollama pull llama3.2`. Start it with OLLAMA_ORIGINS=* so the page is allowed to call it.",
+    hint: "Run `ollama serve`, then `ollama pull llama3.2`. Start it with OLLAMA_ORIGINS=* so the page is allowed to call it. Nothing leaves your machine.",
+    models: [
+      { id: "llama3.2", note: "small and fast" },
+      { id: "llama3.1", note: "bigger" },
+      { id: "mistral", note: "" },
+      { id: "qwen2.5", note: "" },
+      { id: "gemma2", note: "" },
+    ],
   },
-  openai: {
-    label: "OpenAI-compatible",
-    baseUrl: "https://api.openai.com",
-    model: "gpt-4o-mini",
-    needsKey: true,
-    hint: "Any server speaking the /v1/chat/completions API — OpenAI, LM Studio, vLLM, OpenRouter.",
-  },
-  anthropic: {
-    label: "Anthropic",
-    baseUrl: "https://api.anthropic.com",
-    model: "claude-sonnet-4-5",
-    needsKey: true,
-    hint: "Calls /v1/messages directly from the browser, which needs the direct-browser-access header (sent for you).",
+  compatible: {
+    label: "Anything OpenAI-compatible",
+    baseUrl: "http://localhost:1234",
+    model: "local-model",
+    needsKey: false,
+    hint: "LM Studio, vLLM, llama.cpp's server, OpenRouter, a proxy of your own — anything speaking /v1/chat/completions.",
+    models: [],
   },
 };
+
+export const PROVIDER_ORDER: LlmProvider[] = [
+  "anthropic",
+  "openai",
+  "gemini",
+  "ollama",
+  "compatible",
+];
 
 export function defaultConfig(): LlmConfig {
   return {
     enabled: false,
-    provider: "ollama",
-    baseUrl: PROVIDER_DEFAULTS.ollama.baseUrl,
-    model: PROVIDER_DEFAULTS.ollama.model,
+    provider: "anthropic",
+    baseUrl: PROVIDER_DEFAULTS.anthropic.baseUrl,
+    model: PROVIDER_DEFAULTS.anthropic.model,
     apiKey: "",
   };
 }
@@ -119,6 +186,14 @@ export async function complete(
           { role: "system", content: system },
           { role: "user", content: prompt },
         ],
+      };
+    } else if (cfg.provider === "gemini") {
+      // Google puts the key in the query string rather than a header.
+      url = `${base}/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent?key=${encodeURIComponent(cfg.apiKey)}`;
+      body = {
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { maxOutputTokens: maxTokens, temperature: 0.9 },
       };
     } else if (cfg.provider === "anthropic") {
       url = `${base}/v1/messages`;
@@ -186,7 +261,60 @@ function extractText(provider: LlmProvider, data: Record<string, any>): string {
     }
     return "";
   }
+  if (provider === "gemini") {
+    const parts = data?.candidates?.[0]?.content?.parts;
+    if (Array.isArray(parts)) return parts.map((p: any) => p?.text ?? "").join("");
+    return "";
+  }
   return data?.choices?.[0]?.message?.content ?? "";
+}
+
+/**
+ * Ask the endpoint what it can run. Only Ollama and the OpenAI-shaped APIs
+ * will answer; the rest fall back to the curated list. Returns null rather
+ * than throwing — a provider that will not list its models is not an error,
+ * you can always type the name in.
+ */
+export async function listModels(cfg: LlmConfig): Promise<string[] | null> {
+  const base = cfg.baseUrl.replace(/\/+$/, "");
+  const timeout = new AbortController();
+  const timer = setTimeout(() => timeout.abort(), 8000);
+  try {
+    if (cfg.provider === "ollama") {
+      const res = await fetch(`${base}/api/tags`, { signal: timeout.signal });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { models?: { name: string }[] };
+      return (data.models ?? []).map((m) => m.name);
+    }
+    if (cfg.provider === "openai" || cfg.provider === "compatible") {
+      const headers: Record<string, string> = {};
+      if (cfg.apiKey) headers.Authorization = `Bearer ${cfg.apiKey}`;
+      const res = await fetch(`${base}/v1/models`, {
+        headers,
+        signal: timeout.signal,
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { data?: { id: string }[] };
+      return (data.data ?? []).map((m) => m.id).sort();
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * One tiny round trip, so the player finds out the key is wrong now rather
+ * than the first time a clan tries to name its god.
+ */
+export async function testConnection(cfg: LlmConfig): Promise<string> {
+  const out = await complete(cfg, "Reply with the single word: awake.", {
+    system: "You answer in one word.",
+    maxTokens: 12,
+  });
+  return out.slice(0, 60);
 }
 
 /* ------------------------------------------------------------------ */
@@ -282,6 +410,36 @@ export async function glossTongue(
     "Write a short field note about this language, three or four sentences: what its sounds are like, what the shape of the vocabulary suggests about what matters to them, and one guess at a word they will coin next and why. Do not invent words they do not have, except for that final guess.",
   ].join("\n");
   return complete(cfg, prompt, { maxTokens: 300 });
+}
+
+/**
+ * Read the age: what this civilisation is actually like, given what it can
+ * and cannot yet do. The interesting part is the gaps — a people with writing
+ * and no medicine is a different place from the reverse.
+ */
+export async function readTheAge(
+  cfg: LlmConfig,
+  clan: string,
+  era: string,
+  known: string[],
+  working: { label: string; progress: number }[],
+): Promise<string> {
+  const prompt = [
+    `A people called the ${clan}, small voxel creatures on an island, have reached what an observer would call the age of ${era}.`,
+    known.length
+      ? `They have worked out: ${known.join(", ")}.`
+      : "They have worked out nothing at all yet.",
+    working.length
+      ? `They are part way towards: ${working
+          .map((w) => `${w.label} (${Math.round(w.progress * 100)}%)`)
+          .join(", ")}.`
+      : "",
+    "",
+    "Describe what daily life in their town is like now, in four or five plain sentences. Be concrete about what they can do and what they still cannot. Do not list the technologies back; describe the place. No preamble.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return complete(cfg, prompt, { maxTokens: 320 });
 }
 
 /** Turn the raw event log into something a historian would write. */

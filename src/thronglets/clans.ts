@@ -1,5 +1,6 @@
 import { pick, range, type Rand } from "./random";
 import { makePhonology, type Lexicon, type Phonology } from "./language";
+import { eraOf, type Tech } from "./tech";
 
 /**
  * Clans and the things they believe.
@@ -13,16 +14,10 @@ import { makePhonology, type Lexicon, type Phonology } from "./language";
 /**
  * Things a people can work out for itself. Each is invented by one individual
  * under a specific pressure — fire on a cold night, burial after enough
- * graves — rather than unlocked by a counter.
+ * graves — rather than unlocked by a counter. The ladder itself lives in
+ * `tech.ts`; this is just the name the rest of the sim knows it by.
  */
-export type Discovery = "fire" | "cooking" | "baskets" | "burial";
-
-export const DISCOVERY_LABEL: Record<Discovery, string> = {
-  fire: "fire",
-  cooking: "cooking",
-  baskets: "baskets",
-  burial: "burial",
-};
+export type Discovery = Tech;
 
 export type SacredThing = "sun" | "water" | "grove" | "stone" | "throng" | "egg";
 
@@ -68,6 +63,14 @@ export type Clan = {
   traded: number;
   /** Things this people has worked out, and who worked each one out. */
   discoveries: Map<Discovery, { by: string; day: number }>;
+  /**
+   * Effort banked towards things they have not worked out yet. Only ever
+   * added to while somebody is actually in the situation that suggests the
+   * idea, which is why a comfortable clan stays in the stone age.
+   */
+  effort: Map<Tech, number>;
+  /** Set when this clan is currently being shown something by a neighbour. */
+  taughtBy: string | null;
 };
 
 const CLAN_HEAD = [
@@ -238,7 +241,14 @@ export function makeClan(
     townNames: [],
     traded: 0,
     discoveries: new Map(),
+    effort: new Map(),
+    taughtBy: null,
   };
+}
+
+/** Which age this people has reached. */
+export function clanEra(c: Clan) {
+  return eraOf(new Set(c.discoveries.keys()));
 }
 
 /* ------------------------------------------------------------------ */
