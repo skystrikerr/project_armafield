@@ -1,6 +1,7 @@
 import { pick, range, type Rand } from "./random";
 import { makePhonology, type Lexicon, type Phonology } from "./language";
 import { eraOf, type Tech } from "./tech";
+import type { Grievance } from "./social";
 
 /**
  * Clans and the things they believe.
@@ -71,6 +72,20 @@ export type Clan = {
   effort: Map<Tech, number>;
   /** Set when this clan is currently being shown something by a neighbour. */
   taughtBy: string | null;
+  /**
+   * Specific injuries done to this people by others, each with a date and
+   * where possible a name. This — not a drifting score — is what wars are
+   * made of, and what peace has to outlast.
+   */
+  grievances: Grievance[];
+  /**
+   * Whoever this people currently defers to: the adult with the most
+   * standing. Not elected and not permanent; it changes when somebody
+   * outgrows them or when they die.
+   */
+  leader: { id: number; name: string; since: number } | null;
+  /** Marriages out of this clan, by clan id — the ties that stop wars. */
+  ties: Map<number, number>;
 };
 
 const CLAN_HEAD = [
@@ -243,6 +258,9 @@ export function makeClan(
     discoveries: new Map(),
     effort: new Map(),
     taughtBy: null,
+    grievances: [],
+    leader: null,
+    ties: new Map(),
   };
 }
 

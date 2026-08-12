@@ -25,6 +25,7 @@ are whoever is keeping the notebook. That framing is not only a skin: see
 | `voxel.ts` | Voxel grid → `BufferGeometry` baker. Culls hidden faces, bakes flat pixel-art colours into vertex colours. |
 | `models.ts` | Every model in the world, authored voxel by voxel: the thronglet (body + head as separate pieces so the head can nod), eggs, apple trees, bushes, the enamel tub. |
 | `world.ts` | Island heightmap, ponds, shoreline colouring, and the scatter passes that place trees, rocks, bushes and tubs. |
+| `social.ts` | Bonds between named individuals, standing, grievance and what a war is made of. |
 | `tech.ts` | The ladder: seventeen technologies over six ages, their prerequisites and what each one costs in effort. |
 | `colony.ts` | The simulation. No three.js in here — agents, needs, utility AI, building, breeding, the day/night clock. |
 | `emotes.ts` | Pixel-art emote icons drawn onto a canvas at runtime (no image assets). |
@@ -71,39 +72,90 @@ one pixel) go through a spatial grid rebuilt each tick, so a colony of a
 hundred-odd costs a handful of cell lookups per agent rather than a scan of
 everybody.
 
-## Peoples, faith and war
+## People, not agents
+
+Up to a point a thronglet related to the *world* — food, water, wood, a shrine
+— and to its clan as an abstraction. It did not relate to anybody. Two
+creatures who had spent their whole lives beside each other were strangers,
+and a death was a decrement.
+
+- **Bonds.** Each one holds up to eight relationships with specific named
+  individuals, built out of things that actually happened between them: who
+  fed it when it was starving, who raised it, who it has children with, who
+  struck it. Bonds are labelled kin, mate, friend, rival or enemy, and each
+  carries the reason — the inspector shows *“Vek — fed me when I was
+  starving”*, not “sociability 0.7”. When there is no room, the weakest and
+  stalest bond is forgotten, which is what people do.
+- **It changes what they do.** "Go and find a friend" used to mean *walk to
+  the nearest body*; proximity was the entire relationship. Now they score
+  everyone in range on how much they actually like them, so one will walk past
+  three neighbours to reach the person who fed it once, and will not seek out
+  somebody who hit it.
+- **Grief.** When somebody dies, everybody bonded to them takes it: they lose
+  the will to play, they seek company, the name keeps surfacing in what they
+  are thinking (*“I keep looking for Vek.”*), and it goes into their memory
+  for good. The bond is not deleted — you go on knowing them. A clan losing
+  someone who mattered is visible in the village without opening a panel,
+  because a dozen creatures go quiet at once.
+- **Standing and leaders.** Nobody is appointed. Standing is earned by
+  feeding the hungry, raising children, laying stone, working something out
+  and outliving your generation, and a people simply defers to whoever has
+  most of it. It changes hands: *the Fenbough stop listening to Nazz and turn
+  to Flush.* A sitting elder has to be clearly beaten, not marginally, or the
+  title flickers.
+
+## Peoples and faith
 
 A clan is a village, a bloodline pool and a religion at once.
 
-- **Villages.** Every clan builds outward in rings from the spot it settled, so
-  a place grows instead of scattering. Settlement picks ground within reach of
-  water and trees — a clan founded on a dry hill starves — and keeps thirty
-  units clear of every other village, so the island fills up with distinct
-  places rather than one sprawl. Villagers stay near home unless they are
-  curious, which is what keeps them meeting each other.
-- **Faith.** Each clan has a god, a sacred thing (the sun, water, the grove,
-  stone, the throng, the egg) and a creed. Devotion builds up like any other
-  need and is spent at the clan's shrine; at dawn and dusk the whole village
-  converges on it.
-- **Conversion.** Wherever two clans rub shoulders, the more devout may carry
-  their god home with the other — defections are logged, and they make the
-  losing clan resent the winner.
-- **Schism.** A clan that grows past fifty-eight, and has been a people for at
-  least two days, stops agreeing with itself. Its most devout member walks out
-  with whoever is standing nearby and founds a new village around a sharper
-  version of the old god. Heresies run hotter
-  than the orthodoxy they left, which is what turns theology into feuds. The
-  threshold has to sit well above the island's average clan size: at thirty,
-  every people that grew large enough to attempt anything immediately shed a
-  third of itself, and the island spent forever as a dozen villages of twenty
-  who could not finish a granary between them.
-- **War.** Relations drift on shared gods, heresy and how crowded the island
-  is. Past a threshold a feud is declared and commits both sides. Warriors —
-  adults with the temper for it — march on the rival village, fight whoever
-  they meet, and pull stones out of the enemy's shrine when there is nobody
-  left to fight. Most fights end with somebody running; it is the chasing
-  down afterwards that kills. Grief is the only thing that reliably ends a
-  war.
+- **Villages.** Every clan builds outward in rings from the spot it settled.
+  Settlement picks ground within reach of water and trees — a clan founded on
+  a dry hill starves — and keeps clear of every other village.
+- **Faith.** Each clan has a god, a sacred thing and a creed. Devotion builds
+  like any other need and is spent at the shrine; at dawn and dusk the whole
+  village converges on it.
+- **Conversion.** Where two clans rub shoulders, the more devout may carry
+  their god home with the other. The losing side remembers it as a taking.
+- **Schism.** A clan past fifty-eight, that has been a people at least two
+  days, stops agreeing with itself. Its most devout member walks out with
+  whoever is standing nearby and founds a new village around a sharper version
+  of the old god. The threshold has to sit well above the island's average
+  clan size: at thirty, every people that grew large enough to attempt
+  anything immediately shed a third of itself, and the island stayed a dozen
+  villages of twenty who could not finish a granary between them.
+
+## War, which takes weeks
+
+War used to come out of a drifting number: two clans whose relation score
+wandered past a threshold "took up stones". The island could be at war on day
+four over nothing anybody could name, with sixteen feuds open at once and
+thirty-three dead by the end of the first week. That is not how peoples fight.
+
+A war is now the end of a long argument, and it needs three things at once:
+
+1. **Remembered injury**, with dates and names. Every grievance is a specific
+   thing somebody did — a killing (heaviest, and remembered roughly four times
+   as long as anything else), a raid, a theft, a conversion, a border pressed,
+   a god said wrong. Standing complaints like crowding accrue at a trickle and
+   take about two days of sustained proximity to become worth fighting over.
+   They all fade if you leave a people alone.
+2. **Organisation.** Mustering needs the age of Craft — kilns, carts, kept
+   accounts, a people organised enough to send fifteen of its own somewhere
+   and feed them when they get there. One organised side is enough: an army is
+   something you raise, and the people it marches on do not get a say.
+3. **Nobody holding it back.** Every marriage across the line is a family with
+   people on both sides, and it raises the bar.
+
+The declaration names what it is actually about — *the Ashmire and the Margate
+go to war over their dead* — and the peoples panel lists the grudges behind it
+with their dates. Grief wears a war out, written law wears it out faster, and
+cross-clan families pull both ways throughout.
+
+In a verified 32-day run the first war broke out on **day 26**, one war at a
+time, one killing in total. The tuning is a narrow window and both walls are
+easy to hit: set the bar above what peacetime friction can reach and no war
+can ever start, because killings only happen during raids and raids only
+happen during wars.
 
 ## Their own language
 

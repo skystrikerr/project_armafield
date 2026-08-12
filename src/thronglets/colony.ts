@@ -20,7 +20,6 @@ import {
 } from "./weather";
 import {
   adjustRelation,
-  atWar,
   driftRelations,
   makeClan,
   makeFaith,
@@ -31,6 +30,23 @@ import {
   type Discovery,
   type Faith,
 } from "./clans";
+import {
+  bondTo,
+  bondWith,
+  grievanceLine,
+  decayGrievances,
+  grievanceTotal,
+  GRIEVANCE_WEIGHT,
+  nudgeBond,
+  PEACE_GRIEVANCE,
+  standingScore,
+  WAR_GRIEVANCE,
+  WAR_MIN_ERA,
+  type Bond,
+  type Grievance,
+  type GrievanceKind,
+  type Standing,
+} from "./social";
 import {
   ERAS,
   reachable,
@@ -240,6 +256,14 @@ export type Thronglet = {
   memory: Memory[];
   /** Things worth remembering having happened to them, newest last. */
   episodes: string[];
+  /** The handful of people this one actually knows. See `social.ts`. */
+  bonds: Bond[];
+  /** What it has done that its people would count. */
+  standing: Standing;
+  /** Seconds left of mourning somebody it was bonded to. */
+  grieving: number;
+  /** Who it is grieving, so the thought can name them. */
+  mourned: string | null;
   /** The words this one personally knows — learned by hearing, not by decree. */
   known: Set<Concept>;
   /** The trade this one has settled into. */
@@ -405,6 +429,13 @@ export type ClanReport = {
   tech: TechReport[];
   /** Set while a friendlier, cleverer neighbour is showing them something. */
   taughtBy: string | null;
+  /** Whoever they currently defer to. */
+  leader: string | null;
+  /** What has been done to them, worst first, in their own words. */
+  grievances: { text: string; weight: number; against: string }[];
+  /** Marriages out of this people, by clan name. */
+  ties: { name: string; count: number }[];
+  atWar: string[];
 };
 
 /** What they think when they notice. Deliberately not cute. */
@@ -816,6 +847,8 @@ export class Colony {
   /** Population sampled over time, for the chart in the HUD. */
   history: number[] = [];
   private historyTimer = 0;
+  /** Throttle for the standing/leader pass, which does not need every tick. */
+  private leaderTimer = 0;
   /** Time banked since the last pass over who is inventing what. */
   private techAccum = 0;
   knowledge = 0;
@@ -992,6 +1025,10 @@ export class Colony {
       homeSite: null,
       memory: [],
       episodes: [],
+      bonds: [],
+      standing: { fed: 0, raised: 0, built: 0, worked: 0, killed: 0 },
+      grieving: 0,
+      mourned: null,
       known: new Set<Concept>(),
       awareness: 0,
       staring: 0,
@@ -1537,6 +1574,27 @@ export class Colony {
         eraName: ERAS[clanEra(c)].name,
         tech: this.techReport(c),
         taughtBy: c.taughtBy,
+        leader: c.leader?.name ?? null,
+        grievances: [...c.grievances]
+          .sort((x, y) => y.weight - x.weight)
+          .slice(0, 4)
+          .map((g) => {
+            const by = this.clans.find((o) => o.id === g.by);
+            return {
+              text: grievanceLine(g, by?.name ?? "someone"),
+              weight: g.weight,
+              against: by?.name ?? "someone",
+            };
+          }),
+        ties: Array.from(c.ties.entries())
+          .map(([id, count]) => ({
+            name: this.clans.find((o) => o.id === id)?.name ?? "?",
+            count,
+          }))
+          .filter((x) => x.count > 0),
+        atWar: this.clans
+          .filter((o) => o.members > 0 && this.atWarWith(c, o))
+          .map((o) => o.name),
       }));
   }
 
@@ -1659,14 +1717,31 @@ export class Colony {
     return best;
   }
 
+  /**
+   * Who to go and talk to.
+   *
+   * This used to return the nearest body, which is why two creatures who had
+   * spent their whole lives beside each other were strangers: proximity was
+   * the entire relationship. Now it scores everyone in range on how much this
+   * one actually likes them, so a creature will walk past three neighbours to
+   * reach the person who fed it once, and will not seek out somebody who hit
+   * it. Grieving, they look for the people they have left.
+   */
   nearbyFriend(t: Thronglet, radius: number): Thronglet | null {
     let best: Thronglet | null = null;
-    let bestD = radius;
+    let bestScore = -Infinity;
+    const lonely = t.grieving > 0 ? 1.8 : 1;
     for (const o of this.thronglets) {
       if (o === t || !o.alive) continue;
       const d = Math.hypot(o.x - t.x, o.z - t.z);
-      if (d < bestD) {
-        bestD = d;
+      if (d > radius) continue;
+      const bond = bondTo(t.bonds, o.id);
+      const feeling = bond ? bond.affinity : 0;
+      // Somebody you cannot stand is not company, however close they are.
+      if (feeling < -0.35) continue;
+      const score = 1 - d / radius + feeling * 0.85 * lonely;
+      if (score > bestScore) {
+        bestScore = score;
         best = o;
       }
     }
@@ -1886,6 +1961,7 @@ export class Colony {
     this.countClans();
     driftRelations(this.clans, dt);
     this.updateWars(dt);
+    this.updateStandingAndLeaders(dt);
     this.updateTeaching(dt);
     this.updateFlora(dt);
     this.updateSites(dt);
@@ -1909,6 +1985,7 @@ export class Colony {
         this.effort(clan, "burial", 9, null);
         this.effort(clan, "medicine", 22, null);
       }
+      this.mourn(t, clan);
       if (
         clan &&
         clan.discoveries.has("burial") &&
@@ -2316,37 +2393,268 @@ export class Colony {
   }
 
   /** Declarations, peace, and the weariness that eventually ends a feud. */
+  /**
+   * Log a specific injury one people did to another. Everything that makes a
+   * war is one of these: they have dates, and mostly they have names.
+   */
+  private grieve(
+    victim: Clan,
+    by: Clan,
+    kind: GrievanceKind,
+    who: string | null = null,
+    whom: string | null = null,
+    /**
+     * Fraction of the full weight to add. One-off injuries — a killing, a
+     * theft — land at full force. Standing complaints like a pressed border
+     * are re-asserted every few seconds by the pass that notices them, so
+     * they come in at a trickle and take days rather than minutes to become
+     * something worth fighting over.
+     */
+    scale = 1,
+  ) {
+    if (victim.id === by.id) return;
+    const weight = GRIEVANCE_WEIGHT[kind] * scale;
+    // Repeat offences of the same kind stack onto the existing memory rather
+    // than filling the list, so a long border quarrel is one grudge that
+    // grows and not four hundred identical ones.
+    const same = victim.grievances.find(
+      (g) => g.by === by.id && g.kind === kind && (kind !== "killing" || g.who === who),
+    );
+    if (same) {
+      // A border pressed for weeks grows into a real grudge, where a single
+      // slight does not; so the standing complaints stack further than the
+      // one-off ones do.
+      const ceiling = GRIEVANCE_WEIGHT[kind] * (kind === "crowding" || kind === "heresy" ? 6 : 4);
+      same.weight = Math.min(same.weight + weight, ceiling);
+      same.day = this.day;
+      return;
+    }
+    victim.grievances.push({
+      kind,
+      by: by.id,
+      who,
+      victim: whom,
+      day: this.day,
+      weight,
+    });
+    if (victim.grievances.length > 14) victim.grievances.shift();
+  }
+
+  /**
+   * War.
+   *
+   * This used to be a drifting number: two clans whose relation score wandered
+   * past a threshold "took up stones", which meant the island could be at war
+   * on day four over nothing anybody could name, and sixteen feuds could be
+   * open at once. That is not how peoples fight.
+   *
+   * A war now needs three things at once, and they take a long time to line
+   * up: enough remembered injury with names and dates attached; a society
+   * organised enough to muster (the age of Settled — permanent towns, stores
+   * worth taking, ground worth holding); and no strong marriage tie across
+   * the two. It ends when grief and law wear the grievance back down.
+   */
+  /**
+   * Somebody died. Everyone who actually knew them takes it.
+   *
+   * Before this, a death was a decrement: population went down and nothing
+   * else in the world changed. Now the handful of people who were bonded to
+   * the dead one stop what they are doing, lose the will to play for a while,
+   * carry the name in their thoughts, and remember it for good. A clan losing
+   * somebody who mattered is visible in the village without opening a panel,
+   * because a dozen creatures go quiet at once.
+   */
+  private mourn(dead: Thronglet, clan: Clan | null) {
+    let closest: Thronglet | null = null;
+    let closestFeeling = 0;
+    for (const other of this.thronglets) {
+      if (!other.alive || other.id === dead.id) continue;
+      const bond = bondTo(other.bonds, dead.id);
+      if (!bond || bond.affinity < 0.2) continue;
+      const weight = bond.kind === "kin" || bond.kind === "mate" ? 1.6 : 1;
+      const felt = bond.affinity * weight;
+      other.grieving = Math.max(other.grieving, 22 + felt * 45);
+      other.mourned = dead.name;
+      other.joy = Math.min(1, other.joy + 0.35 * felt);
+      other.social = Math.min(1, other.social + 0.25 * felt);
+      this.remember(
+        other,
+        bond.kind === "kin"
+          ? `${dead.name}, my own, died`
+          : `${dead.name} died — ${bond.because}`,
+      );
+      // The bond is not deleted. You go on knowing them.
+      bond.because = `died on day ${this.day}`;
+      if (felt > closestFeeling) {
+        closestFeeling = felt;
+        closest = other;
+      }
+    }
+    if (closest && closestFeeling > 0.55) {
+      this.addLog(
+        `${closest.name} sits with ${dead.name}${clan ? ` of the ${clan.name}` : ""}.`,
+        "grief",
+      );
+    }
+  }
+
+  /** Whether these two peoples are actually at war right now. */
+  atWarWith(a: Clan | null, b: Clan | null) {
+    if (!a || !b || a.id === b.id) return false;
+    return this.wars.has(`${Math.min(a.id, b.id)}-${Math.max(a.id, b.id)}`);
+  }
+
   private updateWars(dt: number) {
     const live = this.clans.filter((c) => c.members > 0);
+    for (const c of live) decayGrievances(c.grievances, dt);
+
     for (let i = 0; i < live.length; i++) {
       for (let j = i + 1; j < live.length; j++) {
         const a = live[i];
         const b = live[j];
         const key = `${Math.min(a.id, b.id)}-${Math.max(a.id, b.id)}`;
-        const warring = atWar(a, b);
+        const open = this.wars.has(key);
 
-        if (warring && !this.wars.has(key)) {
+        // Standing grievance runs both ways; the angrier side sets the pace.
+        const anger = Math.max(
+          grievanceTotal(a.grievances, b.id),
+          grievanceTotal(b.grievances, a.id),
+        );
+        // Every marriage across the line is somebody with family on both
+        // sides, and that is what actually holds peoples together — but only
+        // a little. Pairing across a line turns out to be routine here rather
+        // than the rare diplomatic marriage it was modelled as, so a strong
+        // dampener simply meant no war could ever happen anywhere.
+        const kin = (a.ties.get(b.id) ?? 0) + (b.ties.get(a.id) ?? 0);
+        const bar = WAR_GRIEVANCE + Math.min(0.5, kin * 0.05);
+        // It takes one organised people to start a war, not two: an army is
+        // something you raise, and the people it marches on do not get a say
+        // in whether they are at war. Requiring both sides to have reached
+        // the age of Craft meant waiting for the whole island to catch up,
+        // and no war ever happened at all.
+        const organised =
+          (clanEra(a) >= WAR_MIN_ERA || clanEra(b) >= WAR_MIN_ERA) &&
+          a.members >= 12 &&
+          b.members >= 12;
+
+        if (!open && anger >= bar && organised) {
           this.wars.add(key);
-          // A declaration commits both sides: without this the feud flickers
-          // back to peace before any raiding party has walked there.
-          adjustRelation(a, b, -0.15);
+          adjustRelation(a, b, -1);
+          const worst = [...a.grievances, ...b.grievances]
+            .filter((g) => g.by === a.id || g.by === b.id)
+            .sort((x, y) => y.weight - x.weight)[0];
+          const cause = worst
+            ? worst.kind === "killing"
+              ? `over ${worst.victim ?? "their dead"}`
+              : worst.kind === "conversion"
+                ? "over who belongs to whom"
+                : worst.kind === "theft"
+                  ? "over what was taken"
+                  : worst.kind === "raid"
+                    ? "over the stones"
+                    : worst.kind === "crowding"
+                      ? "over the ground between them"
+                      : `over ${a.faith.deity} and ${b.faith.deity}`
+            : "over nothing they can name";
           this.addLog(
-            `The ${a.name} and the ${b.name} take up stones over ${a.faith.deity} and ${b.faith.deity}.`,
+            `The ${a.name} and the ${b.name} go to war ${cause}.`,
             "war",
           );
-        } else if (!warring && this.wars.has(key)) {
+          this.first(
+            "war",
+            `The first war on the island: the ${a.name} and the ${b.name}, ${cause}.`,
+            "first",
+          );
+        } else if (open && anger <= PEACE_GRIEVANCE) {
           this.wars.delete(key);
-          this.addLog(`The ${a.name} and the ${b.name} put the stones down.`, "peace");
+          adjustRelation(a, b, 0.6);
+          this.addLog(
+            `The ${a.name} and the ${b.name} put the stones down.`,
+            "peace",
+          );
         }
 
-        // Grief is the only thing that reliably ends a war — until somebody
-        // writes down what is owed, after which so does law.
-        if (warring) {
-          const grief = Math.min(1, (a.losses + b.losses) / 6);
+        if (open) {
+          // Grief wears a war out; written law wears it out faster; and every
+          // family that straddles the line pulls both ways at once.
+          const grief = Math.min(1, (a.losses + b.losses) / 8);
           const lawful =
             (a.discoveries.has("law") ? 1 : 0) + (b.discoveries.has("law") ? 1 : 0);
-          adjustRelation(a, b, (0.02 + grief * 0.06 + lawful * 0.045) * dt);
+          const cool = (0.004 + grief * 0.012 + lawful * 0.01 + kin * 0.004) * dt;
+          for (const g of a.grievances) if (g.by === b.id) g.weight -= cool;
+          for (const g of b.grievances) if (g.by === a.id) g.weight -= cool;
         }
+      }
+    }
+  }
+
+  /**
+   * Who a people listens to, and the ordinary business of resenting the
+   * neighbours. Leadership is not elected: it lands on whoever has done the
+   * most that their people would count, and it moves when somebody outgrows
+   * them or when they die.
+   */
+  private updateStandingAndLeaders(dt: number) {
+    this.leaderTimer -= dt;
+    if (this.leaderTimer > 0) return;
+    this.leaderTimer = 12;
+
+    const best = new Map<number, { t: Thronglet; score: number }>();
+    for (const t of this.thronglets) {
+      if (t.stage === "baby" || t.stage === "child") continue;
+      t.standing.built = t.blocksPlaced;
+      const score = standingScore(t.standing, t.age / DAY_LENGTH);
+      const cur = best.get(t.clanId);
+      if (!cur || score > cur.score) best.set(t.clanId, { t, score });
+    }
+
+    for (const clan of this.clans) {
+      if (clan.members <= 0) {
+        clan.leader = null;
+        continue;
+      }
+      const top = best.get(clan.id);
+      if (!top) continue;
+      if (clan.leader?.id === top.t.id) continue;
+      // Somebody has to be clearly ahead to displace a sitting elder, or the
+      // title flickers between two people every twelve seconds.
+      const sitting = this.thronglets.find((x) => x.id === clan.leader?.id);
+      if (sitting && sitting.alive) {
+        const held = standingScore(sitting.standing, sitting.age / DAY_LENGTH);
+        if (top.score < held * 1.18) continue;
+      }
+      clan.leader = { id: top.t.id, name: top.t.name, since: this.time };
+      this.remember(top.t, "the throng began to listen to me");
+      this.addLog(
+        sitting && sitting.alive
+          ? `The ${clan.name} stop listening to ${sitting.name} and turn to ${top.t.name}.`
+          : `The ${clan.name} begin to defer to ${top.t.name}.`,
+        "leader",
+      );
+    }
+
+    // Living too close is a slow, nameless injury, and it is the one that
+    // gets a feud started before anybody has actually done anything.
+    const live = this.clans.filter((c) => c.members > 0);
+    for (let i = 0; i < live.length; i++) {
+      for (let j = i + 1; j < live.length; j++) {
+        const a = live[i];
+        const b = live[j];
+        // "Too close" has to be measured against how far apart villages are
+        // actually founded (VILLAGE_SPACING), or it never fires at all — the
+        // settlement rules guarantee nobody is ever inside the old 26-unit
+        // radius. Outposts count too: planting a daughter town on somebody's
+        // doorstep is a provocation whoever founded it.
+        let gap = Math.hypot(a.home.x - b.home.x, a.home.z - b.home.z);
+        for (const p of this.centresOf(a))
+          for (const q of this.centresOf(b))
+            gap = Math.min(gap, Math.hypot(p.x - q.x, p.z - q.z));
+        if (gap < VILLAGE_SPACING * 1.3) {
+          this.grieve(a, b, "crowding", null, null, 0.25);
+          this.grieve(b, a, "crowding", null, null, 0.25);
+        }
+        if (a.faith.heresyOf === b.faith.id) this.grieve(a, b, "heresy", null, null, 0.25);
+        if (b.faith.heresyOf === a.faith.id) this.grieve(b, a, "heresy", null, null, 0.25);
       }
     }
   }
@@ -2438,7 +2746,7 @@ export class Colony {
     for (const o of this.thronglets) {
       if (o.clanId === t.clanId || !o.alive || o.stage === "baby") continue;
       const other = this.clanOf(o);
-      if (!other || !atWar(clan, other)) continue;
+      if (!other || !this.atWarWith(clan, other)) continue;
       const d = Math.hypot(o.x - t.x, o.z - t.z);
       if (d < bestD) {
         bestD = d;
@@ -2532,6 +2840,20 @@ export class Colony {
         e.clanId,
       );
       this.births++;
+      // Kin bonds are made at hatching and never labelled anything else: your
+      // parents are your parents whatever either of you later thinks.
+      for (const pid of e.parents) {
+        const parent = this.thronglets.find((x) => x.id === pid);
+        if (!parent) continue;
+        const up = bondWith(baby.bonds, parent.id, parent.name, this.time);
+        up.kind = "kin";
+        nudgeBond(up, 0.55, "raised me", this.time);
+        up.kind = "kin";
+        const down = bondWith(parent.bonds, baby.id, baby.name, this.time);
+        down.kind = "kin";
+        nudgeBond(down, 0.75, "my child", this.time);
+        down.kind = "kin";
+      }
       this.addLog(
         `${baby.name} hatches, child of ${e.parentNames[0]} and ${e.parentNames[1]}.`,
         "birth",
@@ -2588,6 +2910,24 @@ export class Colony {
           t.thinkTimer = 0;
           t.thought = "too cold to sleep.";
         }
+      }
+    }
+
+    // Mourning. They keep eating and drinking — grief does not excuse you
+    // from a body — but they stop wanting to play, they seek company, and
+    // whoever they lost keeps surfacing in what they are thinking.
+    if (t.grieving > 0) {
+      t.grieving -= dt;
+      t.joy = Math.min(1, t.joy + dt * 0.02);
+      if (t.grieving <= 0) {
+        t.mourned = null;
+      } else if (this.rand() < dt * 0.08 && t.mourned) {
+        t.thought = pick(this.rand, [
+          `${t.mourned}.`,
+          `I keep looking for ${t.mourned}.`,
+          "the village is quieter.",
+          `${t.mourned} should be here.`,
+        ]);
       }
     }
 
@@ -2670,7 +3010,7 @@ export class Colony {
 
       // Raiding: only adults, only in a war, and only while they can stand.
       const warring = this.clans.some(
-        (o) => o.members > 0 && o.id !== clan.id && atWar(clan, o),
+        (o) => o.members > 0 && o.id !== clan.id && this.atWarWith(clan, o),
       );
       if (
         warring &&
@@ -2911,7 +3251,7 @@ export class Colony {
               o.alive &&
               o.stage !== "baby" &&
               Math.hypot(o.x - t.x, o.z - t.z) < 60 &&
-              !atWar(clan, this.clanOf(o)),
+              !this.atWarWith(clan, this.clanOf(o)),
           );
           if (stranger) {
             t.task = "socialize";
@@ -3037,7 +3377,7 @@ export class Colony {
         }
         // Nobody in reach — march on the nearest hostile village instead.
         const rival = this.clans
-          .filter((o) => o.members > 0 && clan && o.id !== clan.id && atWar(clan, o))
+          .filter((o) => o.members > 0 && clan && o.id !== clan.id && this.atWarWith(clan, o))
           .sort(
             (a, b) =>
               Math.hypot(a.home.x - t.x, a.home.z - t.z) -
@@ -3150,7 +3490,7 @@ export class Colony {
       this.rand() < 0.18
     ) {
       const others = this.clans.filter(
-        (c) => c.members > 0 && c.id !== clan.id && !atWar(clan, c),
+        (c) => c.members > 0 && c.id !== clan.id && !this.atWarWith(clan, c),
       );
       if (others.length) {
         const target = pick(this.rand, others);
@@ -3262,12 +3602,24 @@ export class Colony {
           this.name(t, p.clanId === t.clanId ? "friend" : "stranger");
           this.overhear(t, p);
           this.overhear(p, t);
+          // Time spent together is what a friendship is made of. Both sides
+          // warm to each other, a little, every time.
+          const mine = bondWith(t.bonds, p.id, p.name, this.time);
+          const theirs = bondWith(p.bonds, t.id, t.name, this.time);
+          nudgeBond(mine, 0.055, "we talk", this.time);
+          nudgeBond(theirs, 0.055, "we talk", this.time);
           // Feed whoever is worse off than you — the reason babies survive a
           // bad week at all.
           if (p.hunger > 0.7 && t.hunger < 0.35 && p.clanId === t.clanId) {
             p.hunger = Math.max(0, p.hunger - 0.45);
             p.emote = { icon: "apple", t: 1.5 };
             this.name(t, "food");
+            // Being fed when you were starving is not forgotten, and it is
+            // the main thing that gets somebody listened to later on.
+            t.standing.fed++;
+            nudgeBond(theirs, 0.4, `${t.name} fed me when I was starving`, this.time);
+            nudgeBond(mine, 0.12, "I fed them", this.time);
+            this.remember(p, `${t.name} fed me`);
           }
           if (p.clanId !== t.clanId) this.maybeConvert(t, p);
           t.task = "idle";
@@ -3430,7 +3782,38 @@ export class Colony {
           p.mateCooldown = t.mateCooldown;
           t.childCount++;
           p.childCount++;
+          t.standing.raised++;
+          p.standing.raised++;
           t.emote = { icon: "heart", t: 2 };
+          // A pairing is the strongest bond either of them has, and it does
+          // not decay back to acquaintance.
+          for (const [a, b] of [
+            [t, p],
+            [p, t],
+          ] as [Thronglet, Thronglet][]) {
+            const bond = bondWith(a.bonds, b.id, b.name, this.time);
+            nudgeBond(bond, 0.7, `we have children together`, this.time);
+            bond.kind = "mate";
+          }
+          // A marriage across a line is a family with people on both sides of
+          // it — the thing that actually stops two peoples going to war.
+          const mineClan = this.clanOf(t);
+          const theirClan = this.clanOf(p);
+          if (mineClan && theirClan && mineClan.id !== theirClan.id) {
+            mineClan.ties.set(
+              theirClan.id,
+              (mineClan.ties.get(theirClan.id) ?? 0) + 1,
+            );
+            theirClan.ties.set(
+              mineClan.id,
+              (theirClan.ties.get(mineClan.id) ?? 0) + 1,
+            );
+            adjustRelation(mineClan, theirClan, 0.3);
+            this.addLog(
+              `${t.name} of the ${mineClan.name} and ${p.name} of the ${theirClan.name} have a child between them.`,
+              "tie",
+            );
+          }
           if (this.thronglets.length + this.eggs.length < POP_CAP) {
             const gen = Math.max(t.gen, p.gen) + 1;
             this.eggs.push({
@@ -3490,7 +3873,7 @@ export class Colony {
             site.placed > 0 &&
             site.clanId !== t.clanId &&
             Math.hypot(site.x - t.x, site.z - t.z) < 3 &&
-            atWar(clan, this.clans.find((c) => c.id === site.clanId)!),
+            this.atWarWith(clan, this.clans.find((c) => c.id === site.clanId) ?? null),
         );
         if (shrine) {
           t.taskTimer += dt;
@@ -3503,6 +3886,7 @@ export class Colony {
             if (victim) {
               victim.lessons.raided++;
               adjustRelation(clan, victim, -0.06);
+              this.grieve(victim, clan, "raid");
               if (this.rand() < 0.12)
                 this.addLog(
                   `The ${clan.name} pull stones from the ${victim.name}'s shrine.`,
@@ -3724,7 +4108,7 @@ export class Colony {
     const mine = this.clanOf(speaker);
     const theirs = this.clanOf(listener);
     if (!mine || !theirs || mine.id === theirs.id) return;
-    if (atWar(mine, theirs)) return; // nobody is listening during a war
+    if (this.atWarWith(mine, theirs)) return; // nobody is listening during a war
 
     const push = speaker.genome.devotion * mine.faith.zeal;
     const hold = listener.genome.devotion * theirs.faith.zeal;
@@ -3737,6 +4121,8 @@ export class Colony {
     mine.converts++;
     this.converted++;
     adjustRelation(mine, theirs, -0.05);
+    // Losing somebody to a neighbour's god is remembered as a taking.
+    this.grieve(theirs, mine, "conversion", speaker.name, listener.name);
     this.addLog(
       `${listener.name} leaves the ${theirs.name} for ${mine.faith.deity}.`,
       "convert",
@@ -3755,6 +4141,14 @@ export class Colony {
     this.skirmishes++;
     this.name(attacker, "fight");
     foe.hurt = 1;
+    // Being hit by somebody is personal, and it stays personal: this is the
+    // bond that makes a survivor go looking for one particular enemy later.
+    nudgeBond(
+      bondWith(foe.bonds, attacker.id, attacker.name, this.time),
+      -0.5,
+      `${attacker.name} struck me`,
+      this.time,
+    );
     // Standing fights mostly end in someone running. It is the chasing down
     // afterwards that actually kills.
     const rout = foe.task === "flee" ? 1.9 : 1;
@@ -3767,12 +4161,18 @@ export class Colony {
       foe.alive = false;
       foe.slain = true;
       attacker.kills++;
+      attacker.standing.killed++;
       this.killed++;
       if (theirs) {
         theirs.losses++;
         theirs.lessons.raided++;
       }
-      if (mine && theirs) adjustRelation(mine, theirs, -0.12);
+      if (mine && theirs) {
+        adjustRelation(mine, theirs, -0.12);
+        // A killing is remembered with both names attached, for a long time.
+        // This is the grievance a war is eventually declared over.
+        this.grieve(theirs, mine, "killing", attacker.name, foe.name);
+      }
       this.addLog(
         `${foe.name} of the ${theirs?.name ?? "lost"} falls to ${attacker.name}.`,
         "kill",

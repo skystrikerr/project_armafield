@@ -54,18 +54,58 @@ lighting, and the town names lettered onto the island — which are the words
 the clans coined for themselves, so the island reads as a map of somewhere
 rather than scenery.
 
-## Peoples, gods and war
+## People, not agents
+
+Each creature holds up to eight relationships with specific named individuals,
+built out of things that actually happened between them: who fed it when it was
+starving, who raised it, who it has children with, who struck it. The inspector
+shows *“Vek — fed me when I was starving”*, not “sociability 0.7”.
+
+It changes what they do. "Go and find a friend" used to mean *walk to the
+nearest body*. Now one will walk past three neighbours to reach the person who
+fed it once, and will not seek out somebody who hit it.
+
+When somebody dies, everyone bonded to them takes it — they stop wanting to
+play, they seek company, and the name keeps surfacing in their thoughts. A
+clan losing someone who mattered is visible in the village without opening a
+panel, because a dozen creatures go quiet at once.
+
+Nobody is appointed to anything. Standing is earned by feeding the hungry,
+raising children, laying stone and working things out, and a people simply
+defers to whoever has most of it — *the Fenbough stop listening to Nazz and
+turn to Flush.*
+
+## Peoples and gods
 
 The island fills with clans. Each is a village, a bloodline and a religion at
 once — a god, a sacred thing, a creed, and a banner colour its members wear as
-a tint. They build their villages outward in rings from where they settled,
-gather at their shrine at dawn and dusk, carry their god to neighbours who
-have not heard of it, split when they grow too big to agree with themselves,
-and eventually come to blows over whose god is real. Most fights end with
-somebody running. Grief is the only thing that reliably ends a war.
+a tint. They build outward in rings from where they settled, gather at their
+shrine at dawn and dusk, carry their god to neighbours who have not heard of
+it, and split when they grow too big to agree with themselves.
 
-The peoples panel lists who is alive, what they worship, and how each clan
-feels about the others; click one to fly to its village.
+The peoples panel lists who is alive, what they worship, who they defer to,
+and what they hold against the others; click one to fly to its village.
+
+## War, which takes weeks
+
+A war is the end of a long argument, and it needs three things at once:
+
+1. **Remembered injury**, with dates and names — a killing, a raid, a theft, a
+   conversion, a border pressed, a god said wrong. Standing complaints accrue
+   at a trickle and take days of sustained friction to become worth fighting
+   over, and they fade if you leave a people alone.
+2. **Organisation.** Mustering needs the age of Craft: kilns, carts, kept
+   accounts, a people organised enough to send fifteen of its own somewhere
+   and feed them when they get there.
+3. **Nobody holding it back.** Every marriage across the line is a family with
+   people on both sides, and it raises the bar.
+
+The declaration names what it is actually about — *the Ashmire and the Margate
+go to war over their dead* — and the grudges behind it are listed with their
+dates. Grief wears a war out, written law wears it out faster.
+
+In a verified 32-day run the first war broke out on **day 26**, one war at a
+time, one killing in total.
 
 ## The long climb
 

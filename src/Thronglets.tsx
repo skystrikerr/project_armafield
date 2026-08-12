@@ -47,6 +47,37 @@ const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 const TECH_COUNT = TECHS.length;
 
 /**
+ * What colour each kind of journal entry is written in. A printed record uses
+ * a small fixed set of inks and stays consistent about what each one means:
+ * red for injury and for anything the observer would underline, gold for
+ * discovery, blue-black for the ordinary social business, green for growth.
+ */
+const INK_FOR: Record<string, string> = {
+  first: "#a3301c",
+  watched: "#a3301c",
+  grief: "rgba(163,48,28,0.9)",
+  death: "rgba(163,48,28,0.75)",
+  kill: "rgba(163,48,28,0.75)",
+  war: "rgba(163,48,28,0.75)",
+  era: "#7a5c18",
+  discovery: "#7a5c18",
+  faith: "#5b3a86",
+  convert: "#5b3a86",
+  schism: "#5b3a86",
+  leader: "#2c4a72",
+  tie: "#2c4a72",
+  trade: "#2c4a72",
+  weather: "#2c4a72",
+  peace: "#3f6b4a",
+  birth: "#3f6b4a",
+  built: "#3f6b4a",
+  grow: "#3f6b4a",
+};
+
+/** Entries the record sets in italic, because they only happen once. */
+const LOUD = new Set(["first", "era", "watched", "war", "grief"]);
+
+/**
  * The interface is a naturalist's monograph.
  *
  * Every simulation and every AI toy reaches for the same two skins — dark
@@ -422,6 +453,39 @@ function PeoplesPanel({
               <p className="text-[12px] italic leading-snug text-[#211d18]/45">
                 “{c.creed}”
               </p>
+              {c.leader && (
+                <p className="mt-0.5 text-[12px] text-[#211d18]/60">
+                  they defer to{" "}
+                  <span className="font-[500] text-[#211d18]">{c.leader}</span>
+                </p>
+              )}
+              {/* Wars are named by what they are actually about, and the
+                  grudges behind them are listed with dates. */}
+              {c.atWar.length > 0 && (
+                <p className="mt-0.5 text-[12px] font-[500]" style={{ color: RED }}>
+                  at war with {c.atWar.join(", ")}
+                </p>
+              )}
+              {c.grievances.length > 0 && (
+                <ul className="mt-1 space-y-[2px]">
+                  {c.grievances.map((g, i) => (
+                    <li
+                      key={i}
+                      className="flex gap-1.5 text-[11px] leading-snug"
+                      style={{ color: "rgba(163,48,28,0.8)" }}
+                    >
+                      <span className="opacity-50">†</span>
+                      <span>{g.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {c.ties.length > 0 && (
+                <p className="mt-0.5 text-[11px]" style={{ color: "#2c4a72" }}>
+                  family among the{" "}
+                  {c.ties.map((x) => `${x.name} (${x.count})`).join(", ")}
+                </p>
+              )}
               <TechLadder clan={c} />
               {Object.keys(c.roles).length > 0 && (
                 <p className="mt-1 text-[11px] text-[#211d18]/45">
@@ -1254,6 +1318,52 @@ export default function Thronglets() {
               </span>
             </div>
 
+            {/* Who this one actually knows. The single most humanising thing
+                on the sheet: not "sociability 0.7" but "Vek fed me when I
+                was starving". */}
+            {selected.bonds.length > 0 && (
+              <div className="relative mt-2.5">
+                <Rule>who it knows</Rule>
+                <ul className="space-y-[3px]">
+                  {[...selected.bonds]
+                    .sort((a, b) => Math.abs(b.affinity) - Math.abs(a.affinity))
+                    .slice(0, 6)
+                    .map((b) => (
+                      <li key={b.id} className="flex items-baseline gap-1.5">
+                        <span
+                          className="shrink-0 text-[12px] font-[500]"
+                          style={{
+                            color:
+                              b.affinity <= -0.2
+                                ? RED
+                                : b.affinity >= 0.45
+                                  ? "#3f6b4a"
+                                  : INK,
+                          }}
+                        >
+                          {b.name}
+                        </span>
+                        <span className="shrink-0 text-[9px] uppercase tracking-[0.12em] text-[#211d18]/30">
+                          {b.kind}
+                        </span>
+                        <span className="truncate text-[11px] italic text-[#211d18]/45">
+                          {b.because}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
+
+            {selected.grieving > 0 && selected.mourned && (
+              <p
+                className="relative mt-2 border-l-2 pl-2.5 text-[12.5px] italic"
+                style={{ borderColor: RED, color: RED }}
+              >
+                in mourning for {selected.mourned}.
+              </p>
+            )}
+
             {selected.episodes.length > 0 && (
               <div className="relative mt-2.5">
                 <Rule>what has happened to it</Rule>
@@ -1443,21 +1553,8 @@ export default function Thronglets() {
               day in the gutter — an actual observation journal. */}
           <ul className="relative space-y-[5px] border-l border-[#a3301c]/25 pl-2">
             {(snapshot?.log ?? []).map((e, i) => {
-              const tone =
-                e.kind === "first" || e.kind === "watched"
-                  ? RED
-                  : e.kind === "era" || e.kind === "discovery"
-                    ? "#7a5c18"
-                    : e.kind === "death" || e.kind === "kill" || e.kind === "war"
-                      ? "rgba(163,48,28,0.75)"
-                      : e.kind === "faith" || e.kind === "convert" || e.kind === "schism"
-                        ? "#5b3a86"
-                        : e.kind === "trade" || e.kind === "weather"
-                          ? "#2c4a72"
-                          : e.kind === "birth" || e.kind === "built" || e.kind === "grow"
-                            ? "#3f6b4a"
-                            : "rgba(33,29,24,0.62)";
-              const loud = e.kind === "first" || e.kind === "era" || e.kind === "watched";
+              const tone = INK_FOR[e.kind] ?? "rgba(33,29,24,0.62)";
+              const loud = LOUD.has(e.kind);
               return (
                 <li
                   key={`${e.t}-${i}`}
