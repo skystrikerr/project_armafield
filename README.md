@@ -56,6 +56,30 @@ somebody running. Grief is the only thing that reliably ends a war.
 The peoples panel lists who is alive, what they worship, and how each clan
 feels about the others; click one to fly to its village.
 
+## Weather, and working things out
+
+The island turns through four seasons on an eight-day year. Snow settles in
+the cold, whitens the trees, stops things growing and melts when the warmth
+comes back. Warmth falls at night, and an exposed creature on a cold night
+burns energy, loses condition, and cannot sleep through it.
+
+That pressure is what makes them invent. Nothing is unlocked by a progress
+bar — somebody works a thing out because of where they happen to be standing,
+and it is logged with their name:
+
+> **First fire on the island — Snool of the Cinderhollow.**
+> *Snool of the Cinderhollow works out fire on a bitter night.*
+
+Fire, then cooking at a fire, then baskets from somebody who has hauled enough
+loads to resent it, then burial from a clan that has buried enough of its own.
+Hearths cannot be built by a people who have not worked fire out.
+
+Knowing a word is personal too: each creature only knows what it has said or
+heard, and picks words up one at a time from whoever it is standing next to.
+A coinage starts with one speaker and spreads through the clan — and slides
+back when children are born who have not heard it yet. The first word, the
+first snow, the first rain: each logged as news once, and never again.
+
 ## An island with materials
 
 Four kinds of tree, placed where they belong: palms along the shore, pines on

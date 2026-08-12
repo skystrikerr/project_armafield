@@ -10,6 +10,20 @@ import { makePhonology, type Lexicon, type Phonology } from "./language";
  * come to blows with.
  */
 
+/**
+ * Things a people can work out for itself. Each is invented by one individual
+ * under a specific pressure — fire on a cold night, burial after enough
+ * graves — rather than unlocked by a counter.
+ */
+export type Discovery = "fire" | "cooking" | "baskets" | "burial";
+
+export const DISCOVERY_LABEL: Record<Discovery, string> = {
+  fire: "fire",
+  cooking: "cooking",
+  baskets: "baskets",
+  burial: "burial",
+};
+
 export type SacredThing = "sun" | "water" | "grove" | "stone" | "throng" | "egg";
 
 export type Faith = {
@@ -52,6 +66,8 @@ export type Clan = {
   townNames: string[];
   /** Goods carried in from other clans — the trade that isn't war. */
   traded: number;
+  /** Things this people has worked out, and who worked each one out. */
+  discoveries: Map<Discovery, { by: string; day: number }>;
 };
 
 const CLAN_HEAD = [
@@ -217,6 +233,7 @@ export function makeClan(
     outposts: [],
     townNames: [],
     traded: 0,
+    discoveries: new Map(),
   };
 }
 

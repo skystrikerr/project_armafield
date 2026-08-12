@@ -10,6 +10,15 @@ import {
   type Concept,
 } from "./language";
 import {
+  chill,
+  initialWeather,
+  SEASON_LABEL,
+  SKY_LABEL,
+  stepWeather,
+  YEAR_LENGTH,
+  type WeatherState,
+} from "./weather";
+import {
   adjustRelation,
   atWar,
   driftRelations,
@@ -18,6 +27,7 @@ import {
   relationOf,
   splinterFaith,
   type Clan,
+  type Discovery,
   type Faith,
 } from "./clans";
 import {
@@ -60,6 +70,7 @@ export const WEAR_CELL = 1.5;
 const FOOTPRINT: Record<StructureKind, number> = {
   cairn: 0.7,
   hut: 1.5,
+  hearth: 0.6,
   shrine: 1.2,
   well: 0.8,
   granary: 1.3,
@@ -203,6 +214,10 @@ export type Thronglet = {
   homeSite: number | null;
 
   memory: Memory[];
+  /** Things worth remembering having happened to them, newest last. */
+  episodes: string[];
+  /** The words this one personally knows — learned by hearing, not by decree. */
+  known: Set<Concept>;
   /** The trade this one has settled into. */
   role: Role;
   /** What is currently killing this one, if anything. */
@@ -242,6 +257,7 @@ export type Block = {
 export type StructureKind =
   | "cairn"
   | "hut"
+  | "hearth"
   | "shrine"
   | "well"
   | "granary"
@@ -289,6 +305,12 @@ export type ColonyStats = {
   words: number;
   towns: number;
   stoneLeft: number;
+  sky: string;
+  season: string;
+  year: number;
+  warmth: number;
+  snow: number;
+  discoveries: number;
 };
 
 export type ClanReport = {
@@ -310,7 +332,14 @@ export type ClanReport = {
   traded: number;
   lessons: { thirst: number; famine: number; raided: number };
   roles: Record<string, number>;
-  tongue: { concept: string; word: string; borrowedFrom: string | null }[];
+  tongue: {
+    concept: string;
+    word: string;
+    borrowedFrom: string | null;
+    coinedBy: string;
+    spread: number;
+  }[];
+  discoveries: { what: string; by: string; day: number }[];
   /** How far each neighbour's tongue has drifted from this one. */
   drift: { name: string; value: number }[];
 };
@@ -359,6 +388,7 @@ const STRUCTURE_TIERS: {
   knowledge: number;
 }[] = [
   { kind: "cairn", label: "Cairn", knowledge: 0 },
+  { kind: "hearth", label: "Hearth", knowledge: 0 },
   { kind: "hut", label: "Hut", knowledge: 25 },
   { kind: "well", label: "Well", knowledge: 40 },
   { kind: "shrine", label: "Shrine", knowledge: 55 },
@@ -447,6 +477,21 @@ function layout(kind: StructureKind, rand: Rand, accent: number): Block[] {
     push(0, 2, 0, stoneDark);
     push(0, 3, 0, accent);
     push(0, 4, 0, accent);
+  } else if (kind === "hearth") {
+    // A ring of stones and a stack of wood. Small, cheap, and the difference
+    // between a colony that survives its first winter and one that doesn't.
+    for (const [x, z] of [
+      [-1, 0],
+      [1, 0],
+      [0, -1],
+      [0, 1],
+      [-1, -1],
+      [1, 1],
+    ] as [number, number][])
+      push(x, 0, z, stoneDark);
+    push(0, 0, 0, woodDark);
+    push(0, 1, 0, wood);
+    push(0, 2, 0, 0xff9a3c);
   } else if (kind === "well") {
     // A stone ring with a thatched roof over it — water in the town, so
     // nobody has to cross the island for a drink.
@@ -555,6 +600,9 @@ export class Colony {
   faiths: Faith[] = [];
 
   time = DAY_LENGTH * 0.18; // start mid-morning
+  weather: WeatherState = initialWeather();
+  /** Things that have happened for the first time, so they only read as news once. */
+  firsts = new Set<string>();
   /** Population sampled over time, for the chart in the HUD. */
   history: number[] = [];
   private historyTimer = 0;
@@ -731,6 +779,8 @@ export class Colony {
       dyingOf: null,
       homeSite: null,
       memory: [],
+      episodes: [],
+      known: new Set<Concept>(),
       held: false,
       bob: this.rand() * 10,
       hop: 0,
@@ -815,15 +865,24 @@ export class Colony {
     const existing = say(clan.lexicon, concept);
     if (existing) {
       reinforce(clan.lexicon, concept);
+      // You only know a word if you have said it or heard it.
+      t.known.add(concept);
       return existing;
     }
     // Not everyone is a coiner — it takes a talkative one, and a moment.
     if (this.rand() > 0.25 * (0.4 + t.genome.sociability)) return null;
     const event = coin(this.rand, clan.lexicon, clan.phonology, concept, t.name);
     if (event) {
+      t.known.add(concept);
+      this.remember(t, `named ${concept} “${event.word}”`);
       this.addLog(
         `${t.name} of the ${clan.name} calls it “${event.word}” — ${concept}.`,
         "word",
+      );
+      this.first(
+        "word",
+        `First word on the island: ${t.name} calls ${concept} “${event.word}”.`,
+        "first",
       );
       this.knowledge += 1.5;
     }
@@ -901,6 +960,21 @@ export class Colony {
         bestD = d;
         best = s;
       }
+    }
+    return best;
+  }
+
+  /**
+   * How sheltered a spot is from the cold, 0–1. Only a lit hearth helps, and
+   * only if somebody worked out fire in the first place.
+   */
+  warmthAt(x: number, z: number) {
+    let best = 0;
+    for (const s of this.sites) {
+      if (!s.complete || s.kind !== "hearth") continue;
+      const d = Math.hypot(s.x - x, s.z - z);
+      if (d > 7) continue;
+      best = Math.max(best, 1 - d / 7);
     }
     return best;
   }
@@ -999,6 +1073,20 @@ export class Colony {
     return best ?? findLandSpot(this.rand, this.terrain);
   }
 
+  /** Something happened to this one that it will carry around afterwards. */
+  remember(t: Thronglet, what: string) {
+    t.episodes.push(what);
+    if (t.episodes.length > 8) t.episodes.shift();
+  }
+
+  /** Log something only the first time it ever happens. */
+  private first(key: string, text: string, kind: string) {
+    if (this.firsts.has(key)) return false;
+    this.firsts.add(key);
+    this.addLog(text, kind);
+    return true;
+  }
+
   addLog(text: string, kind: string) {
     this.log.push({ t: this.time, text, kind });
     if (this.log.length > 60) this.log.shift();
@@ -1053,6 +1141,14 @@ export class Colony {
         .filter((c) => c.members > 0)
         .reduce((n, c) => n + 1 + c.outposts.length, 0),
       stoneLeft: Math.round(this.rocks.reduce((n, r) => n + r.stone, 0)),
+      sky: SKY_LABEL[this.weather.sky],
+      season: SEASON_LABEL[this.weather.season],
+      year: this.weather.year,
+      warmth: this.weather.warmth,
+      snow: this.weather.settled,
+      discoveries: new Set(
+        this.clans.flatMap((c) => Array.from(c.discoveries.keys())),
+      ).size,
     };
   }
 
@@ -1078,6 +1174,11 @@ export class Colony {
           .filter((o) => o.id !== c.id && o.members > 0)
           .map((o) => ({ id: o.id, name: o.name, value: relationOf(c, o) })),
         outposts: c.outposts.length,
+        discoveries: Array.from(c.discoveries.entries()).map(([what, d]) => ({
+          what,
+          by: d.by,
+          day: d.day,
+        })),
         towns: [...c.townNames],
         traded: c.traded,
         lessons: { ...c.lessons },
@@ -1091,6 +1192,13 @@ export class Colony {
           concept,
           word: w.word,
           borrowedFrom: w.borrowedFrom,
+          coinedBy: w.coinedBy,
+          // How much of the clan actually has this word.
+          spread: c.members
+            ? this.thronglets.filter(
+                (t) => t.clanId === c.id && t.known.has(concept),
+              ).length / c.members
+            : 0,
         })),
         drift: this.clans
           .filter((o) => o.id !== c.id && o.members > 0)
@@ -1103,7 +1211,7 @@ export class Colony {
 
   /* ---------------- world queries ---------------- */
 
-  private remember(t: Thronglet, x: number, z: number, kind: Memory["kind"]) {
+  private noteSpot(t: Thronglet, x: number, z: number, kind: Memory["kind"]) {
     if (t.memory.some((m) => m.kind === kind && Math.hypot(m.x - x, m.z - z) < 4))
       return;
     t.memory.push({ x, z, kind });
@@ -1280,7 +1388,12 @@ export class Colony {
   }
 
   private chooseStructure(clan: Clan) {
-    const unlocked = STRUCTURE_TIERS.filter((s) => this.knowledge >= s.knowledge);
+    const unlocked = STRUCTURE_TIERS.filter(
+      (s) =>
+        this.knowledge >= s.knowledge &&
+        // You cannot build a fire you have not worked out.
+        (s.kind !== "hearth" || clan.discoveries.has("fire")),
+    );
     if (!unlocked.length) return null;
     const built = this.sites.filter((s) => s.complete && s.clanId === clan.id);
     const has = (k: StructureKind) => built.some((s) => s.kind === k);
@@ -1308,6 +1421,15 @@ export class Colony {
     const shrine = STRUCTURE_TIERS.find((t) => t.kind === "shrine")!;
     if (this.knowledge >= shrine.knowledge && !has("shrine") && !planned("shrine"))
       return shrine;
+
+    // Fire first, once they have it and the cold is real.
+    const hearths = built.filter((s) => s.kind === "hearth").length;
+    if (
+      clan.discoveries.has("fire") &&
+      hearths * 14 < clan.members + 8 &&
+      !planned("hearth")
+    )
+      return STRUCTURE_TIERS.find((t) => t.kind === "hearth")!;
 
     // A town that only ever builds housing never becomes a town. Once there
     // is somewhere to sleep, the store and the fields come before more huts.
@@ -1427,6 +1549,7 @@ export class Colony {
     this.time += dt;
 
     this.rebuildGrid();
+    this.updateWeather(dt);
     this.countClans();
     driftRelations(this.clans, dt);
     this.updateWars(dt);
@@ -1444,6 +1567,32 @@ export class Colony {
       this.deaths++;
       this.knowledge += 2; // what one learned, the throng keeps
       if (!t.slain) this.addLog(`${t.name} returns to the throng.`, "death");
+      // A people that has learned burial marks the spot.
+      const clan = this.clanOf(t);
+      if (
+        clan &&
+        clan.discoveries.has("burial") &&
+        this.sites.filter((s) => s.kind === "cairn").length < 40 &&
+        this.rand() < 0.5
+      ) {
+        const blocks = layout("cairn", this.rand, clan.color);
+        this.sites.push({
+          id: this.nextSiteId++,
+          clanId: clan.id,
+          kind: "cairn",
+          x: t.x,
+          z: t.z,
+          y: this.terrain.height(t.x, t.z),
+          blocks,
+          placed: 0,
+          wood: 0,
+          stone: 0,
+          woodNeeded: blocks.filter((b) => b.mat === "wood").length,
+          stoneNeeded: blocks.filter((b) => b.mat === "stone").length,
+          complete: false,
+          store: 0,
+        });
+      }
     }
 
     for (let i = this.drops.length - 1; i >= 0; i--) {
@@ -1487,6 +1636,8 @@ export class Colony {
       }
     }
 
+    this.checkDiscoveries(dt);
+
     this.contactTimer -= dt;
     if (this.contactTimer <= 0) {
       this.contactTimer = 2;
@@ -1497,6 +1648,124 @@ export class Colony {
     if (this.schismCooldown <= 0) {
       this.schismCooldown = 50;
       this.maybeSchism();
+    }
+  }
+
+  /* ---------------- weather ---------------- */
+
+  get day() {
+    return Math.floor(this.time / DAY_LENGTH);
+  }
+
+  private updateWeather(dt: number) {
+    const p = this.dayPhase;
+    const nightness = p > 0.72 || p < 0.06 ? 1 : p > 0.6 ? (p - 0.6) / 0.12 : 0;
+    const change = stepWeather(this.weather, this.rand, dt, this.day, nightness);
+    if (!change) return;
+
+    if (change.seasonChanged) {
+      this.addLog(
+        `${SEASON_LABEL[change.season][0].toUpperCase()}${SEASON_LABEL[change.season].slice(1)} comes round again.`,
+        "season",
+      );
+    }
+    // The first time the island sees a thing, that is news.
+    if (change.sky === "snow") {
+      this.first(
+        "snow",
+        "Snow begins to fall — the world turns quiet and white.",
+        "weather",
+      );
+    } else if (change.sky === "rain") {
+      this.first("rain", "Rain begins.", "weather");
+    }
+  }
+
+  /**
+   * Invention. Nobody is granted anything: a particular creature works a
+   * particular thing out because of the situation it is standing in, and the
+   * island hears about it afterwards.
+   */
+  private checkDiscoveries(dt: number) {
+    if (this.rand() > dt * 4) return;
+    // Sample a handful rather than one, so a pressure that only a few are
+    // under still gets noticed.
+    let t: Thronglet | null = null;
+    for (let i = 0; i < 6 && !t; i++) {
+      const pick_ = this.thronglets[
+        Math.floor(this.rand() * this.thronglets.length)
+      ];
+      if (pick_ && pick_.stage !== "baby" && !pick_.held) t = pick_;
+    }
+    if (!t) return;
+    const clan = this.clanOf(t);
+    if (!clan) return;
+
+    const learn = (what: Discovery, story: string) => {
+      if (clan.discoveries.has(what)) return false;
+      clan.discoveries.set(what, { by: t.name, day: this.day });
+      this.knowledge += 25;
+      this.remember(t, story);
+      this.addLog(
+        `${t.name} of the ${clan.name} ${story}`,
+        "discovery",
+      );
+      this.first(
+        `discovery:${what}`,
+        `First ${what} on the island — ${t.name} of the ${clan.name}.`,
+        "first",
+      );
+      return true;
+    };
+
+    const cold = chill(this.weather);
+
+    // Fire: worked out by somebody awake and freezing, with wood to hand.
+    if (
+      !clan.discoveries.has("fire") &&
+      cold > 0.55 &&
+      t.task !== "sleep" &&
+      this.warmthAt(t.x, t.z) < 0.1 &&
+      (t.carryingWood > 0 || this.nearestTreeWithWood(t)) &&
+      this.rand() < 0.5 * (0.3 + t.genome.curiosity)
+    ) {
+      if (learn("fire", "works out fire on a bitter night.")) {
+        this.name(t, "fire");
+        return;
+      }
+    }
+
+    // Cooking follows fire, once somebody hungry is sitting at one.
+    if (
+      clan.discoveries.has("fire") &&
+      !clan.discoveries.has("cooking") &&
+      this.warmthAt(t.x, t.z) > 0.4 &&
+      t.hunger > 0.5 &&
+      this.rand() < 0.3
+    ) {
+      learn("cooking", "holds food to the fire and finds it is better for it.");
+      return;
+    }
+
+    // Baskets: worked out by somebody who has carried enough loads to resent it.
+    if (
+      !clan.discoveries.has("baskets") &&
+      t.blocksPlaced > 12 &&
+      (t.carryingWood > 0 || t.carryingStone > 0) &&
+      this.rand() < 0.12
+    ) {
+      learn("baskets", "weaves something to carry more in.");
+      return;
+    }
+
+    // Burial: after a clan has buried enough of its own.
+    if (
+      !clan.discoveries.has("burial") &&
+      clan.losses + clan.lessons.famine + clan.lessons.thirst >= 3 &&
+      this.rand() < 0.1
+    ) {
+      learn("burial", "stacks stones over the dead so the place is remembered.");
+      return;
     }
   }
 
@@ -1671,8 +1940,15 @@ export class Colony {
   }
 
   private updateFlora(dt: number) {
+    // Nothing much grows under snow; everything grows in the wet.
+    const growth =
+      this.weather.sky === "snow" || this.weather.settled > 0.4
+        ? 0.25
+        : this.weather.sky === "rain"
+          ? 1.6
+          : 1;
     for (const tr of this.trees) {
-      tr.regrow += dt;
+      tr.regrow += dt * growth;
       if (tr.regrow > 26 && tr.fruit < tr.capacity) {
         tr.regrow = 0;
         tr.fruit++;
@@ -1680,7 +1956,7 @@ export class Colony {
       if (tr.wood < 60) tr.wood += dt * 0.35;
     }
     for (const b of this.bushes) {
-      b.regrow += dt;
+      b.regrow += dt * growth;
       if (b.regrow > 34 && b.berries < 4) {
         b.regrow = 0;
         b.berries++;
@@ -1737,6 +2013,26 @@ export class Colony {
     if (t.emote) {
       t.emote.t -= dt;
       if (t.emote.t <= 0) t.emote = null;
+    }
+
+    // Cold is the pressure everything else answers to. Somewhere warm — a
+    // hearth, or a hut at night — keeps it off them.
+    const bite = chill(this.weather);
+    if (bite > 0.05 && !t.held) {
+      const warm = this.warmthAt(t.x, t.z);
+      const exposure = bite * (1 - warm);
+      if (exposure > 0.02) {
+        t.energy = Math.min(1, t.energy + dt * exposure * 0.05);
+        if (exposure > 0.55) t.health -= dt * (exposure - 0.55) * 0.05;
+        if (exposure > 0.4 && this.rand() < dt * 0.05) this.name(t, "cold");
+        // Nobody sleeps through a night like this, and somebody lying awake
+        // in the cold is exactly who works fire out.
+        if (exposure > 0.5 && t.task === "sleep") {
+          t.task = "idle";
+          t.thinkTimer = 0;
+          t.thought = "too cold to sleep.";
+        }
+      }
     }
 
     const babyFactor = t.stage === "baby" ? 0.6 : 1;
@@ -2003,12 +2299,12 @@ export class Colony {
           t.targetTree = tree.id;
           t.target = { x: tree.x + 0.9, z: tree.z + 0.6 };
           t.thought = "apples.";
-          this.remember(t, tree.x, tree.z, "food");
+          this.noteSpot(t, tree.x, tree.z, "food");
         } else if (bush) {
           t.task = "seekFood";
           t.target = { x: bush.x + 0.6, z: bush.z + 0.4 };
           t.thought = "berries will do.";
-          this.remember(t, bush.x, bush.z, "food");
+          this.noteSpot(t, bush.x, bush.z, "food");
         } else {
           this.startTask(t, "wander");
           t.thought = "hungry. nothing left here.";
@@ -2021,7 +2317,7 @@ export class Colony {
           t.task = "seekWater";
           t.target = w;
           t.thought = "water.";
-          this.remember(t, w.x, w.z, "water");
+          this.noteSpot(t, w.x, w.z, "water");
         } else this.startTask(t, "wander");
         return;
       }
@@ -2403,8 +2699,10 @@ export class Colony {
         if (t.taskTimer > 2) {
           t.emote = { icon: "heart", t: 1.5 };
           // Chatter spreads what each of them knows.
-          for (const m of p.memory) this.remember(t, m.x, m.z, m.kind);
+          for (const m of p.memory) this.noteSpot(t, m.x, m.z, m.kind);
           this.name(t, p.clanId === t.clanId ? "friend" : "stranger");
+          this.overhear(t, p);
+          this.overhear(p, t);
           // Feed whoever is worse off than you — the reason babies survive a
           // bad week at all.
           if (p.hunger > 0.7 && t.hunger < 0.35 && p.clanId === t.clanId) {
@@ -2490,7 +2788,10 @@ export class Colony {
         if (t.taskTimer > 2.4) {
           this.name(t, "wood");
           // Oak and pine give more per trip than an apple tree does.
-          const yield_ = tree.kind === "oak" ? 14 : tree.kind === "pine" ? 11 : 9;
+          const base = tree.kind === "oak" ? 14 : tree.kind === "pine" ? 11 : 9;
+          const yield_ = this.clanOf(t)?.discoveries.has("baskets")
+            ? Math.round(base * 1.6)
+            : base;
           const take = Math.min(yield_, Math.floor(tree.wood));
           tree.wood -= take;
           t.carryingWood = take;
@@ -2782,6 +3083,49 @@ export class Colony {
    * borrower's mouth changed, which is how neighbouring tongues end up with
    * words that are obviously related but no longer the same.
    */
+  /**
+   * One creature picks up a word from another simply by being there while it
+   * is used. Within a clan this is how a coinage becomes everybody's word;
+   * the clan lexicon holds the form, but knowing it is personal.
+   */
+  private overhear(listener: Thronglet, speaker: Thronglet) {
+    const clan = this.clanOf(speaker);
+    if (!clan) return;
+    const fresh: Concept[] = [];
+    for (const concept of Array.from(speaker.known)) {
+      if (!listener.known.has(concept)) fresh.push(concept);
+    }
+    if (!fresh.length) return;
+    const concept = pick(this.rand, fresh);
+    if (this.rand() > 0.55) return;
+    listener.known.add(concept);
+
+    // Crossing a language boundary is how a word gets into another tongue.
+    if (listener.clanId !== speaker.clanId) {
+      const theirs = this.clanOf(listener);
+      if (theirs) {
+        const event = borrow(
+          this.rand,
+          { lex: clan.lexicon, name: clan.name },
+          { lex: theirs.lexicon, phonology: theirs.phonology, name: theirs.name },
+          concept,
+        );
+        if (event && this.rand() < 0.4)
+          this.addLog(
+            `The ${theirs.name} take “${event.word}” for ${concept} from the ${clan.name}.`,
+            "word",
+          );
+      }
+    } else if (this.rand() < 0.06) {
+      const word = say(clan.lexicon, concept);
+      if (word)
+        this.addLog(
+          `${listener.name} learns “${word}” from ${speaker.name}.`,
+          "word",
+        );
+    }
+  }
+
   private tradeWords(a: Thronglet, b: Thronglet) {
     const mine = this.clanOf(a);
     const theirs = this.clanOf(b);
@@ -2887,6 +3231,13 @@ export class Colony {
   }
 
   private feed(t: Thronglet, amount: number) {
+    // Cooked food goes further, which is the whole point of having worked it out.
+    if (
+      this.clanOf(t)?.discoveries.has("cooking") &&
+      this.warmthAt(t.x, t.z) > 0.3
+    ) {
+      amount *= 1.45;
+    }
     const wasStarving = t.hunger > 0.85;
     this.name(t, "food");
     if (wasStarving) this.name(t, "hunger");
@@ -3034,6 +3385,7 @@ export class Colony {
     t.foe = null;
     t.emote = { icon: "spark", t: 1.5 };
     t.thought = "whoa —";
+    this.remember(t, "was lifted into the sky");
   }
 
   /**
@@ -3064,6 +3416,7 @@ export class Colony {
     } else {
       t.thought = "…down.";
     }
+    this.remember(t, "was set down somewhere new");
   }
 
   pet(t: Thronglet) {

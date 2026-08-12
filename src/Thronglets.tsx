@@ -208,6 +208,14 @@ function PeoplesPanel({
                 )}
               </p>
               <p className="text-[10px] italic text-white/35">“{c.creed}”</p>
+              {c.discoveries.length > 0 && (
+                <p className="mt-1 text-[10px] text-orange-200/80">
+                  knows{" "}
+                  {c.discoveries
+                    .map((d) => `${d.what} (${d.by}, day ${d.day})`)
+                    .join(" · ")}
+                </p>
+              )}
               {Object.keys(c.roles).length > 0 && (
                 <p className="mt-1 text-[10px] text-white/40">
                   {Object.entries(c.roles)
@@ -245,6 +253,12 @@ function PeoplesPanel({
                       <span key={w.concept} className="text-[10px]">
                         <span className="text-[#f6cf5a]/90">{w.word}</span>
                         <span className="text-white/30"> {w.concept}</span>
+                        {w.spread < 0.75 && (
+                          <span className="text-white/20">
+                            {" "}
+                            {Math.round(w.spread * 100)}%
+                          </span>
+                        )}
                         {w.borrowedFrom && (
                           <span className="text-sky-300/40" title={`borrowed from the ${w.borrowedFrom}`}>
                             *
@@ -552,6 +566,8 @@ export default function Thronglets() {
             <Stat label="Words" value={snapshot?.words ?? 0} />
             <Stat label="Towns" value={snapshot?.towns ?? 0} />
             <Stat label="Stone" value={snapshot?.stoneLeft ?? 0} />
+            <Stat label="Known" value={snapshot?.discoveries ?? 0} />
+            <Stat label="Year" value={snapshot?.year ?? 1} />
             <Stat
               label="Wars"
               value={`${snapshot?.wars ?? 0}${snapshot?.killed ? ` · ${snapshot.killed}†` : ""}`}
@@ -672,6 +688,10 @@ export default function Thronglets() {
             )}
             <span className="tabular-nums">
               day {Math.floor((snapshot?.time ?? 0) / 150) + 1}
+            </span>
+            <div className="h-3 w-px bg-white/10" />
+            <span className="text-white/50">
+              {snapshot?.sky ?? "clear"} · {snapshot?.season ?? "green season"}
             </span>
             <div className="h-3 w-px bg-white/10" />
             <button
@@ -800,6 +820,24 @@ export default function Thronglets() {
             </span>
           </div>
 
+          {selected.episodes.length > 0 && (
+            <div className="mt-2 border-t border-white/10 pt-2">
+              <p className="mb-1 text-[9px] uppercase tracking-wider text-white/30">
+                memories
+              </p>
+              <ul className="space-y-0.5">
+                {selected.episodes
+                  .slice(-4)
+                  .reverse()
+                  .map((m, i) => (
+                    <li key={i} className="text-[10px] text-white/45">
+                      {m}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          )}
+
           {llm.enabled && (
             <button
               onClick={askVoice}
@@ -841,6 +879,12 @@ export default function Thronglets() {
                   e.kind === "faith" && "text-[#c9a6ff]/90",
                   e.kind === "schism" && "text-amber-300/90",
                   e.kind === "convert" && "text-[#c9a6ff]/70",
+                  e.kind === "discovery" && "text-orange-300",
+                  e.kind === "first" && "font-semibold text-orange-200",
+                  e.kind === "weather" && "text-sky-200/80",
+                  e.kind === "season" && "text-emerald-200/70",
+                  e.kind === "word" && "text-[#f6cf5a]/80",
+                  e.kind === "trade" && "text-sky-300/80",
                 )}
                 title={e.text}
               >

@@ -99,6 +99,9 @@ export class ThrongletSim {
   private planks!: THREE.InstancedMesh;
   private banners!: THREE.InstancedMesh;
   private paths!: THREE.InstancedMesh;
+  private precip!: THREE.Points;
+  private precipVel!: Float32Array;
+  private hearthLights: THREE.PointLight[] = [];
   private pathTimer = 0;
   private fireflies!: THREE.Points;
   private outline = new THREE.Group();
@@ -347,9 +350,114 @@ export class ThrongletSim {
 
     this.worldGroup.add(this.siteMarkers);
 
+    this.buildPrecipitation();
     this.buildFireflies();
     this.buildEmotePool();
     this.mountWorld();
+  }
+
+  /**
+   * Rain and snow. One buffer of falling points recycled around the camera,
+   * retinted and re-sped depending on what the sky is doing.
+   */
+  private buildPrecipitation() {
+    const n = 3000;
+    const pos = new Float32Array(n * 3);
+    this.precipVel = new Float32Array(n);
+    const rand = mulberry32(31);
+    for (let i = 0; i < n; i++) {
+      pos[i * 3] = (rand() - 0.5) * 90;
+      pos[i * 3 + 1] = rand() * 40;
+      pos[i * 3 + 2] = (rand() - 0.5) * 90;
+      this.precipVel[i] = 0.6 + rand() * 0.7;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+
+    this.precip = new THREE.Points(
+      geo,
+      new THREE.PointsMaterial({
+        size: 0.16,
+        color: 0xdfe9f5,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      }),
+    );
+    this.precip.frustumCulled = false;
+    this.scene.add(this.precip);
+  }
+
+  /** Move the weather: fall, recycle, and follow the camera around. */
+  private syncWeather(dt: number) {
+    const w = this.colony.weather;
+    const mat = this.precip.material as THREE.PointsMaterial;
+    const falling = w.sky === "rain" || w.sky === "snow";
+    mat.opacity = w.intensity * (w.sky === "rain" ? 0.5 : 0.85);
+    mat.size = w.sky === "snow" ? 0.22 : 0.1;
+    mat.color.setHex(w.sky === "snow" ? 0xffffff : 0xa8c4e0);
+    this.precip.visible = mat.opacity > 0.02;
+
+    if (this.precip.visible) {
+      const target = this.controls.target;
+      const pos = this.precip.geometry.attributes.position as THREE.BufferAttribute;
+      const speed = w.sky === "snow" ? 2.2 : 16;
+      const drift = w.sky === "snow" ? 0.7 : 0.1;
+      for (let i = 0; i < pos.count; i++) {
+        let y = pos.getY(i) - dt * speed * this.precipVel[i];
+        let x = pos.getX(i) + dt * drift * Math.sin(this.colony.time * 0.5 + i);
+        let z = pos.getZ(i);
+        if (y < -2) {
+          y = 38;
+          x = (Math.random() - 0.5) * 90;
+          z = (Math.random() - 0.5) * 90;
+        }
+        pos.setXYZ(i, x, y, z);
+      }
+      pos.needsUpdate = true;
+      this.precip.position.set(target.x, 0, target.z);
+    }
+
+    // Snow lying on the ground: tint everything that is outdoors towards white.
+    const lay = w.settled;
+    const terrainMat = this.colony.terrain.mesh.material as THREE.MeshLambertMaterial;
+    terrainMat.color.setRGB(1 - lay * 0.25, 1 - lay * 0.12, 1 - lay * 0.02);
+    for (const kind of Object.keys(this.treeMeshes)) {
+      const m = this.treeMeshes[kind].material as THREE.MeshLambertMaterial;
+      m.color.setRGB(1 - lay * 0.3, 1 - lay * 0.18, 1 - lay * 0.05);
+    }
+    const bushMat = this.bushMesh.material as THREE.MeshLambertMaterial;
+    bushMat.color.setRGB(1 - lay * 0.3, 1 - lay * 0.18, 1 - lay * 0.05);
+    const rockMat = this.rockMesh.material as THREE.MeshLambertMaterial;
+    rockMat.color.setRGB(1, 1 - lay * 0.04, 1 - lay * 0.02);
+    const pathMat = this.paths.material as THREE.MeshLambertMaterial;
+    pathMat.opacity = 0.9 * (1 - lay * 0.8);
+
+    // A light at every lit hearth, so a winter night has somewhere to be.
+    const hearths = this.colony.sites.filter(
+      (s) => s.complete && s.kind === "hearth",
+    );
+    while (this.hearthLights.length < Math.min(hearths.length, 12)) {
+      const light = new THREE.PointLight(0xffa54a, 0, 14, 1.6);
+      this.hearthLights.push(light);
+      this.worldGroup.add(light);
+    }
+    const night = 1 - THREE.MathUtils.clamp(
+      Math.sin(this.colony.dayPhase * Math.PI * 2) * 2.4,
+      0,
+      1,
+    );
+    for (let i = 0; i < this.hearthLights.length; i++) {
+      const h = hearths[i];
+      const light = this.hearthLights[i];
+      if (!h) {
+        light.intensity = 0;
+        continue;
+      }
+      light.position.set(h.x, h.y + 0.7, h.z);
+      light.intensity =
+        (14 + Math.sin(this.colony.time * 7 + i) * 3) * (0.25 + night * 0.75);
+    }
   }
 
   private buildFireflies() {
@@ -760,6 +868,7 @@ export class ThrongletSim {
     this.syncApples();
     this.syncDrops();
     this.syncSelection();
+    this.syncWeather(raw);
     this.syncSky();
 
     if (this.follow) {
@@ -1178,15 +1287,42 @@ export class ThrongletSim {
 
     this.sun.position.set(Math.cos(az) * 80, Math.max(-16, elev * 95), 40);
     this.sun.target.position.set(0, 0, 0);
-    this.sun.intensity = THREE.MathUtils.clamp(elev * 6.5, 0, 4.8);
+    const weather = this.colony.weather;
+    const cloudCover =
+      weather.sky === "rain"
+        ? 0.55
+        : weather.sky === "snow"
+          ? 0.45
+          : weather.sky === "cloud"
+            ? 0.3
+            : weather.sky === "fog"
+              ? 0.4
+              : 0;
+    this.sun.intensity =
+      THREE.MathUtils.clamp(elev * 6.5, 0, 4.8) * (1 - cloudCover * 0.55);
     this.sun.color.setHex(elev < 0.25 ? 0xffc48a : 0xfff3d6);
 
     const dusk = THREE.MathUtils.clamp(1 - Math.abs(elev) * 3.2, 0, 1);
     const day = THREE.MathUtils.clamp(elev * 2.4, 0, 1);
     const sky = SKY_NIGHT.clone().lerp(SKY_DAY, day).lerp(SKY_DUSK, dusk * 0.7);
 
+    // Weather dims and greys the sky, and snow bleaches it.
+    const w = weather;
+    if (cloudCover > 0) {
+      sky.lerp(
+        new THREE.Color(w.sky === "snow" ? 0xc9d4e0 : 0x8d97a4),
+        cloudCover * (0.4 + day * 0.6),
+      );
+    }
+
     this.renderer.setClearColor(sky);
     (this.scene.fog as THREE.Fog).color.copy(sky);
+    // Fog and heavy weather close the island in.
+    const fogNear = w.sky === "fog" ? 30 : cloudCover > 0.4 ? 70 : 130;
+    const fogTarget = w.sky === "fog" ? 130 : cloudCover > 0.4 ? 260 : 400;
+    const fog = this.scene.fog as THREE.Fog;
+    fog.near += (fogNear - fog.near) * 0.02;
+    fog.far += (fogTarget - fog.far) * 0.02;
     this.hemi.intensity = 0.7 + day * 1.5;
     this.ambient.intensity = 0.45 + day * 0.7;
     this.hemi.color.setHex(day > 0.4 ? 0xbfe3ff : 0x6f8ad0);

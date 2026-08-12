@@ -23,6 +23,7 @@ ten clans and three hundred and fifty creatures at once.
 | `clans.ts` | Clans, faiths, creeds and the relations between peoples. Pure data and drift rules. |
 | `language.ts` | Invented tongues: per-clan sound systems, coining, borrowing, sound change, drift. |
 | `llm.ts` | Optional language-model bridge: provider clients, prompts, config in localStorage. |
+| `weather.ts` | The turning year: seasons, sky, warmth, lying snow. |
 | `random.ts` | Seeded RNG, so a given seed always grows the same island. |
 
 The page that mounts it all is `src/Thronglets.tsx`.
@@ -113,6 +114,18 @@ authored beyond that.
 Words are held with a strength that use reinforces, so a firmly-held word
 resists replacement and a shaky one gets overwritten by the neighbours'.
 
+**Knowing a word is personal.** The clan's lexicon holds the form, but each
+creature only knows the words it has said or heard, and picks them up one at a
+time from whoever it is standing next to. So a coinage starts at one speaker
+and spreads: in one run the word for food went from a quarter of the clan to
+all of it over a couple of days, while the word for cold slid back down as
+children were born who had not heard it yet. The panel shows the percentage
+who actually have each word.
+
+Creatures also carry a short list of things that happened to them — what they
+named, what they discovered, being lifted into the sky and set down somewhere
+new — which the inspector shows.
+
 ## The island's materials
 
 - **Four kinds of tree**, placed by where they belong rather than at random:
@@ -126,6 +139,47 @@ resists replacement and a shaky one gets overwritten by the neighbours'.
   a site's cost is counted off the plan rather than guessed. Gatherers fetch
   whichever material their town is shortest of, and a builder can only lay the
   next block if that pile has something in it.
+
+## Weather and the year
+
+The island turns through four seasons on an eight-day year — the green season,
+the high season, the fading, and the cold — and the sky does what the season
+makes likely: rain and fog in the green, clear skies at the height, snow in
+the cold. Snow settles on the ground, whitens the trees, stops things growing
+and melts when the warmth comes back.
+
+Weather is not decoration. Warmth falls with the season and again at night,
+and an exposed creature on a cold night burns energy, loses condition, and
+**cannot sleep through it**. That is the pressure everything else answers to.
+
+## Invention
+
+Nothing is unlocked by a progress bar. Somebody works a thing out, because of
+the situation they happen to be standing in, and the island hears about it
+afterwards with their name attached:
+
+| Discovery | Who works it out |
+| --- | --- |
+| **Fire** | Somebody awake and freezing on a bitter night, with wood to hand. |
+| **Cooking** | Somebody hungry sitting at a fire that already exists. |
+| **Baskets** | Somebody who has hauled enough loads to resent it. |
+| **Burial** | A clan that has buried enough of its own. |
+
+Each is held by the clan that worked it out, and each changes what they can
+do: fire lets them build hearths, which give warmth and light and make a
+winter night survivable; cooking makes food go half again as far near one;
+baskets raise how much a trip carries; burial has them stack a cairn where
+somebody fell.
+
+In one run *Snool of the Cinderhollow works out fire on a bitter night* on day
+7, and *Thrum weaves something to carry more in* on day 8 — with hearths
+appearing in the town only after Snool had the idea.
+
+## Firsts
+
+The first time anything happens on the island — the first word, the first
+snow, the first rain, the first of each discovery — it is logged as news and
+never again. That is the sentence worth screenshotting.
 
 ## Trades
 

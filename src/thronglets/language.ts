@@ -27,7 +27,11 @@ export type Concept =
   | "fight"
   | "hunger"
   | "stone"
-  | "town";
+  | "town"
+  | "fire"
+  | "snow"
+  | "cold"
+  | "rain";
 
 export const CONCEPTS: Concept[] = [
   "food",
@@ -46,6 +50,10 @@ export const CONCEPTS: Concept[] = [
   "hunger",
   "stone",
   "town",
+  "fire",
+  "snow",
+  "cold",
+  "rain",
 ];
 
 /** What each concept means, for the glosses in the UI. */
@@ -66,6 +74,10 @@ export const CONCEPT_GLOSS: Record<Concept, string> = {
   hunger: "hunger",
   stone: "stone",
   town: "town",
+  fire: "fire",
+  snow: "snow",
+  cold: "cold",
+  rain: "rain",
 };
 
 const ONSETS = [
