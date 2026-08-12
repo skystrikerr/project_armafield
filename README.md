@@ -22,7 +22,7 @@ build, who they pair off with and whether the colony thrives are all emergent.
 Watch long enough and you'll see a village appear, generations turn over, and
 inherited traits drift across the population.
 
-![day 8 of the second year: 344 alive across fourteen peoples, the age of Settled four-fifths done, sixteen feuds open, and a third of them aware they are being observed](docs/colony.png)
+![day 8 of the second year: 344 alive across fourteen peoples, the age of Settled four-fifths done, and a third of them aware they are being observed](docs/colony.png)
 
 ## Running it
 
