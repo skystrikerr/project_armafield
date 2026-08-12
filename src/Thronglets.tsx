@@ -42,6 +42,20 @@ import { cn } from "@/lib/utils";
 
 const hex = (n: number) => `#${n.toString(16).padStart(6, "0")}`;
 
+/**
+ * The whole thing is framed as a piece of software running on somebody's
+ * machine — phosphor green on black, scanlines, monospace, terse system
+ * output. You are not a benevolent god here; you are the operator.
+ */
+const PHOS = "#7ef2b0";
+const PHOS_DIM = "rgba(126,242,176,0.55)";
+const AMBER = "#f2c14e";
+
+/** Panel chrome shared by every readout. */
+const PANEL =
+  "pointer-events-auto border border-[#7ef2b0]/25 bg-black/80 backdrop-blur-[2px] shadow-[0_0_24px_rgba(126,242,176,0.07)_inset]";
+
+
 const TASK_LABEL: Record<string, string> = {
   worship: "at the shrine",
   stock: "filling the store",
@@ -75,19 +89,19 @@ function NeedBar({
   // Needs are stored as pressure (1 = desperate); show them as satisfaction.
   const pct = Math.round((invert ? 1 - value : value) * 100);
   const tone =
-    pct > 60 ? "bg-emerald-400" : pct > 30 ? "bg-amber-400" : "bg-rose-500";
+    pct > 60 ? "bg-[#7ef2b0]" : pct > 30 ? "bg-[#f2c14e]" : "bg-[#ff5c5c]";
   return (
     <div className="flex items-center gap-2">
-      <span className="w-14 shrink-0 text-[10px] uppercase tracking-wide text-white/50">
+      <span className="w-14 shrink-0 text-[10px] uppercase tracking-[0.12em] text-[#7ef2b0]/50">
         {label}
       </span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+      <div className="h-1.5 flex-1 overflow-hidden bg-[#7ef2b0]/10">
         <div
-          className={cn("h-full rounded-full transition-all duration-300", tone)}
+          className={cn("h-full transition-all duration-300", tone)}
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-white/40">
+      <span className="w-8 shrink-0 text-right text-[10px] tabular-nums text-[#7ef2b0]/40">
         {pct}
       </span>
     </div>
@@ -97,12 +111,12 @@ function NeedBar({
 function Trait({ label, value }: { label: string; value: number }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span className="w-16 text-[10px] uppercase tracking-wide text-white/40">
+      <span className="w-16 text-[10px] uppercase tracking-[0.12em] text-[#7ef2b0]/35">
         {label}
       </span>
-      <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
+      <div className="h-1 flex-1 overflow-hidden bg-[#7ef2b0]/10">
         <div
-          className="h-full rounded-full bg-sky-400/80"
+          className="h-full bg-[#7ef2b0]/60"
           style={{ width: `${Math.round(value * 100)}%` }}
         />
       </div>
@@ -132,13 +146,13 @@ function PopulationChart({ history }: { history: number[] }) {
       >
         <polyline
           points={`0,100 ${points} 100,100`}
-          fill="rgba(246,207,90,0.16)"
+          fill="rgba(126,242,176,0.14)"
           stroke="none"
         />
         <polyline
           points={points}
           fill="none"
-          stroke="#f6cf5a"
+          stroke="#7ef2b0"
           strokeWidth="2"
           vectorEffect="non-scaling-stroke"
           strokeLinejoin="round"
@@ -161,7 +175,7 @@ function PeoplesPanel({
   onFocus: (c: ClanReport) => void;
 }) {
   return (
-    <div className="pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-xl border border-white/10 bg-black/55 p-2.5 backdrop-blur-sm">
+    <div className={cn(PANEL, "max-w-[calc(100vw-1.5rem)] p-2.5")}>
       <button
         onClick={onToggle}
         className="flex w-full items-center justify-between gap-2 text-[10px] uppercase tracking-wider text-white/50 transition hover:text-white"
@@ -251,7 +265,7 @@ function PeoplesPanel({
                   <div className="flex flex-wrap gap-x-2 gap-y-0.5">
                     {c.tongue.slice(0, 10).map((w) => (
                       <span key={w.concept} className="text-[10px]">
-                        <span className="text-[#f6cf5a]/90">{w.word}</span>
+                        <span className="text-[#f2c14e]">{w.word}</span>
                         <span className="text-white/30"> {w.concept}</span>
                         {w.spread < 0.75 && (
                           <span className="text-white/20">
@@ -301,14 +315,20 @@ function PeoplesPanel({
   );
 }
 
+/** Keep six-figure readouts from blowing the column out. */
+function compact(value: string | number) {
+  if (typeof value !== "number" || value < 10000) return value;
+  return `${(value / 1000).toFixed(value < 100000 ? 1 : 0)}k`;
+}
+
 function Stat({ label, value }: { label: string; value: string | number }) {
   return (
     <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wider text-white/40">
+      <span className="text-[10px] uppercase tracking-[0.14em] text-[#7ef2b0]/40">
         {label}
       </span>
-      <span className="text-sm font-semibold tabular-nums text-white">
-        {value}
+      <span className="text-sm font-semibold tabular-nums text-[#7ef2b0]">
+        {compact(value)}
       </span>
     </div>
   );
@@ -511,6 +531,8 @@ export default function Thronglets() {
       )
     : undefined;
 
+  const attention = snapshot?.attention ?? 0;
+
   const tierIdx = Math.max(
     0,
     TIER_NAMES.indexOf(snapshot?.tier ?? TIER_NAMES[0]),
@@ -531,24 +553,54 @@ export default function Thronglets() {
         );
 
   return (
-    <div className="relative h-[100dvh] w-full overflow-hidden bg-[#0a1030] font-sans">
+    <div className="relative h-[100dvh] w-full overflow-hidden bg-black font-mono">
       <canvas
         ref={canvasRef}
         className="absolute inset-0 h-full w-full touch-none"
         style={{ imageRendering: pixelated ? "pixelated" : "auto" }}
       />
 
+      {/* CRT: scanlines, a phosphor cast, and a vignette. Sits over the world
+          and under the readouts, and gets worse the more they notice you. */}
+      <div
+        className="pointer-events-none absolute inset-0 z-10 mix-blend-soft-light"
+        style={{
+          background:
+            "repeating-linear-gradient(to bottom, rgba(0,0,0,0.30) 0px, rgba(0,0,0,0.30) 1px, transparent 1px, transparent 3px)",
+        }}
+      />
+      <div
+        className="pointer-events-none absolute inset-0 z-10"
+        style={{
+          background:
+            "radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.55) 100%)",
+          boxShadow: "inset 0 0 140px rgba(126,242,176,0.06)",
+        }}
+      />
+      {attention > 0.25 && (
+        <div
+          className="pointer-events-none absolute inset-0 z-10 transition-opacity duration-1000"
+          style={{
+            opacity: Math.min(0.5, (attention - 0.25) * 0.8),
+            background:
+              "repeating-linear-gradient(to bottom, rgba(255,90,90,0.10) 0px, rgba(255,90,90,0.10) 2px, transparent 2px, transparent 9px)",
+          }}
+        />
+      )}
+
       {/* Top bar ------------------------------------------------- */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex flex-wrap items-start justify-between gap-2 p-3 sm:p-4">
        <div className="flex flex-col gap-2">
-        <div className="pointer-events-auto max-w-[calc(100vw-1.5rem)] rounded-xl border border-white/10 bg-black/55 p-2.5 backdrop-blur-sm sm:p-3">
-          <div>
-            <h1 className="text-sm font-bold uppercase tracking-[0.18em] text-[#f6cf5a]">
-              Thronglets
-            </h1>
-            <p className="hidden text-[10px] text-white/40 sm:block">
-              an autonomous colony · they live, learn and build on their own
-            </p>
+        <div className={cn(PANEL, "max-w-[calc(100vw-1.5rem)] p-2.5 sm:p-3")}>
+          <div className="flex items-center gap-2">
+            <div>
+              <h1 className="text-sm font-bold uppercase tracking-[0.3em] text-[#7ef2b0]">
+                THRONG.SYS
+              </h1>
+              <p className="hidden text-[10px] tracking-wide text-[#7ef2b0]/35 sm:block">
+                colony process · running unattended · do not terminate
+              </p>
+            </div>
           </div>
 
           <div className="mt-2.5 grid grid-cols-3 gap-x-4 gap-y-1.5 sm:grid-cols-6 sm:gap-x-5">
@@ -592,6 +644,27 @@ export default function Thronglets() {
           </div>
 
           <PopulationChart history={snapshot?.history ?? []} />
+
+          {attention > 0.05 && (
+            <div className="mt-2.5 border-t border-[#ff8080]/25 pt-2">
+              <div className="mb-1 flex items-center justify-between text-[10px] uppercase tracking-[0.16em]">
+                <span className="text-[#ff8080]/80">
+                  they are aware of you
+                </span>
+                <span className="tabular-nums text-[#ff8080]/60">
+                  {Math.round(attention * 100)}%
+                  {(snapshot?.watching ?? 0) > 0 &&
+                    ` · ${snapshot?.watching} looking up`}
+                </span>
+              </div>
+              <div className="h-1.5 w-full overflow-hidden bg-[#ff8080]/10 sm:w-72">
+                <div
+                  className="h-full bg-[#ff8080]/70 transition-all"
+                  style={{ width: `${Math.round(attention * 100)}%` }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <PeoplesPanel
@@ -604,7 +677,7 @@ export default function Thronglets() {
 
         {/* Controls */}
         <div className="pointer-events-auto flex flex-col items-end gap-2">
-          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/55 p-1.5 backdrop-blur-sm">
+          <div className={cn(PANEL, "flex items-center gap-1 p-1.5")}>
             <button
               onClick={() => setPaused((p) => !p)}
               className="rounded-lg p-2 text-white/80 transition hover:bg-white/10"
@@ -626,7 +699,7 @@ export default function Thronglets() {
                 className={cn(
                   "rounded-lg px-2 py-1 text-xs font-semibold tabular-nums transition",
                   speed === s && !paused
-                    ? "bg-[#f6cf5a] text-black"
+                    ? "bg-[#7ef2b0] text-black"
                     : "text-white/60 hover:bg-white/10",
                 )}
               >
@@ -655,7 +728,7 @@ export default function Thronglets() {
             </button>
           </div>
 
-          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-black/55 p-1.5 backdrop-blur-sm">
+          <div className={cn(PANEL, "flex items-center gap-1 p-1.5")}>
             {(
               [
                 { id: "inspect", icon: Eye, label: "Inspect / pet" },
@@ -670,7 +743,7 @@ export default function Thronglets() {
                 className={cn(
                   "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition",
                   tool === id
-                    ? "bg-[#74bcd8] text-black"
+                    ? "bg-[#7ef2b0] text-black"
                     : "text-white/60 hover:bg-white/10",
                 )}
               >
@@ -680,7 +753,7 @@ export default function Thronglets() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-black/55 px-3 py-2 text-[11px] text-white/60 backdrop-blur-sm">
+          <div className={cn(PANEL, "flex items-center gap-2 px-3 py-2 text-[11px] text-[#7ef2b0]/60")}>
             {snapshot?.isNight ? (
               <Moon className="h-3.5 w-3.5 text-sky-300" />
             ) : (
@@ -698,7 +771,7 @@ export default function Thronglets() {
               onClick={() => setPixelated((p) => !p)}
               className={cn(
                 "transition hover:text-white",
-                pixelated && "text-[#f6cf5a]",
+                pixelated && "text-[#7ef2b0]",
               )}
             >
               pixel
@@ -707,7 +780,7 @@ export default function Thronglets() {
               onClick={() => setShadows((s) => !s)}
               className={cn(
                 "transition hover:text-white",
-                shadows && "text-[#f6cf5a]",
+                shadows && "text-[#7ef2b0]",
               )}
             >
               shadows
@@ -722,10 +795,10 @@ export default function Thronglets() {
 
       {/* Selected thronglet -------------------------------------- */}
       {selected && (
-        <div className="pointer-events-auto absolute bottom-3 left-3 w-[280px] rounded-xl border border-white/10 bg-black/65 p-3 backdrop-blur-sm sm:bottom-4 sm:left-4">
+        <div className={cn(PANEL, "absolute bottom-3 left-3 z-20 w-[280px] p-3 sm:bottom-4 sm:left-4")}>
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-sm font-bold text-[#f6cf5a]">
+              <h2 className="text-sm font-bold text-[#7ef2b0]">
                 {selected.name}
               </h2>
               <p className="text-[10px] uppercase tracking-wider text-white/40">
@@ -857,10 +930,11 @@ export default function Thronglets() {
 
       {/* Event log ------------------------------------------------ */}
       <div className="pointer-events-none absolute bottom-3 right-3 hidden w-[240px] sm:bottom-4 sm:right-4 sm:block">
-        <div className="rounded-xl border border-white/10 bg-black/50 p-2.5 backdrop-blur-sm">
-          <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-white/40">
+        <div className={cn(PANEL, "p-2.5")}>
+          <div className="mb-1.5 flex items-center gap-1.5 text-[10px] uppercase tracking-[0.16em] text-[#7ef2b0]/40">
             <Sparkles className="h-3 w-3" />
-            colony log
+            stdout
+            <span className="ml-auto animate-pulse text-[#7ef2b0]/60">▍</span>
           </div>
           <ul className="space-y-1">
             {(snapshot?.log ?? []).map((e, i) => (
@@ -872,7 +946,8 @@ export default function Thronglets() {
                   e.kind === "death" && "text-rose-300/70",
                   e.kind === "built" && "text-sky-300/80",
                   e.kind === "build" && "text-amber-200/70",
-                  e.kind === "spawn" && "text-white/60",
+                  e.kind === "spawn" && "text-[#7ef2b0]/60",
+                  e.kind === "watched" && "font-semibold text-[#ff8080]",
                   e.kind === "war" && "text-rose-400/80",
                   e.kind === "kill" && "text-rose-400",
                   e.kind === "peace" && "text-emerald-300/70",
@@ -888,11 +963,12 @@ export default function Thronglets() {
                 )}
                 title={e.text}
               >
+                <span className="text-[#7ef2b0]/25">&gt; </span>
                 {e.text}
               </li>
             ))}
             {!snapshot?.log.length && (
-              <li className="text-[11px] text-white/30">quiet so far…</li>
+              <li className="text-[11px] text-[#7ef2b0]/30">no output</li>
             )}
           </ul>
         </div>
@@ -1055,14 +1131,14 @@ export default function Thronglets() {
 
       {/* Help ----------------------------------------------------- */}
       {showHelp && !selected && (
-        <div className="pointer-events-auto absolute bottom-3 left-1/2 w-[min(92vw,420px)] -translate-x-1/2 rounded-xl border border-white/10 bg-black/70 p-3 text-[11px] leading-relaxed text-white/70 backdrop-blur-sm sm:bottom-4">
+        <div className={cn(PANEL, "absolute bottom-3 left-1/2 z-20 w-[min(92vw,420px)] -translate-x-1/2 p-3 text-[11px] leading-relaxed text-[#7ef2b0]/70 sm:bottom-4")}>
           <div className="mb-1 flex items-center justify-between">
-            <span className="flex items-center gap-1.5 font-semibold uppercase tracking-wider text-white/80">
-              <Users className="h-3.5 w-3.5" /> nobody is driving
+            <span className="flex items-center gap-1.5 font-semibold uppercase tracking-[0.16em] text-[#7ef2b0]">
+              <Users className="h-3.5 w-3.5" /> no operator required
             </span>
             <button
               onClick={() => setShowHelp(false)}
-              className="text-white/40 transition hover:text-white"
+              className="text-[#7ef2b0]/40 transition hover:text-[#7ef2b0]"
             >
               dismiss
             </button>

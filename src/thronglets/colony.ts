@@ -79,14 +79,14 @@ const FOOTPRINT: Record<StructureKind, number> = {
   monolith: 1.2,
 };
 export const DAY_LENGTH = 150; // sim seconds for a full day/night cycle
-export const POP_CAP = 360;
+export const POP_CAP = 560;
 
 /** A clan this big starts looking for reasons to split. */
 const SCHISM_SIZE = 30;
 /** Past this many living clans the island stops splintering further. */
-const MAX_CLANS = 10;
+const MAX_CLANS = 14;
 /** Villages are kept at least this far apart. */
-const VILLAGE_SPACING = 30;
+const VILLAGE_SPACING = 36;
 
 /**
  * What a thronglet has ended up doing with itself. Roles are not assigned:
@@ -222,6 +222,10 @@ export type Thronglet = {
   role: Role;
   /** What is currently killing this one, if anything. */
   dyingOf: "hunger" | "thirst" | null;
+  /** How strongly this one senses being looked at, 0–1. */
+  awareness: number;
+  /** Seconds left of staring straight up the camera. */
+  staring: number;
   /** Set while the player is holding this one off the ground. */
   held: boolean;
   /** Little animation helpers the renderer reads. */
@@ -311,6 +315,8 @@ export type ColonyStats = {
   warmth: number;
   snow: number;
   discoveries: number;
+  attention: number;
+  watching: number;
 };
 
 export type ClanReport = {
@@ -343,6 +349,19 @@ export type ClanReport = {
   /** How far each neighbour's tongue has drifted from this one. */
   drift: { name: string; value: number }[];
 };
+
+/** What they think when they notice. Deliberately not cute. */
+const WATCHED_THOUGHTS = [
+  "the sky is close today.",
+  "something is above the sky.",
+  "it does not blink.",
+  "it moved when I moved.",
+  "we are being counted.",
+  "why us.",
+  "it lifted Vek. it put him back.",
+  "hello?",
+  "you.",
+];
 
 const SYL_A = [
   "thr",
@@ -603,6 +622,12 @@ export class Colony {
   weather: WeatherState = initialWeather();
   /** Things that have happened for the first time, so they only read as news once. */
   firsts = new Set<string>();
+  /**
+   * How much the Throng has worked out about its own situation. Rises with
+   * knowledge and with every monolith they raise, and it is the only number
+   * here that is about you rather than about them.
+   */
+  attention = 0;
   /** Population sampled over time, for the chart in the HUD. */
   history: number[] = [];
   private historyTimer = 0;
@@ -646,7 +671,7 @@ export class Colony {
 
     const start = this.newVillageSpot();
     const first = this.foundClan(start);
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < 22; i++) {
       const spot = findLandSpot(this.rand, this.terrain, start, 7);
       this.spawn(
         spot.x,
@@ -654,14 +679,14 @@ export class Colony {
         this.randomGenome(),
         1,
         null,
-        i < 8 ? 40 : 12,
+        i < 11 ? 40 : 12,
         null,
         makeName(this.rand),
         first.id,
       );
     }
     this.addLog(
-      `Sixteen thronglets blink awake and call themselves the ${first.name}.`,
+      `Twenty-two thronglets blink awake and call themselves the ${first.name}.`,
       "spawn",
     );
     this.addLog(
@@ -781,6 +806,8 @@ export class Colony {
       memory: [],
       episodes: [],
       known: new Set<Concept>(),
+      awareness: 0,
+      staring: 0,
       held: false,
       bob: this.rand() * 10,
       hop: 0,
@@ -1149,6 +1176,8 @@ export class Colony {
       discoveries: new Set(
         this.clans.flatMap((c) => Array.from(c.discoveries.keys())),
       ).size,
+      attention: this.attention,
+      watching: this.thronglets.filter((t) => t.staring > 0).length,
     };
   }
 
@@ -1550,6 +1579,7 @@ export class Colony {
 
     this.rebuildGrid();
     this.updateWeather(dt);
+    this.updateAttention(dt);
     this.countClans();
     driftRelations(this.clans, dt);
     this.updateWars(dt);
@@ -1655,6 +1685,53 @@ export class Colony {
 
   get day() {
     return Math.floor(this.time / DAY_LENGTH);
+  }
+
+  /**
+   * The Throng notices. Knowledge and monoliths make the colony collectively
+   * aware that something is above it; individuals then look up, and what they
+   * think stops being about food.
+   */
+  private updateAttention(dt: number) {
+    const monoliths = this.sites.filter(
+      (s) => s.complete && s.kind === "monolith",
+    ).length;
+    const target = Math.min(
+      1,
+      this.knowledge / 2600 + monoliths * 0.22 + this.clans.length * 0.01,
+    );
+    this.attention += (target - this.attention) * Math.min(1, dt * 0.05);
+
+    if (this.attention > 0.12) {
+      this.first(
+        "watched",
+        "Something in the throng turns over the idea of being looked at.",
+        "watched",
+      );
+    }
+    if (this.attention > 0.55) {
+      this.first(
+        "watched2",
+        "They have started leaving the shrine to look upward instead.",
+        "watched",
+      );
+    }
+    if (this.attention > 0.9) {
+      this.first("watched3", "They know. They are waiting for you to do something.", "watched");
+    }
+
+    if (this.attention < 0.08 || this.rand() > dt * 1.5) return;
+    const t = this.thronglets[Math.floor(this.rand() * this.thronglets.length)];
+    if (!t || t.held || t.stage === "baby") return;
+    if (this.rand() > this.attention * (0.3 + t.genome.curiosity)) return;
+
+    t.awareness = Math.min(1, t.awareness + 0.35);
+    t.staring = range(this.rand, 1.4, 3.6);
+    t.thought = pick(this.rand, WATCHED_THOUGHTS);
+    if (t.awareness > 0.7 && this.rand() < 0.15) {
+      this.remember(t, "looked up and saw something looking back");
+      this.addLog(`${t.name} stops and looks straight up.`, "watched");
+    }
   }
 
   private updateWeather(dt: number) {
@@ -2010,6 +2087,12 @@ export class Colony {
     }
     this.updateStage(t);
     if (t.mateCooldown > 0) t.mateCooldown -= dt;
+    if (t.staring > 0) {
+      t.staring -= dt;
+      t.vx = 0;
+      t.vz = 0;
+    }
+    t.awareness = Math.max(0, t.awareness - dt * 0.01);
     if (t.emote) {
       t.emote.t -= dt;
       if (t.emote.t <= 0) t.emote = null;

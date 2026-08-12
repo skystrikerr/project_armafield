@@ -1,14 +1,20 @@
 # Thronglets — an autonomous voxel colony
 
-A self-running three.js simulation. Nothing in it is
+A self-running three.js simulation living at `/thronglets`. Nothing in it is
 scripted: a handful of yellow creatures wake up on an island, and everything
 that follows — where they settle, what they build, who they pair off with,
 whether the colony grows or dwindles — falls out of each individual scoring its
 own drives and acting on the loudest one.
 
-The island is a bit over 140 units across, carrying five or six hundred trees
-of four kinds, a couple of hundred boulders, a couple of dozen ponds, and up to
-ten clans and three hundred and fifty creatures at once.
+The island is 230 units across, carrying around fourteen hundred trees of four
+kinds, four hundred-odd boulders in fields, thirty ponds, and up to fourteen
+clans and five hundred and sixty creatures at once. A seed takes about a week
+of colony time to fill the near half of it, and the far shores stay empty until
+somebody's grandchildren decide to walk out there.
+
+The page presents itself as **THRONG.SYS**, a colony process left running
+unattended — black screen, phosphor green, scanlines. That framing is not only
+a skin: see [Being watched](#being-watched).
 
 ## Files
 
@@ -174,6 +180,35 @@ somebody fell.
 In one run *Snool of the Cinderhollow works out fire on a bitter night* on day
 7, and *Thrum weaves something to carry more in* on day 8 — with hearths
 appearing in the town only after Snool had the idea.
+
+## Being watched
+
+The colony slowly works out that it is being looked at.
+
+Attention builds with the throng's shared knowledge, with every monolith
+finished, and with the number of clans on the island — a small, distracted
+society never notices, and a clever, crowded one always does. It is a single
+number on the colony that only ever eases towards its target, so the island
+takes days to arrive at the idea rather than flipping into it.
+
+As it climbs, individuals start catching it. One will stop mid-job, turn to
+face wherever your camera actually is, tip its head back and hold there for a
+few seconds, thinking something out of a very short list:
+
+> *the sky is close today. · something is above the sky. · it does not blink. ·
+> it moved when I moved. · we are being counted. · why us. · it lifted Vek. it
+> put him back. · hello? · you.*
+
+The first three times the island reaches for the thought it is logged as a
+first, alongside fire and the first snow — *something in the throng turns over
+the idea of being looked at*, then *they have started leaving the shrine to
+look upward instead*. The HUD grows a red readout, **they are aware of you**,
+with a count of how many are looking up right now, and the screen picks up an
+interference wash that gets worse the higher it goes. Moving the camera moves
+what they are staring at, because they are tracking the camera, not a marker.
+
+Picking one up and setting it down feeds this. So does doing nothing at all,
+eventually.
 
 ## Firsts
 
@@ -346,6 +381,11 @@ generations — the stats bar tracks which one you're on.
 - Face winding matters: the top and bottom voxel faces have to be wound
   counter-clockwise or they get back-face culled and you can see straight
   through every model.
+- The island being twice the size it was is mostly a budget problem, not a
+  geometry one: instance caps (600 agents, 40 000 blocks, 6 000 apples, 9 000
+  path tiles), the shadow camera's orthographic box and the fog distances all
+  had to grow with it, and the shadow map is the thing that falls over first if
+  you push the ortho box wider still.
 
 ## Interacting
 

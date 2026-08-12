@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mulberry32, range, type Rand } from "./random";
 
-export const WORLD_RADIUS = 72;
+export const WORLD_RADIUS = 115;
 export const WATER_LEVEL = -0.22;
 
 export type Pond = { x: number; z: number; r: number };
@@ -137,7 +137,7 @@ export function buildTerrain(seed: number, ponds: Pond[]): Terrain {
   const isWater = (x: number, z: number) => height(x, z) < WATER_LEVEL;
 
   // --- mesh -------------------------------------------------------
-  const SEG = 224;
+  const SEG = 320;
   const SPAN = WORLD_RADIUS * 2.4;
   const geo = new THREE.PlaneGeometry(SPAN, SPAN, SEG, SEG);
   geo.rotateX(-Math.PI / 2);
@@ -206,7 +206,7 @@ export function buildTerrain(seed: number, ponds: Pond[]): Terrain {
 
 export function scatterPonds(rand: Rand): Pond[] {
   const ponds: Pond[] = [];
-  const count = 15 + Math.floor(rand() * 7);
+  const count = 26 + Math.floor(rand() * 10);
   for (let i = 0; i < count; i++) {
     const a = rand() * Math.PI * 2;
     const d = range(rand, 8, WORLD_RADIUS * 0.66);
@@ -241,7 +241,7 @@ function treeKindFor(rand: Rand, y: number, distanceFromCentre: number): TreeKin
 export function scatterTrees(rand: Rand, terrain: Terrain): Tree[] {
   const trees: Tree[] = [];
   let id = 0;
-  for (let i = 0; i < 26000 && trees.length < 620; i++) {
+  for (let i = 0; i < 60000 && trees.length < 1500; i++) {
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * WORLD_RADIUS * 0.92;
     const x = Math.cos(a) * d;
@@ -283,14 +283,14 @@ export function scatterTrees(rand: Rand, terrain: Terrain): Tree[] {
 export function scatterRocks(rand: Rand, terrain: Terrain, trees: Tree[]): Rock[] {
   const rocks: Rock[] = [];
   const fields: { x: number; z: number; r: number }[] = [];
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 20; i++) {
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * WORLD_RADIUS * 0.8;
     fields.push({ x: Math.cos(a) * d, z: Math.sin(a) * d, r: range(rand, 7, 16) });
   }
 
   let id = 0;
-  for (let i = 0; i < 9000 && rocks.length < 190; i++) {
+  for (let i = 0; i < 22000 && rocks.length < 440; i++) {
     const field = fields[Math.floor(rand() * fields.length)];
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * field.r;
@@ -339,7 +339,7 @@ export function fruitSlotsFor(rand: Rand, count: number, scale: number) {
 export function scatterBushes(rand: Rand, terrain: Terrain): Bush[] {
   const bushes: Bush[] = [];
   let id = 0;
-  for (let i = 0; i < 12000 && bushes.length < 380; i++) {
+  for (let i = 0; i < 28000 && bushes.length < 760; i++) {
     const a = rand() * Math.PI * 2;
     const d = Math.sqrt(rand()) * WORLD_RADIUS * 0.95;
     const x = Math.cos(a) * d;
@@ -365,7 +365,7 @@ export function scatterTubs(
   trees: Tree[],
 ): Tub[] {
   const tubs: Tub[] = [];
-  for (let i = 0; i < 900 && tubs.length < 18; i++) {
+  for (let i = 0; i < 2200 && tubs.length < 32; i++) {
     const a = rand() * Math.PI * 2;
     const d = range(rand, 5, WORLD_RADIUS * 0.7);
     const x = Math.cos(a) * d;

@@ -4,9 +4,15 @@ A colony of little yellow voxel creatures that live, learn and build on their
 own, rendered in three.js. Inspired by the Tamagotchi-like creatures in the
 *Black Mirror* episode "Plaything" — an unaffiliated fan project.
 
-The island runs a bit over 140 units across, with five or six hundred apple
-trees, a couple of dozen ponds, room for ten clans and up to three hundred and
-fifty creatures at once.
+It opens as **THRONG.SYS**: a colony process someone left running unattended.
+Black screen, phosphor green, scanlines, `do not terminate`. That is the frame,
+and the colony eventually notices it — see [Being watched](#being-watched).
+
+The island runs 230 units across, with around fourteen hundred trees of four
+kinds, four hundred boulders in fields, thirty ponds, room for fourteen clans
+and up to five hundred and sixty creatures at once. A seed takes about a week
+of colony time to fill the near half of it; the far shores stay empty until
+somebody's grandchildren decide to walk out there.
 
 Nothing about the colony is scripted. Every creature scores its own drives once
 a second and acts on whichever shouts loudest, so where they settle, what they
@@ -14,7 +20,7 @@ build, who they pair off with and whether the colony thrives are all emergent.
 Watch long enough and you'll see a village appear, generations turn over, and
 inherited traits drift across the population.
 
-![the colony from above](docs/colony.png)
+![day 2: sixty alive, a granary up, a heresy already split off, and one of them looking up](docs/colony.png)
 
 ## Running it
 
@@ -79,6 +85,32 @@ heard, and picks words up one at a time from whoever it is standing next to.
 A coinage starts with one speaker and spreads through the clan — and slides
 back when children are born who have not heard it yet. The first word, the
 first snow, the first rain: each logged as news once, and never again.
+
+## Being watched
+
+The colony slowly works out that something is looking at it.
+
+Attention builds with the throng's shared knowledge, with every monolith
+finished, and with how many peoples are on the island — a small, distracted
+society never notices, a clever and crowded one always does. It eases towards
+its target rather than jumping, so the island takes days to arrive at the idea.
+
+As it climbs, individuals start catching it. One stops mid-job, turns to face
+wherever your camera actually is, tips its head back and holds there, thinking:
+
+> *the sky is close today. · something is above the sky. · it does not blink. ·
+> it moved when I moved. · we are being counted. · why us. · it lifted Vek. it
+> put him back. · hello? · you.*
+
+The first few times the island reaches for the thought it is logged as news,
+alongside first fire and first snow. A red readout appears — **they are aware
+of you**, with a count of how many are looking up right now — and the screen
+picks up an interference wash that worsens the higher it goes. Move the camera
+and their heads follow it, because they are tracking the camera and not a
+marker on the ground.
+
+Picking one up and putting it back down feeds this. So does doing nothing at
+all, eventually.
 
 ## An island with materials
 
@@ -188,11 +220,15 @@ corner recording births, deaths and finished buildings.
 src/
   Thronglets.tsx        the page: canvas + HUD
   thronglets/
-    colony.ts           the simulation — needs, AI, building, breeding (no three.js)
+    colony.ts           the simulation — needs, AI, building, breeding, attention (no three.js)
     scene.ts            rendering and input
     models.ts           every model, authored voxel by voxel
     voxel.ts            voxel grid → geometry baker
     world.ts            island heightmap, ponds, flora scattering
+    clans.ts            clans, faiths, creeds, relations, discoveries
+    language.ts         invented tongues: phonology, coining, borrowing, drift
+    weather.ts          seasons, sky, warmth, lying snow
+    llm.ts              optional language-model bridge
     emotes.ts           pixel-art emote icons drawn at runtime
     random.ts           seeded RNG
 ```

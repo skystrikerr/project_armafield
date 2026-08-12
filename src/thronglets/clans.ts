@@ -134,6 +134,10 @@ export const CLAN_COLORS = [
   0x5ce8d8, // shallow
   0xb8e85c, // lichen
   0xe85c5c, // rust
+  0x8ce8c0, // frost
+  0xd8e85c, // sulphur
+  0xc45ce8, // orchid
+  0x5ca8e8, // signal
 ];
 
 /** Fallback creeds — an LLM can overwrite these when one is connected. */

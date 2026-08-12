@@ -49,11 +49,11 @@ const SKY_NIGHT = new THREE.Color(0x0a1030);
 const SKY_DUSK = new THREE.Color(0xef9a63);
 const SKY_DAY = new THREE.Color(0x8ecbf5);
 
-const MAX_AGENTS = 400;
-const MAX_BLOCKS = 22000;
-const MAX_APPLES = 3200;
+const MAX_AGENTS = 600;
+const MAX_BLOCKS = 40000;
+const MAX_APPLES = 6000;
 const MAX_EGGS = 120;
-const MAX_PATH_TILES = 4000;
+const MAX_PATH_TILES = 9000;
 
 export class ThrongletSim {
   readonly canvas: HTMLCanvasElement;
@@ -145,18 +145,18 @@ export class ThrongletSim {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-    this.camera = new THREE.PerspectiveCamera(34, 1, 0.5, 800);
+    this.camera = new THREE.PerspectiveCamera(34, 1, 0.5, 1200);
     this.camera.position.set(24, 26, 30);
 
     this.controls = new OrbitControls(this.camera, canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
     this.controls.minDistance = 4;
-    this.controls.maxDistance = 260;
+    this.controls.maxDistance = 400;
     this.controls.maxPolarAngle = Math.PI * 0.47;
     this.controls.target.set(0, 1, 0);
 
-    this.scene.fog = new THREE.Fog(SKY_DAY.getHex(), 130, 400);
+    this.scene.fog = new THREE.Fog(SKY_DAY.getHex(), 170, 560);
     this.scene.add(this.worldGroup);
 
     this.hemi = new THREE.HemisphereLight(0xbfe3ff, 0x6f8a52, 1.9);
@@ -165,12 +165,12 @@ export class ThrongletSim {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(3072, 3072);
     const sc = this.sun.shadow.camera as THREE.OrthographicCamera;
-    sc.left = -95;
-    sc.right = 95;
-    sc.top = 95;
-    sc.bottom = -95;
+    sc.left = -130;
+    sc.right = 130;
+    sc.top = 130;
+    sc.bottom = -130;
     sc.near = 1;
-    sc.far = 320;
+    sc.far = 460;
     this.sun.shadow.bias = -0.0006;
     this.sun.shadow.normalBias = 0.04;
     sc.updateProjectionMatrix();
@@ -248,7 +248,7 @@ export class ThrongletSim {
     this.worldGroup.add(this.planks);
 
     // One banner per clan, standing at the middle of its village.
-    this.banners = new THREE.InstancedMesh(bannerGeometry(), lambert(), 32);
+    this.banners = new THREE.InstancedMesh(bannerGeometry(), lambert(), 48);
     this.banners.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.banners.castShadow = true;
     this.banners.frustumCulled = false;
@@ -262,7 +262,7 @@ export class ThrongletSim {
       ["pine", pineGeometry()],
       ["palm", palmGeometry()],
     ] as [string, THREE.BufferGeometry][]) {
-      const mesh = new THREE.InstancedMesh(geo, lambert(), 700);
+      const mesh = new THREE.InstancedMesh(geo, lambert(), 1600);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
@@ -297,7 +297,7 @@ export class ThrongletSim {
     this.paths.renderOrder = 1;
     this.worldGroup.add(this.paths);
 
-    this.rockMesh = new THREE.InstancedMesh(rockGeometry(), lambert(), 300);
+    this.rockMesh = new THREE.InstancedMesh(rockGeometry(), lambert(), 600);
     this.rockMesh.castShadow = true;
     this.rockMesh.receiveShadow = true;
     this.rockMesh.frustumCulled = false;
@@ -310,12 +310,12 @@ export class ThrongletSim {
     this.stoneLoads.count = 0;
     this.worldGroup.add(this.stoneLoads);
 
-    this.bushMesh = new THREE.InstancedMesh(bushGeometry(), lambert(), 500);
+    this.bushMesh = new THREE.InstancedMesh(bushGeometry(), lambert(), 900);
     this.bushMesh.castShadow = true;
     this.bushMesh.frustumCulled = false;
     this.worldGroup.add(this.bushMesh);
 
-    this.tubMesh = new THREE.InstancedMesh(tubGeometry(), lambert(), 40);
+    this.tubMesh = new THREE.InstancedMesh(tubGeometry(), lambert(), 60);
     this.tubMesh.castShadow = true;
     this.tubMesh.receiveShadow = true;
     this.tubMesh.frustumCulled = false;
@@ -366,9 +366,9 @@ export class ThrongletSim {
     this.precipVel = new Float32Array(n);
     const rand = mulberry32(31);
     for (let i = 0; i < n; i++) {
-      pos[i * 3] = (rand() - 0.5) * 90;
-      pos[i * 3 + 1] = rand() * 40;
-      pos[i * 3 + 2] = (rand() - 0.5) * 90;
+      pos[i * 3] = (rand() - 0.5) * 130;
+      pos[i * 3 + 1] = rand() * 45;
+      pos[i * 3 + 2] = (rand() - 0.5) * 130;
       this.precipVel[i] = 0.6 + rand() * 0.7;
     }
     const geo = new THREE.BufferGeometry();
@@ -409,8 +409,8 @@ export class ThrongletSim {
         let z = pos.getZ(i);
         if (y < -2) {
           y = 38;
-          x = (Math.random() - 0.5) * 90;
-          z = (Math.random() - 0.5) * 90;
+          x = (Math.random() - 0.5) * 130;
+          z = (Math.random() - 0.5) * 130;
         }
         pos.setXYZ(i, x, y, z);
       }
@@ -964,6 +964,14 @@ export class ThrongletSim {
       const moving = Math.hypot(t.vx, t.vz);
       const walk = Math.sin(t.bob * 2.2);
       const asleep = t.task === "sleep";
+      // Whoever has noticed turns and looks straight up the lens.
+      if (t.staring > 0) {
+        const toCam = Math.atan2(
+          this.camera.position.x - t.x,
+          this.camera.position.z - t.z,
+        );
+        t.heading += (toCam - t.heading) * 0.2;
+      }
 
       // Body: bobbing hop with a little squash-and-stretch.
       const lift = Math.abs(walk) * 0.05 * Math.min(1, moving) + t.hop * 0.12;
@@ -982,8 +990,9 @@ export class ThrongletSim {
       const sway = Math.sin(t.bob * 1.6 - 0.5);
       this.dummy.position.set(t.x, t.y + lift + NECK_HEIGHT * s * squash, t.z);
       this.dummy.rotation.set(
-        sway * 0.04,
-        t.heading + sway * 0.09,
+        // A watcher tips its head back rather than swaying.
+        t.staring > 0 ? -0.32 : sway * 0.04,
+        t.heading + (t.staring > 0 ? 0 : sway * 0.09),
         walk * 0.09 * Math.min(1, moving),
       );
       this.dummy.scale.set(s, s, s);
@@ -1285,7 +1294,7 @@ export class ThrongletSim {
     const elev = Math.sin(p * Math.PI * 2);
     const az = p * Math.PI * 2;
 
-    this.sun.position.set(Math.cos(az) * 80, Math.max(-16, elev * 95), 40);
+    this.sun.position.set(Math.cos(az) * 130, Math.max(-24, elev * 150), 65);
     this.sun.target.position.set(0, 0, 0);
     const weather = this.colony.weather;
     const cloudCover =
@@ -1318,8 +1327,8 @@ export class ThrongletSim {
     this.renderer.setClearColor(sky);
     (this.scene.fog as THREE.Fog).color.copy(sky);
     // Fog and heavy weather close the island in.
-    const fogNear = w.sky === "fog" ? 30 : cloudCover > 0.4 ? 70 : 130;
-    const fogTarget = w.sky === "fog" ? 130 : cloudCover > 0.4 ? 260 : 400;
+    const fogNear = w.sky === "fog" ? 40 : cloudCover > 0.4 ? 95 : 170;
+    const fogTarget = w.sky === "fog" ? 190 : cloudCover > 0.4 ? 360 : 560;
     const fog = this.scene.fog as THREE.Fog;
     fog.near += (fogNear - fog.near) * 0.02;
     fog.far += (fogTarget - fog.far) * 0.02;
