@@ -4,11 +4,18 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Thronglets \u2014 an autonomous three.js voxel colony",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "electron": "electron .",
+    "electron:dev": "THRONGLETS_DEV_URL=http://localhost:5173 electron .",
+    "dist": "npm run build && electron-builder --publish=never",
+    "dist:win": "npm run build && electron-builder --win portable --publish=never",
+    "dist:linux": "npm run build && electron-builder --linux AppImage --publish=never",
+    "dist:mac": "npm run build && electron-builder --mac --publish=never"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -25,9 +32,39 @@
     "@types/three": "^0.185.0",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.17",
     "typescript": "5.6.3",
     "vite": "^5.4.19"
+  },
+  "build": {
+    "appId": "com.skystrikerr.thronglets",
+    "productName": "Thronglets",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "win": {
+      "target": [{ "target": "portable", "arch": ["x64"] }],
+      "artifactName": "Thronglets-${version}-win.${ext}"
+    },
+    "linux": {
+      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "category": "Game",
+      "artifactName": "Thronglets-${version}-linux.${ext}"
+    },
+    "mac": {
+      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "category": "public.app-category.games",
+      "artifactName": "Thronglets-${version}-mac.${ext}"
+    }
   }
 }

@@ -1,0 +1,57 @@
+name: Build Thronglets.exe
+
+# Runs on a real windows-latest runner rather than cross-compiling from
+# Linux: electron-builder's Windows target needs rcedit to stamp the icon
+# and version info into the .exe, and rcedit is a native Windows tool —
+# on Linux that means installing Wine, on a Windows runner it just works.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "electron/**"
+      - "index.html"
+      - "package.json"
+      - "package-lock.json"
+      - "vite.config.ts"
+      - ".github/workflows/build-exe.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # to publish the "latest" release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the portable .exe
+        run: npm run dist:win
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Thronglets-windows
+          path: release/Thronglets-*-win.exe
+          if-no-files-found: error
+
+      # A stable "latest" release so there is always one current download
+      # link, rather than having to dig through the Actions tab for an
+      # artifact. Re-running this workflow replaces the asset in place.
+      - name: Publish to the "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          body: >
+            Automatically rebuilt from the tip of main. This is not a
+            versioned release — it is always today's `main`.
+          make_latest: true
+          files: release/Thronglets-*-win.exe

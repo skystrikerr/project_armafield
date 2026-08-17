@@ -34,6 +34,32 @@ npm run dev      # http://localhost:5173
 `npm run build` produces a static site in `dist/` — it's a pure client-side
 app, so that folder can be served from anywhere.
 
+## Running it as a desktop app
+
+Thronglets also ships as an ordinary Electron window — same sim, no browser
+chrome, nothing it needs from a server.
+
+**Download.** Every push to `main` rebuilds `Thronglets-*-win.exe` on a real
+Windows runner (cross-building a Windows `.exe` from Linux needs Wine to stamp
+the icon in; a Windows CI runner just does it natively) and republishes it to
+the repo's **[Releases → latest](../../releases/tag/latest)**. It is a
+portable executable — download it and run it, nothing to install.
+
+**Build it yourself:**
+
+```bash
+npm install
+npm run dist:win     # → release/Thronglets-*-win.exe   (needs Wine on Linux)
+npm run dist:mac     # → release/Thronglets-*-mac.dmg
+npm run dist:linux   # → release/Thronglets-*-linux.AppImage
+```
+
+`electron/main.cjs` is the entire desktop shell: one `BrowserWindow` loading
+`dist/index.html` off disk. `npm run electron` runs it against a build you
+already made; `npm run electron:dev` points it at the Vite dev server instead
+(`npm run dev` in a second terminal) for a live-reloading window while you
+work on the sim.
+
 ## Playing
 
 The sim opens on a top-down view of the island.
