@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CATEGORY_LABEL,
+  ERA_LABEL,
   MAPS,
   MatchConfig,
+  PLAYABLE_ERAS,
   PRESETS,
-  mapById,
-  WEAPON_GROUPS,
   WEAPON_GROUP_LABEL,
+  mapById,
   vehiclesInCategory,
+  weaponGroups,
+  type EraId,
   type MatchSettings,
   type TeamLoadout,
   type VehicleCategory,
@@ -25,7 +28,7 @@ import { cn } from "@/lib/utils";
  * exactly what the screen showed.
  */
 
-const CATEGORIES: VehicleCategory[] = ["light", "transport", "armor", "air"];
+const CATEGORIES: VehicleCategory[] = ["light", "transport", "armor", "artillery", "air"];
 const GROUPS: WeaponGroup[] = ["rifles", "smgs", "machine_guns", "anti_tank", "sidearms"];
 
 export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) => void }) {
@@ -81,6 +84,32 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
           </div>
         </header>
 
+        {/* ---- era ---- */}
+        <section>
+          <SectionLabel>Era</SectionLabel>
+          <div className="flex flex-wrap gap-2">
+            {PLAYABLE_ERAS.map((e) => (
+              <button
+                key={e}
+                type="button"
+                onClick={() => config.setEra(e)}
+                aria-pressed={settings.eraId === e}
+                className={cn(
+                  "rounded border px-5 py-2.5 text-sm font-semibold transition",
+                  settings.eraId === e
+                    ? "border-[#ffd479]/70 bg-[#ffd479]/10 text-[#ffd479]"
+                    : "border-white/12 bg-white/[0.03] text-white/60 hover:border-white/30 hover:bg-white/[0.07]",
+                )}
+              >
+                {ERA_LABEL[e]}
+              </button>
+            ))}
+            <span className="self-center pl-2 text-[11px] leading-snug text-white/35">
+              Each era keeps its own roster for every map — switching back finds it as you left it.
+            </span>
+          </div>
+        </section>
+
         {/* ---- map ---- */}
         <section>
           <SectionLabel>Map</SectionLabel>
@@ -123,7 +152,9 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
         {/* ---- everything below this line belongs to the selected map ---- */}
         <div className="flex items-center gap-3 rounded border border-[#6ea8dc]/25 bg-[#6ea8dc]/[0.06] px-4 py-2.5">
           <span className="text-[10px] uppercase tracking-[0.22em] text-white/40">Configuring</span>
-          <span className="text-sm font-semibold text-[#6ea8dc]">{activeMap.name}</span>
+          <span className="text-sm font-semibold text-[#6ea8dc]">
+            {ERA_LABEL[settings.eraId]} · {activeMap.name}
+          </span>
           <span className="text-[11px] text-white/35">
             {activePreset ? PRESETS.find((p) => p.id === activePreset)?.name : "Custom roster"}
           </span>
@@ -198,7 +229,7 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
             })}
           </div>
 
-          <TeamPanel config={config} slot={activeTab} team={team} />
+          <TeamPanel config={config} slot={activeTab} team={team} era={settings.eraId} />
         </section>
 
         {/* ---- start ---- */}
@@ -237,10 +268,12 @@ function TeamPanel({
   config,
   slot,
   team,
+  era,
 }: {
   config: MatchConfig;
   slot: "team1" | "team2";
   team: TeamLoadout;
+  era: EraId;
 }) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -249,7 +282,7 @@ function TeamPanel({
         <SectionLabel>Weapons</SectionLabel>
         <div className="space-y-3">
           {GROUPS.map((group) => {
-            const ids = WEAPON_GROUPS[group];
+            const ids = weaponGroups(era)[group];
             const allOn = ids.every((id) => team.enabledWeapons.includes(id));
             return (
               <div key={group}>
@@ -286,7 +319,7 @@ function TeamPanel({
         <SectionLabel>Vehicles</SectionLabel>
         <div className="space-y-3">
           {CATEGORIES.map((category) => {
-            const defs = vehiclesInCategory(team.faction, category);
+            const defs = vehiclesInCategory(team.faction, category, era);
             if (defs.length === 0) return null;
             const allOn = defs.every((v) => team.enabledVehicles.includes(v.id));
             return (

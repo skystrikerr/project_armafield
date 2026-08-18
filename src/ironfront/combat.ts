@@ -162,6 +162,10 @@ export class Battle {
     const dist = from.distanceTo(this.world.listener);
     switch (weapon) {
       case "cannon":
+      case "sixpdr":
+      case "maxim57":
+      case "field_75":
+      case "howitzer_155":
         this.world.effects.muzzleFlash(from, dir, 1.5);
         this.world.audio.cannon(dist);
         break;
@@ -171,6 +175,8 @@ export class Battle {
         break;
       case "rifle":
       case "coax":
+      case "vickers_mg":
+      case "air_mg":
       case "aircannon":
         this.world.effects.muzzleFlash(from, dir, weapon === "rifle" ? 0.4 : 0.5);
         this.world.audio.rifle(dist);

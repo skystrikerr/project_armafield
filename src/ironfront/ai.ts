@@ -18,7 +18,7 @@ import {
 } from "./units";
 import { angleDelta, approachAngle, clamp } from "./random";
 import { heavyWeaponOfSoldier, weaponCategory } from "./eras";
-import { mobilityOf } from "./matchConfig";
+import { airGunOf, coaxOf, mainGunOf, mobilityOf } from "./matchConfig";
 
 /**
  * Squad and crew behaviour. Everything is a small state machine on a think
@@ -362,8 +362,14 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
     ai.stuckFor = 0;
   }
 
+  // An emplaced gun has nowhere to go: it holds its pit and lays the barrel.
+  // Without this it would spend the match slowly slewing its carriage toward a
+  // capture point it can never reach.
+  const immobile = mob.maxSpeed === 0;
   let throttle = 0;
-  if (now < ai.reverseUntil) {
+  if (immobile) {
+    t.speed = 0;
+  } else if (now < ai.reverseUntil) {
     throttle = -1;
     t.yaw += dt * 0.5;
   } else if (distToGoal > 6) {
@@ -373,16 +379,18 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
     // Slow into turns so the tank does not scrub sideways across a hillside.
     throttle = Math.abs(delta) > 1.1 ? 0.25 : 1;
   }
-  const maxSpeed = mob.maxSpeed * (0.45 + 0.55 * engineHealth) * (0.35 + 0.65 * trackHealth);
-  const wantSpeed = throttle * (throttle < 0 ? mob.reverseSpeed : maxSpeed);
-  t.speed += clamp(wantSpeed - t.speed, -12 * dt, 5 * dt);
+  if (!immobile) {
+    const maxSpeed = mob.maxSpeed * (0.45 + 0.55 * engineHealth) * (0.35 + 0.65 * trackHealth);
+    const wantSpeed = throttle * (throttle < 0 ? mob.reverseSpeed : maxSpeed);
+    t.speed += clamp(wantSpeed - t.speed, -12 * dt, 5 * dt);
+  }
 
   /* gunnery */
   if (target && ai.hasLos && t.modules.gunner > 25) {
     aimPoint(target, _aim);
     tankMuzzle(t, _muzzle);
     const dist = _muzzle.distanceTo(_aim);
-    const spec = WEAPONS.cannon;
+    const spec = WEAPONS[mainGunOf(t.defId) ?? "cannon"];
     const flight = dist / spec.speed;
     velocityOf(target, _v).multiplyScalar(flight * (0.5 + ctx.skill * 0.5));
     _aim.add(_v);
@@ -401,7 +409,7 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
     // How far off-arc the target is. This is aiming error the gun cannot train
     // out, so it both blocks the shot below and steers the hull round instead.
     const offArc = Math.abs(rawLocal - wantLocal);
-    if (offArc > 0.01) t.yaw += clamp(rawLocal, -1, 1) * dt * 0.5 * trackHealth;
+    if (offArc > 0.01 && !immobile) t.yaw += clamp(rawLocal, -1, 1) * dt * 0.5 * trackHealth;
     t.turret = approachAngle(t.turret, wantLocal, traverse);
     t.barrel = clamp(
       t.barrel + clamp(wantPitch - t.barrel, -dt * 0.3, dt * 0.3),
@@ -410,7 +418,11 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
     );
 
     const aimError = Math.abs(angleDelta(t.turret, wantLocal)) + Math.abs(wantPitch - t.barrel) + offArc;
-    if (aimError < 0.012 + (1 - ctx.skill) * 0.02 && now >= t.reloadUntil && dist < 400) {
+    // Emplaced artillery is supposed to out-range everything that drives; the
+    // 400 m gate that keeps tanks from taking silly long shots would otherwise
+    // leave a howitzer sitting silent behind its own lines all match.
+    const maxRange = immobile ? 900 : 400;
+    if (aimError < 0.012 + (1 - ctx.skill) * 0.02 && now >= t.reloadUntil && dist < maxRange) {
       fireTankGun(t, ctx);
     } else if (target.kind === "soldier" && dist < 180 && aimError < 0.06 && now >= t.nextCoaxAt) {
       fireCoax(t, ctx, dist);
@@ -423,12 +435,15 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
 }
 
 export function fireTankGun(t: Tank, ctx: AiContext) {
+  // Each vehicle fires its own gun: a Mark IV's 6-pdr, an A7V's 5.7 cm, a
+  // Schneider's 155. Falls back to the 75 only if a vehicle somehow has none.
+  const gun = mainGunOf(t.defId) ?? "cannon";
   if (t.ammo[t.shell] <= 0) {
     t.shell = t.shell === "ap" ? "he" : "ap";
     if (t.ammo[t.shell] <= 0) return;
   }
   t.ammo[t.shell]--;
-  const reload = WEAPONS.cannon.reloadTime * (t.modules.gunner > 40 ? 1 : 1.6);
+  const reload = WEAPONS[gun].reloadTime * (t.modules.gunner > 40 ? 1 : 1.6);
   t.reloadUntil = ctx.now + reload;
   t.flash = 0.08;
 
@@ -438,7 +453,7 @@ export function fireTankGun(t: Tank, ctx: AiContext) {
   _dir.set(Math.sin(yaw) * cp, Math.sin(t.barrel), Math.cos(yaw) * cp).normalize();
   ctx.battle.fire({
     kind: "shell",
-    weapon: "cannon",
+    weapon: gun,
     shell: t.shell,
     from: _muzzle,
     dir: _dir,
@@ -449,25 +464,26 @@ export function fireTankGun(t: Tank, ctx: AiContext) {
 }
 
 export function fireCoax(t: Tank, ctx: AiContext, dist: number) {
+  const mg = coaxOf(t.defId) ?? "coax";
   if (t.coaxAmmo <= 0) {
-    t.coaxAmmo = WEAPONS.coax.magazine;
-    t.nextCoaxAt = ctx.now + WEAPONS.coax.reloadTime;
+    t.coaxAmmo = WEAPONS[mg].magazine;
+    t.nextCoaxAt = ctx.now + WEAPONS[mg].reloadTime;
     return;
   }
   t.coaxAmmo--;
-  t.nextCoaxAt = ctx.now + 60 / WEAPONS.coax.rpm;
+  t.nextCoaxAt = ctx.now + 60 / WEAPONS[mg].rpm;
   tankMuzzle(t, _muzzle);
   const yaw = t.yaw + t.turret;
   const cp = Math.cos(t.barrel);
   _dir.set(Math.sin(yaw) * cp, Math.sin(t.barrel), Math.cos(yaw) * cp).normalize();
   ctx.battle.fire({
     kind: "bullet",
-    weapon: "coax",
+    weapon: mg,
     from: _muzzle,
     dir: _dir,
     ownerId: t.id,
     team: t.team,
-    spread: WEAPONS.coax.spread * (1 + dist / 300),
+    spread: WEAPONS[mg].spread * (1 + dist / 300),
   });
 }
 
@@ -526,22 +542,23 @@ export function updatePlaneAI(p: Plane, ctx: AiContext, dt: number) {
     const d = p.pos.distanceTo(_v);
     if (d < 420) {
       forward(p, _dir);
-      const flight = d / WEAPONS.aircannon.speed;
+      const gun = airGunOf(p.defId);
+      const flight = d / WEAPONS[gun].speed;
       velocityOf(target, _muzzle).multiplyScalar(flight);
       _v.add(_muzzle).sub(p.pos).normalize();
       if (_dir.dot(_v) > 0.995) {
         p.ammo--;
-        p.nextShotAt = now + 60 / WEAPONS.aircannon.rpm;
+        p.nextShotAt = now + 60 / WEAPONS[gun].rpm;
         p.flash = 0.05;
         _muzzle.copy(p.pos).addScaledVector(_dir, 2.5);
         ctx.battle.fire({
           kind: "bullet",
-          weapon: "aircannon",
+          weapon: gun,
           from: _muzzle,
           dir: _dir,
           ownerId: p.id,
           team: p.team,
-          spread: WEAPONS.aircannon.spread * (1.8 - ctx.skill),
+          spread: WEAPONS[gun].spread * (1.8 - ctx.skill),
           inheritVel: p.vel,
         });
       }

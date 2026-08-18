@@ -61,11 +61,15 @@ import {
   type Team,
   type Unit,
 } from "./units";
-import { classById, equipSoldier, squadClassFor, weaponCategory } from "./eras";
+import { classById, equipSoldier, setActiveEra, squadClassFor, weaponCategory } from "./eras";
 import {
   MatchConfig,
+  airGunOf,
+  isAircraft,
+  mainGunOf,
   mapById,
   mobilityOf,
+  planeSpecOf,
   vehicleById,
   type MatchSettings,
   type TeamLoadout,
@@ -261,6 +265,9 @@ export class Ironfront {
     this.settings = settings ?? new MatchConfig("all_out").getMatchSettings();
     const seed = this.settings.seed;
     this.canvas = canvas;
+    // Every class and weapon lookup below resolves against the active era, so
+    // it has to be set before a single soldier is equipped.
+    setActiveEra(this.settings.eraId);
     this.rand = mulberry32(seed);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.shadowMap.enabled = true;
@@ -546,14 +553,14 @@ export class Ironfront {
       // AI aircraft.
       const air = this.enabledVehicles(team, (v) => v.category === "air");
       if (air.length > 0) {
-        for (let i = 0; i < AI_PLANES; i++) this.addPlane(this.makeBotPlane(team));
+        for (let i = 0; i < AI_PLANES; i++) this.addPlane(this.makeBotPlane(team, air[i % air.length]));
       }
 
       // Vehicles parked at base for the player to crew: one of each enabled
       // ground type, so the deploy screen's options mirror the setup screen.
       const ground = this.enabledVehicles(
         team,
-        (v) => v.category !== "air" && v.chassis !== "fighter",
+        (v) => v.category !== "air" && v.category !== "artillery" && !isAircraft(v),
       );
       ground.forEach((def, i) => {
         const t = makeTank(
@@ -566,23 +573,74 @@ export class Ironfront {
         this.addTank(t);
       });
 
+      // Artillery is emplaced rather than parked: it cannot drive, so it is dug
+      // in on the line facing the enemy and stays there for the whole match.
+      // Each armed piece is laid twice — one with a crew already on it so the
+      // guns actually fire, and one left empty for the player to take over.
+      const guns = this.enabledVehicles(team, (v) => v.category === "artillery");
+      const pits = Math.max(1, guns.length * 2);
+      guns.forEach((def, i) => {
+        const emplaced = mobilityOf(def.id).maxSpeed === 0;
+        const armed = def.weapons.length > 0;
+        const copies = emplaced && armed ? 2 : 1;
+        for (let c = 0; c < copies; c++) {
+          const slot = i * 2 + c;
+          const pos = emplaced
+            ? this.gunPit(team, slot, pits)
+            : this.parkingSpot(team, ground.length + i, Math.max(1, ground.length + guns.length));
+          const t = makeTank(this.nextId++, team, pos, team === "blue" ? Math.PI : 0, {
+            defId: def.id,
+            hp: def.hp,
+            name: def.name,
+            ammo: def.ammo,
+          });
+          // The first copy is crewed; the second is the player's to man.
+          if (c === 0 && copies === 2) t.ai = this.crewBrain(t);
+          this.addTank(t);
+        }
+      });
+
       if (air.length > 0) {
         for (let i = 0; i < FREE_PLANES; i++) {
           const a = AIRFIELDS[team];
+          const def = air[i % air.length];
           const p = makePlane(
             this.nextId++,
             team,
             new THREE.Vector3(a.x + (i - 0.5) * 26, 0, a.z),
             a.heading,
+            planeSpecOf(def),
           );
           p.pos.y = this.terrain.heightAt(p.pos.x, p.pos.z) + 1.05;
-          p.name = `${air[i % air.length].name}-${i + 1}`;
+          p.name = `${def.name}-${i + 1}`;
           this.addPlane(p);
         }
       }
     }
     this.placeAtSpawn(this.player);
     this.aimYaw = this.player.aimYaw;
+  }
+
+  /**
+   * A gun line *behind* the depot. Artillery cannot drive, so where it spawns
+   * is where it fights all match — put in front of the base it is simply the
+   * first thing enemy armour drives over. Sited to the rear it shoots over its
+   * own infantry, which is the entire point of having it.
+   */
+  private gunPit(team: Team, i: number, of: number) {
+    const b = BASES[team];
+    const rear = team === "blue" ? 1 : -1;
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const x = b.x + (i - (of - 1) / 2) * 20 + (attempt % 3) * 7 - 7;
+      const z = b.z + rear * (34 + Math.floor(attempt / 3) * 10);
+      const y = this.terrain.heightAt(x, z);
+      if (!this.terrain.inObstacle(x, y + 1.2, z, TANK_RADIUS + 1, true)) {
+        return new THREE.Vector3(x, y, z);
+      }
+    }
+    const x = b.x + (i - (of - 1) / 2) * 20;
+    const z = b.z + rear * 38;
+    return new THREE.Vector3(x, this.terrain.heightAt(x, z), z);
   }
 
   /** An apron in front of the depot, well clear of the huts and each other. */
@@ -636,7 +694,14 @@ export class Ironfront {
       team === "blue" ? Math.PI : 0,
       { defId: def.id, hp: def.hp, name: def.name, ammo: def.ammo },
     );
-    t.ai = {
+    t.ai = this.crewBrain(t);
+    return t;
+  }
+
+  /** A fresh vehicle-crew brain. Emplaced guns use the same one — they simply
+   * never get anywhere, so the driving half of it does nothing. */
+  private crewBrain(t: Tank): NonNullable<Tank["ai"]> {
+    return {
       state: "advance",
       targetId: null,
       goal: new THREE.Vector3(),
@@ -648,13 +713,13 @@ export class Ironfront {
       stuckFor: 0,
       lastPos: t.pos.clone(),
     };
-    return t;
   }
 
-  private makeBotPlane(team: Team): Plane {
+  private makeBotPlane(team: Team, def: VehicleDef): Plane {
     const id = this.nextId++;
     const a = AIRFIELDS[team];
-    const p = makePlane(id, team, new THREE.Vector3(a.x, this.terrain.heightAt(a.x, a.z) + 220, a.z), a.heading);
+    const p = makePlane(id, team, new THREE.Vector3(a.x, this.terrain.heightAt(a.x, a.z) + 220, a.z), a.heading,
+      planeSpecOf(def));
     p.onGround = false;
     p.speed = 80;
     p.throttle = 0.8;
@@ -681,7 +746,7 @@ export class Ironfront {
   private addPlane(p: Plane) {
     this.planes.push(p);
     this.units.push(p);
-    const rig = new PlaneRig(this.assets, p.team);
+    const rig = new PlaneRig(this.assets, p.team, p.defId);
     this.planeRigs.set(p.id, rig);
     this.scene.add(rig.root);
   }
@@ -1356,7 +1421,8 @@ export class Ironfront {
 
     const flat = Math.hypot(this.tmpVec.x - originX, this.tmpVec.z - originZ);
     const wantYaw = Math.atan2(this.tmpVec.x - originX, this.tmpVec.z - originZ);
-    const solved = ballisticPitch(flat, this.tmpVec.y - originY, WEAPONS.cannon.speed);
+    const gunSpec = WEAPONS[mainGunOf(t.defId) ?? "cannon"];
+    const solved = ballisticPitch(flat, this.tmpVec.y - originY, gunSpec.speed);
     const wantPitch = solved ?? Math.atan2(this.tmpVec.y - originY, flat);
 
     // A casemate gun (StuG) has a few degrees of traverse, not a full circle,
@@ -1391,13 +1457,14 @@ export class Ironfront {
 
     if (this.mouseDown.has(0) && this.now >= p.nextShotAt && p.ammo > 0) {
       p.ammo--;
-      p.nextShotAt = this.now + 60 / WEAPONS.aircannon.rpm;
+      const gun = airGunOf(p.defId);
+      p.nextShotAt = this.now + 60 / WEAPONS[gun].rpm;
       p.flash = 0.05;
       forward(p, this.tmpVec2);
       this.tmpVec.copy(p.pos).addScaledVector(this.tmpVec2, 3);
       this.battle.fire({
         kind: "bullet",
-        weapon: "aircannon",
+        weapon: gun,
         from: this.tmpVec,
         dir: this.tmpVec2,
         ownerId: p.id,
@@ -2032,7 +2099,7 @@ export class Ironfront {
       if (p.alive || this.now < p.respawnAt) continue;
       p.alive = true;
       p.hp = 100;
-      p.ammo = WEAPONS.aircannon.magazine;
+      p.ammo = WEAPONS[airGunOf(p.defId)].magazine;
       p.bombs = 2;
       const a = AIRFIELDS[p.team];
       if (p.ai) {
@@ -2310,7 +2377,7 @@ export class Ironfront {
       stamina: Math.round(s.stamina),
       className: classById(s.classId).name,
       loadout: s.loadout.map((id, slot) => ({ slot, name: WEAPONS[id].name, equipped: id === s.weapon })),
-      weapon: t ? SHELLS[t.shell].name : p ? WEAPONS.aircannon.name : spec.name,
+      weapon: t ? SHELLS[t.shell].name : p ? WEAPONS[airGunOf(p.defId)].name : spec.name,
       ammo: s.ammo[s.weapon],
       mags: s.mags[s.weapon],
       grenades: s.grenades,
@@ -2326,7 +2393,10 @@ export class Ironfront {
             ap: t.ammo.ap,
             he: t.ammo.he,
             coax: t.coaxAmmo,
-            reload: this.now >= t.reloadUntil ? 1 : 1 - (t.reloadUntil - this.now) / WEAPONS.cannon.reloadTime,
+            reload:
+              this.now >= t.reloadUntil
+                ? 1
+                : 1 - (t.reloadUntil - this.now) / WEAPONS[mainGunOf(t.defId) ?? "cannon"].reloadTime,
             speed: Math.abs(t.speed),
             modules: (Object.keys(t.modules) as TankModule[]).map((id) => ({
               id,

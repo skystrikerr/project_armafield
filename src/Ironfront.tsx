@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Ironfront as Game, type HudSnapshot, type MinimapUnit } from "@/ironfront/game";
-import { PLAYABLE_CLASSES, primaryOptionsFor } from "@/ironfront/eras";
+import { playableClasses, primaryOptionsFor, type ClassDef } from "@/ironfront/eras";
 import { MAP_HALF, ZONES } from "@/ironfront/terrain";
 import { TEAM_COLOR, WEAPONS, type ClassId } from "@/ironfront/units";
 import MatchSetup from "@/MatchSetup";
@@ -37,10 +37,17 @@ export default function Ironfront() {
     };
   }, [matchSettings]);
 
-  const [selectedClass, setSelectedClass] = useState<ClassId>(PLAYABLE_CLASSES[0].id);
+  const [selectedClass, setSelectedClass] = useState<ClassId>("rifleman");
   // Remembers the last weapon picked per class, so switching classes and back
   // doesn't forget your choice.
   const [primaryByClass, setPrimaryByClass] = useState<Partial<Record<ClassId, string>>>({});
+
+  // A remembered weapon belongs to the era it was chosen in — a Garand is not
+  // an option in 1917 — so the choice is dropped whenever the era changes.
+  const eraId = matchSettings?.eraId;
+  useEffect(() => {
+    setPrimaryByClass({});
+  }, [eraId]);
   const selectedPrimary = primaryByClass[selectedClass] ?? primaryOptionsFor(selectedClass)[0];
   const setSelectedPrimary = useCallback(
     (weaponId: string) => setPrimaryByClass((prev) => ({ ...prev, [selectedClass]: weaponId })),
@@ -634,7 +641,7 @@ function ClassPicker({
     <div className="mt-6">
       <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-white/35">Class</div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {PLAYABLE_CLASSES.map((c) => (
+        {playableClasses().map((c: ClassDef) => (
           <button
             key={c.id}
             type="button"

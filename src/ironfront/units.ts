@@ -122,6 +122,95 @@ export const WEAPONS: Record<WeaponId, WeaponSpec> = {
     auto: true,
     tracer: 0xfff2a0,
   },
+  /* ---------------- Great War vehicle armament ---------------- */
+  sixpdr: {
+    name: "6-pdr",
+    rpm: 8,
+    speed: 170,
+    damage: 92,
+    penetration: 48,
+    blast: 3.4,
+    blastDamage: 80,
+    spread: 0.0034,
+    magazine: 1,
+    reloadTime: 7.5,
+    auto: false,
+    tracer: 0xffe8b0,
+  },
+  maxim57: {
+    name: "5.7 cm Maxim-Nordenfelt",
+    rpm: 9,
+    speed: 175,
+    damage: 90,
+    penetration: 45,
+    blast: 3.2,
+    blastDamage: 78,
+    spread: 0.0036,
+    magazine: 1,
+    reloadTime: 7.2,
+    auto: false,
+    tracer: 0xffe8b0,
+  },
+  /** Water-cooled MG. Slower and less accurate than a WWII coaxial. */
+  vickers_mg: {
+    name: "Vickers MG",
+    rpm: 450,
+    speed: 420,
+    damage: 28,
+    penetration: 6,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.02,
+    magazine: 250,
+    reloadTime: 5.5,
+    auto: true,
+    tracer: 0xffd08a,
+  },
+  /** Towed 75 mm. Shrapnel and HE — murder on infantry, poor against armour. */
+  field_75: {
+    name: "75 mm Field Gun",
+    rpm: 14,
+    speed: 230,
+    damage: 80,
+    penetration: 34,
+    blast: 8,
+    blastDamage: 165,
+    spread: 0.0022,
+    magazine: 1,
+    reloadTime: 4.4,
+    auto: false,
+    tracer: 0xfff0c0,
+  },
+  /** Heavy howitzer. Long reload, lobbed trajectory, enormous blast. */
+  howitzer_155: {
+    name: "155 mm Howitzer",
+    rpm: 3,
+    speed: 165,
+    damage: 120,
+    penetration: 48,
+    blast: 16,
+    blastDamage: 300,
+    spread: 0.005,
+    magazine: 1,
+    reloadTime: 13,
+    auto: false,
+    tracer: 0xffe0a0,
+  },
+  /** Synchronised biplane MG. There is no 20 mm in 1917. */
+  air_mg: {
+    name: "Twin Vickers",
+    rpm: 520,
+    speed: 430,
+    damage: 34,
+    penetration: 9,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.011,
+    magazine: 200,
+    reloadTime: 6,
+    auto: true,
+    tracer: 0xfff2a0,
+  },
   bomb: {
     name: "100 kg Bomb",
     rpm: 0,
@@ -267,6 +356,8 @@ export type TankBrain = {
 export type Plane = {
   kind: "plane";
   id: number;
+  /** Catalog id from matchConfig (e.g. "sopwith_camel"). Drives mesh and guns. */
+  defId: string;
   team: Team;
   pos: THREE.Vector3;
   vel: THREE.Vector3;
@@ -426,28 +517,41 @@ export function makeTank(
   };
 }
 
-export function makePlane(id: number, team: Team, pos: THREE.Vector3, heading: number): Plane {
+export function makePlane(
+  id: number,
+  team: Team,
+  pos: THREE.Vector3,
+  heading: number,
+  spec: { defId: string; hp: number; name: string; gun: string; bombs: number } = {
+    defId: "fighter_allied",
+    hp: 100,
+    name: "Fighter",
+    gun: "aircannon",
+    bombs: 2,
+  },
+): Plane {
   return {
     kind: "plane",
     id,
+    defId: spec.defId,
     team,
     pos: pos.clone(),
     vel: new THREE.Vector3(),
     quat: new THREE.Quaternion().setFromEuler(new THREE.Euler(0, heading, 0, "YXZ")),
     throttle: 0,
     speed: 0,
-    hp: 100,
+    hp: spec.hp,
     alive: true,
     respawnAt: 0,
-    ammo: WEAPONS.aircannon.magazine,
-    bombs: 2,
+    ammo: WEAPONS[spec.gun].magazine,
+    bombs: spec.bombs,
     nextShotAt: 0,
     flash: 0,
     onGround: true,
     pilotId: null,
     isPlayer: false,
     ai: null,
-    name: `${team === "blue" ? "Kite" : "Falke"}-${id % 90}`,
+    name: `${spec.name}-${id % 90}`,
     kills: 0,
   };
 }

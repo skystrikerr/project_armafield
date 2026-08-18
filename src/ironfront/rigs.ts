@@ -14,7 +14,7 @@ import {
   wreckGeometry,
 } from "./models";
 import { weaponCategory } from "./eras";
-import { vehicleById, type VehicleDef } from "./matchConfig";
+import { mainGunOf, vehicleById, type VehicleDef } from "./matchConfig";
 import {
   barrelGeometryFor,
   barrelMount,
@@ -73,7 +73,7 @@ export class RigAssets {
     const cached = this.vehicleCache.get(key);
     if (cached) return cached;
     const entry = {
-      hull: hullGeometryFor(def) ?? this.hull[team],
+      hull: hullGeometryFor(def) ?? (def.chassis === "fighter" ? this.planeBody[team] : this.hull[team]),
       turret: turretGeometryFor(def) ?? (def.chassis === "medium_tank" ? this.turret[team] : null),
       barrel: barrelGeometryFor(def) ?? this.barrel,
     };
@@ -257,7 +257,7 @@ export class TankRig {
     // the update path stays uniform — it just carries no mesh and never moves.
     this.turret.position.set(0, turretRingHeight(def.chassis), def.chassis === "medium_tank" ? -0.25 : 0);
     if (geo.turret) this.turret.add(mesh(geo.turret, mat));
-    if (def.weapons.includes("cannon")) {
+    if (mainGunOf(def.id)) {
       this.barrel.position.set(...barrelMount(def.chassis));
       this.barrel.add(mesh(geo.barrel, mat));
       this.turret.add(this.barrel);
@@ -299,12 +299,22 @@ export class PlaneRig {
   readonly marker: THREE.Sprite;
   private spin = 0;
 
-  constructor(assets: RigAssets, team: Team) {
+  constructor(assets: RigAssets, team: Team, defId = "fighter_allied") {
     const mat = assets.material;
-    this.body = mesh(assets.planeBody[team], mat);
+    const def = vehicleById(defId);
+    // Biplanes bring their own airframe; the WWII monoplane uses the shared one.
+    this.body = mesh(assets.vehicleGeometry(def, team).hull, mat);
     this.root.add(this.body);
     this.prop = mesh(assets.propeller, mat);
-    this.prop.position.set(0, 0, 4.25);
+    // A rotary-engined scout is a much shorter aeroplane than a 1944 fighter,
+    // and its airscrew is correspondingly smaller — the shared prop mesh is
+    // sized for a Mustang and dwarfs a Camel if it is not scaled down.
+    if (def.chassis === "biplane") {
+      this.prop.position.set(0, 0.95, 2.66);
+      this.prop.scale.setScalar(0.52);
+    } else {
+      this.prop.position.set(0, 0, 4.25);
+    }
     this.root.add(this.prop);
 
     this.marker = marker(team, 0.9, 2.6);

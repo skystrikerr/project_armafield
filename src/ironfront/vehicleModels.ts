@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { build, type Part } from "./models";
-import type { Chassis, VehicleDef } from "./matchConfig";
+import { mainGunOf, type Chassis, type VehicleDef } from "./matchConfig";
 
 /**
  * Low-poly meshes for every chassis in the vehicle catalog, built from the
@@ -19,6 +19,8 @@ const STEEL = 0x4b5147;
 const STEEL_DARK = 0x33372f;
 const GLASS = 0x6d8391;
 const CANVAS = 0x8b7c58;
+const WOOD = 0x6b4f2e;
+const WOOD_DARK = 0x4c3720;
 const LAMP = 0xd8d2b0;
 
 /** Nudge a hex colour's brightness, for panel shading off the base tint. */
@@ -461,6 +463,365 @@ function heavyBarrelGeometry(): THREE.BufferGeometry {
 }
 
 /* ================================================================== */
+/*  Great War — rhomboid tank (Mark IV)                                 */
+/* ================================================================== */
+
+/**
+ * The Mark IV's whole point is the track frame: the belt runs right round the
+ * outside of a lozenge-shaped hull, so the tank climbs a parapet by driving
+ * its nose up the wall. Drawn as a stack of stepped plates rather than a plain
+ * box, which is what gives the rhomboid its profile from the side.
+ */
+function rhomboidHullGeometry(tint: number, male: boolean): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.18);
+  const parts: Part[] = [
+    // Central hull box, low and long.
+    { g: "box", size: [2.5, 1.5, 6.2], pos: [0, 1.35, 0], color: body },
+    // Stepped nose and tail plates — the lozenge taper.
+    { g: "box", size: [2.4, 0.9, 1.1], pos: [0, 2.0, 3.2], rot: [0.5, 0, 0], color: light },
+    { g: "box", size: [2.4, 0.9, 1.1], pos: [0, 0.85, 3.5], rot: [-0.55, 0, 0], color: light },
+    { g: "box", size: [2.4, 0.9, 1.1], pos: [0, 2.0, -3.2], rot: [-0.5, 0, 0], color: light },
+    { g: "box", size: [2.4, 0.9, 1.1], pos: [0, 0.85, -3.5], rot: [0.55, 0, 0], color: light },
+    // Roof with the commander's hatch and the exhaust manifold.
+    { g: "box", size: [2.3, 0.12, 5.6], pos: [0, 2.14, 0], color: dark },
+    // Armoured cab, standing proud of the track frame at the front — after the
+    // lozenge itself this is the Mark IV's most recognisable feature.
+    { g: "box", size: [1.7, 0.62, 1.5], pos: [0, 2.45, 1.9], color: body },
+    { g: "box", size: [1.75, 0.1, 1.55], pos: [0, 2.79, 1.9], color: dark },
+    { g: "box", size: [1.2, 0.12, 0.1], pos: [0, 2.5, 2.64], color: 0x141414 },
+    { g: "cyl", r: 0.14, h: 3.2, seg: 6, pos: [0, 2.36, -0.6], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+    // Unditching rail along the top — the beam every Mark IV carried.
+    { g: "box", size: [0.16, 0.16, 5.4], pos: [0.85, 2.46, 0], color: WOOD },
+    { g: "box", size: [0.16, 0.16, 5.4], pos: [-0.85, 2.46, 0], color: WOOD },
+  ];
+  // Sponsons: the guns hang off the sides, which is why it has no turret.
+  for (const side of [-1, 1]) {
+    const x = side * 1.72;
+    parts.push({ g: "box", size: [1.0, 0.9, 1.9], pos: [x, 1.5, 0.3], color: body });
+    parts.push({ g: "box", size: [0.24, 0.85, 0.9], pos: [x + side * 0.5, 1.5, 1.1], rot: [0, side * 0.5, 0], color: light });
+    if (male) {
+      // 6-pdr barrel poking forward-outward out of the sponson.
+      parts.push({
+        g: "cyl", r: 0.13, h: 1.9, seg: 8,
+        pos: [x + side * 0.42, 1.5, 1.55], rot: [Math.PI / 2, side * 0.22, 0], color: GUNMETAL,
+      });
+    } else {
+      // Female: a machine gun in a ball mount instead.
+      parts.push({ g: "sphere", r: 0.3, seg: 8, pos: [x + side * 0.4, 1.55, 1.2], color: STEEL });
+      parts.push({
+        g: "cyl", r: 0.07, h: 1.0, seg: 6,
+        pos: [x + side * 0.5, 1.55, 1.6], rot: [Math.PI / 2, side * 0.24, 0], color: GUNMETAL,
+      });
+    }
+  }
+  // The track frame itself: a belt that follows the lozenge all the way round.
+  // 8 m long and 2.5 m to the top of the belt, per the reference sheet.
+  for (const side of [-1, 1]) {
+    rhomboidTrack(parts, side * 1.5, 3.75, 1.2, 1.3, body);
+  }
+  return build(parts);
+}
+
+/**
+ * One rhomboid track belt: short plates stepped round an ellipse, each rotated
+ * to lie tangent to it. Rotating about X maps the plate's +Z axis to
+ * (-sin θ, cos θ) in (y, z), so θ is taken against the ellipse's derivative
+ * with that sign convention rather than the naive atan2 of the tangent — get
+ * it backwards and the belt explodes into a starburst of bars.
+ */
+function rhomboidTrack(parts: Part[], x: number, rz: number, ry: number, cy: number, body: number) {
+  const steps = 30;
+  // A plain ellipse reads as a tyre. The Mark IV's frame is a lozenge: long
+  // flat runs top and bottom, sharp corners fore and aft. A superellipse with
+  // an exponent below 1 flattens the runs and pulls the corners in, which is
+  // the whole silhouette in one number.
+  const p = 0.7;
+  const sup = (t: number) => Math.sign(t) * Math.pow(Math.abs(t), p);
+  const at = (a: number) => ({ z: sup(Math.cos(a)) * rz, y: cy + sup(Math.sin(a)) * ry });
+  for (let i = 0; i < steps; i++) {
+    const a = (i / steps) * Math.PI * 2;
+    const next = ((i + 1) / steps) * Math.PI * 2;
+    const c = at(a);
+    const n = at(next);
+    const dz = n.z - c.z;
+    const dy = n.y - c.y;
+    const len = Math.hypot(dy, dz);
+    parts.push({
+      g: "box",
+      // Each plate spans to the next sample, so the belt tiles without gaps.
+      size: [0.6, 0.26, len * 1.35],
+      pos: [x, (c.y + n.y) / 2, (c.z + n.z) / 2],
+      rot: [Math.atan2(-dy, dz), 0, 0],
+      color: i % 2 === 0 ? TRACK : STEEL_DARK,
+    });
+  }
+  // Frame plate filling the lozenge, so the tank is not see-through side-on.
+  parts.push({ g: "box", size: [0.14, ry * 1.55, rz * 1.5], pos: [x - Math.sign(x) * 0.3, cy, 0], color: body });
+  parts.push({ g: "box", size: [0.12, ry * 0.9, rz * 1.85], pos: [x - Math.sign(x) * 0.3, cy, 0], color: shade(body, 0.86) });
+}
+
+/* ================================================================== */
+/*  Great War — box tank (A7V)                                          */
+/* ================================================================== */
+
+function boxTankGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    // Slab-sided armoured box, overhanging the running gear at both ends.
+    { g: "box", size: [3.2, 1.9, 7.0], pos: [0, 1.7, 0], color: body },
+    { g: "box", size: [3.2, 0.5, 1.0], pos: [0, 2.5, 3.3], rot: [-0.5, 0, 0], color: light },
+    { g: "box", size: [3.2, 0.5, 1.0], pos: [0, 2.5, -3.3], rot: [0.5, 0, 0], color: light },
+    // Roof and the raised commander's cabin — the A7V's distinctive lump.
+    { g: "box", size: [3.0, 0.14, 6.6], pos: [0, 2.68, 0], color: dark },
+    { g: "box", size: [1.5, 0.7, 1.6], pos: [0, 3.05, -0.3], color: body },
+    { g: "box", size: [1.55, 0.12, 1.65], pos: [0, 3.42, -0.3], color: dark },
+    { g: "box", size: [1.2, 0.1, 0.08], pos: [0, 3.18, 0.48], color: 0x141414 },
+    // Front gun embrasure: the 5.7 cm sits in the nose, not a turret.
+    { g: "box", size: [1.3, 0.9, 0.4], pos: [0, 1.75, 3.5], color: light },
+    // Machine-gun ball mounts down the flanks.
+    { g: "sphere", r: 0.26, seg: 8, pos: [1.6, 2.1, 1.6], color: STEEL },
+    { g: "sphere", r: 0.26, seg: 8, pos: [-1.6, 2.1, 1.6], color: STEEL },
+    { g: "sphere", r: 0.26, seg: 8, pos: [1.6, 2.1, -1.8], color: STEEL },
+    { g: "sphere", r: 0.26, seg: 8, pos: [-1.6, 2.1, -1.8], color: STEEL },
+    { g: "box", size: [2.6, 0.14, 0.5], pos: [0, 2.3, -3.4], color: TRACK },
+  ];
+  headlights(parts, 1.15, 2.2, 3.62);
+  // Short track base tucked under a long body — why it bellied out on trenches.
+  for (const side of [-1, 1]) {
+    trackBelt(parts, side * 1.35, {
+      width: 0.62, length: 5.0, wheelY: 0.55, wheelR: 0.42, wheelCount: 6, endR: 0.42, endZ: 2.0,
+    });
+  }
+  return build(parts);
+}
+
+/** The A7V's 5.7 cm lives in the nose, so its "turret" is just the mantlet. */
+function boxTankMantletGeometry(tint: number): THREE.BufferGeometry {
+  return build([
+    { g: "box", size: [0.9, 0.7, 0.5], pos: [0, 0.2, 0.15], color: shade(tint, 1.2) },
+    { g: "cyl", r: 0.3, h: 0.45, seg: 10, pos: [0, 0.2, 0.4], rot: [Math.PI / 2, 0, 0], color: STEEL },
+  ]);
+}
+
+/** Short 5.7 cm — a stub next to a WWII 75. */
+function shortCannonGeometry(): THREE.BufferGeometry {
+  return build([
+    { g: "cyl", r: 0.12, h: 1.9, seg: 8, pos: [0, 0, 0.95], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "cyl", r: 0.17, h: 0.4, seg: 8, pos: [0, 0, 0.18], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+  ]);
+}
+
+/* ================================================================== */
+/*  Great War — armoured car (Rolls-Royce, Lancia, Austro-Daimler)      */
+/* ================================================================== */
+
+function vintageCarHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    // Tall riveted body on a car chassis — narrow, and top-heavy with it.
+    { g: "box", size: [1.9, 0.5, 4.6], pos: [0, 0.95, 0], color: dark },
+    { g: "box", size: [1.85, 1.0, 2.4], pos: [0, 1.6, -0.5], color: body },
+    // Long bonnet with a vertical radiator, 1914 fashion.
+    { g: "box", size: [1.5, 0.85, 1.9], pos: [0, 1.4, 1.6], color: body },
+    { g: "box", size: [1.35, 1.0, 0.16], pos: [0, 1.45, 2.6], color: light },
+    { g: "box", size: [1.15, 0.8, 0.08], pos: [0, 1.45, 2.68], color: 0x2b2b26 },
+    // Armoured driver's plate with a viewing flap.
+    { g: "box", size: [1.8, 0.6, 0.14], pos: [0, 1.9, 0.75], rot: [-0.16, 0, 0], color: light },
+    { g: "box", size: [0.7, 0.1, 0.08], pos: [0, 1.96, 0.83], color: 0x141414 },
+    // Running boards and mudguards.
+    { g: "box", size: [2.3, 0.1, 3.6], pos: [0, 1.1, 0.2], color: dark },
+    // Spare wheel strapped to the tail.
+    { g: "cyl", r: 0.42, h: 0.16, seg: 12, pos: [0, 1.4, -2.0], rot: [Math.PI / 2, 0, 0], color: RUBBER },
+  ];
+  headlights(parts, 0.62, 1.6, 2.66);
+  spokedWheels(parts, 1.0, 0.5, [1.5, -1.3]);
+  return build(parts);
+}
+
+/** Riveted drum turret with a water-cooled MG. Origin sits on the ring. */
+function vintageCarTurretGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const light = shade(tint, 1.22);
+  return build([
+    { g: "cyl", r: 0.62, h: 0.75, seg: 10, pos: [0, 0.38, 0], color: body },
+    { g: "cyl", r: 0.5, h: 0.16, seg: 10, pos: [0, 0.82, 0], color: shade(tint, 0.72) },
+    // Water jacket around the barrel — the giveaway of a 1916 Vickers.
+    { g: "cyl", r: 0.14, h: 0.75, seg: 8, pos: [0, 0.36, 0.7], rot: [Math.PI / 2, 0, 0], color: light },
+    { g: "cyl", r: 0.05, h: 0.5, seg: 6, pos: [0, 0.36, 1.2], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+  ]);
+}
+
+/**
+ * Wooden-spoked artillery wheels. Every wheeled thing in 1917 rides on these,
+ * and they are the single clearest signal that a vehicle is not from 1944.
+ */
+function spokedWheels(parts: Part[], halfWidth: number, radius: number, positions: number[]) {
+  for (const side of [-1, 1]) {
+    for (const z of positions) {
+      const x = side * halfWidth;
+      parts.push({
+        g: "cyl", r: radius, h: radius * 0.34, seg: 12,
+        pos: [x, radius, z], rot: [0, 0, Math.PI / 2], color: RUBBER,
+      });
+      parts.push({
+        g: "cyl", r: radius * 0.82, h: radius * 0.4, seg: 12,
+        pos: [x, radius, z], rot: [0, 0, Math.PI / 2], color: WOOD,
+      });
+      // Spokes, as thin crossed bars rather than twelve separate cylinders.
+      for (let i = 0; i < 3; i++) {
+        parts.push({
+          g: "box", size: [radius * 0.44, radius * 1.6, 0.07],
+          pos: [x, radius, z], rot: [0, Math.PI / 2, (i * Math.PI) / 3], color: WOOD_DARK,
+        });
+      }
+      parts.push({
+        g: "cyl", r: radius * 0.2, h: radius * 0.5, seg: 8,
+        pos: [x, radius, z], rot: [0, 0, Math.PI / 2], color: STEEL,
+      });
+    }
+  }
+}
+
+/* ================================================================== */
+/*  Great War — towed artillery and the wagon                           */
+/* ================================================================== */
+
+/**
+ * A gun carriage: shield, axle, two spoked wheels and a split trail. `big`
+ * builds the Schneider 155 rather than the 75, which is the same arrangement
+ * scaled up with a heavier shield.
+ */
+function gunCarriageGeometry(tint: number, big: boolean): THREE.BufferGeometry {
+  const k = big ? 1.28 : 1.0;
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const parts: Part[] = [
+    // Axle and cradle.
+    { g: "box", size: [1.8 * k, 0.22, 0.4], pos: [0, 0.62 * k, 0], color: dark },
+    { g: "box", size: [0.55 * k, 0.4 * k, 1.3 * k], pos: [0, 0.8 * k, 0.1], color: body },
+    // Gun shield — thin, angled, and all the protection the crew ever gets.
+    { g: "box", size: [2.0 * k, 1.1 * k, 0.1], pos: [0, 0.95 * k, 0.42 * k], rot: [-0.2, 0, 0], color: body },
+    { g: "box", size: [2.05 * k, 0.1, 0.12], pos: [0, 1.5 * k, 0.32 * k], color: dark },
+    // Split trail dragging back to the spades.
+    { g: "box", size: [0.16, 0.16, 2.6 * k], pos: [0.32, 0.34, -1.5 * k], rot: [0.12, 0, 0], color: dark },
+    { g: "box", size: [0.16, 0.16, 2.6 * k], pos: [-0.32, 0.34, -1.5 * k], rot: [0.12, 0, 0], color: dark },
+    { g: "box", size: [0.9, 0.14, 0.4], pos: [0, 0.12, -2.7 * k], color: STEEL_DARK },
+  ];
+  spokedWheels(parts, 0.92 * k, 0.62 * k, [0]);
+  return build(parts);
+}
+
+/** The gun itself pivots on the carriage, so it lives on the turret node. */
+function gunBarrelMountGeometry(tint: number, big: boolean): THREE.BufferGeometry {
+  const k = big ? 1.3 : 1.0;
+  return build([
+    { g: "box", size: [0.5 * k, 0.4 * k, 0.9 * k], pos: [0, 0.1, 0], color: shade(tint, 1.18) },
+    { g: "cyl", r: 0.2 * k, h: 0.5 * k, seg: 10, pos: [0, 0.1, 0.4 * k], rot: [Math.PI / 2, 0, 0], color: STEEL },
+  ]);
+}
+
+/** Long thin 75 mm tube, or the 155's shorter, fatter one. */
+function towedGunBarrelGeometry(big: boolean): THREE.BufferGeometry {
+  return big
+    ? build([
+        { g: "cyl", r: 0.19, h: 3.0, seg: 10, pos: [0, 0, 1.5], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+        { g: "cyl", r: 0.26, h: 0.7, seg: 10, pos: [0, 0, 0.35], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+      ])
+    : build([
+        { g: "cyl", r: 0.11, h: 3.4, seg: 10, pos: [0, 0, 1.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+        { g: "cyl", r: 0.17, h: 0.55, seg: 10, pos: [0, 0, 0.3], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+      ]);
+}
+
+function wagonGeometry(tint: number): THREE.BufferGeometry {
+  const wood = tint;
+  const dark = shade(tint, 0.7);
+  const parts: Part[] = [
+    // Plank bed with side and end boards.
+    { g: "box", size: [1.7, 0.14, 3.2], pos: [0, 1.0, 0], color: wood },
+    { g: "box", size: [0.12, 0.6, 3.2], pos: [0.86, 1.32, 0], color: wood },
+    { g: "box", size: [0.12, 0.6, 3.2], pos: [-0.86, 1.32, 0], color: wood },
+    { g: "box", size: [1.7, 0.6, 0.12], pos: [0, 1.32, 1.62], color: wood },
+    { g: "box", size: [1.7, 0.6, 0.12], pos: [0, 1.32, -1.62], color: wood },
+    // Frame rails and the draught pole the horses were hitched to.
+    { g: "box", size: [0.16, 0.16, 3.4], pos: [0.5, 0.88, 0], color: dark },
+    { g: "box", size: [0.16, 0.16, 3.4], pos: [-0.5, 0.88, 0], color: dark },
+    { g: "box", size: [0.12, 0.12, 2.4], pos: [0, 0.72, 2.7], rot: [-0.08, 0, 0], color: dark },
+    { g: "box", size: [0.9, 0.1, 0.12], pos: [0, 0.68, 3.7], color: dark },
+  ];
+  spokedWheels(parts, 0.88, 0.58, [1.15, -1.15]);
+  return build(parts);
+}
+
+/* ================================================================== */
+/*  Great War — biplanes (Camel, Dr.I, SPAD)                            */
+/* ================================================================== */
+
+/**
+ * Two stacked wings, struts between them, and an open cockpit. The nose points
+ * +Z to match the existing plane rig, which is the opposite of the camera's
+ * forward — the aircraft control code already accounts for that.
+ */
+function biplaneGeometry(tint: number, triplane: boolean): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    // Fabric fuselage, tapering to the tail.
+    { g: "box", size: [0.72, 0.8, 3.6], pos: [0, 0.9, 0.2], color: body },
+    { g: "box", size: [0.5, 0.5, 1.5], pos: [0, 0.95, -2.2], color: body },
+    // Rotary engine cowling.
+    { g: "cyl", r: 0.44, h: 0.7, seg: 10, pos: [0, 0.95, 2.3], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+    // Open cockpit and headrest.
+    { g: "box", size: [0.5, 0.24, 0.7], pos: [0, 1.32, 0.1], color: 0x1e1c18 },
+    { g: "box", size: [0.42, 0.26, 0.24], pos: [0, 1.36, -0.4], color: dark },
+    // Tailplane and fin.
+    { g: "box", size: [2.0, 0.09, 0.7], pos: [0, 1.0, -2.8], color: light },
+    { g: "box", size: [0.09, 0.75, 0.8], pos: [0, 1.35, -2.9], color: light },
+  ];
+
+  // Wings. The Dr.I gets three, everything else two — same builder either way.
+  // Spread far enough apart that each wing clears the fuselage box — stacked
+  // too close, the lower ones vanish inside it and a triplane reads as a
+  // biplane.
+  const wingYs = triplane ? [0.38, 1.16, 1.98] : [0.4, 1.66];
+  const spans = triplane ? [4.6, 5.0, 4.4] : [5.6, 5.4];
+  wingYs.forEach((y, i) => {
+    parts.push({ g: "box", size: [spans[i], 0.1, 1.05], pos: [0, y, 0.9], color: light });
+    // Ailerons, a shade darker so the wing has an edge.
+    parts.push({ g: "box", size: [spans[i], 0.06, 0.22], pos: [0, y, 0.3], color: dark });
+  });
+  // Interplane struts between each pair of wings, plus cabane struts at the root.
+  for (let i = 0; i < wingYs.length - 1; i++) {
+    const y = (wingYs[i] + wingYs[i + 1]) / 2;
+    const h = wingYs[i + 1] - wingYs[i];
+    for (const x of [-1.7, 1.7, -0.45, 0.45]) {
+      parts.push({ g: "box", size: [0.07, h, 0.09], pos: [x, y, 0.9], color: WOOD_DARK });
+    }
+  }
+  // Fixed undercarriage: two wheels on a V of struts, plus a tail skid.
+  for (const side of [-1, 1]) {
+    parts.push({ g: "box", size: [0.08, 0.5, 0.09], pos: [side * 0.46, 0.3, 1.6], rot: [0, 0, side * 0.3], color: WOOD_DARK });
+    parts.push({ g: "cyl", r: 0.24, h: 0.11, seg: 10, pos: [side * 0.56, 0.24, 1.6], rot: [0, 0, Math.PI / 2], color: RUBBER });
+  }
+  parts.push({ g: "box", size: [0.07, 0.4, 0.1], pos: [0, 0.5, -3.0], rot: [0.4, 0, 0], color: WOOD_DARK });
+  // Twin synchronised guns over the cowling.
+  for (const side of [-1, 1]) {
+    parts.push({
+      g: "cyl", r: 0.05, h: 0.9, seg: 6,
+      pos: [side * 0.16, 1.3, 1.5], rot: [Math.PI / 2, 0, 0], color: GUNMETAL,
+    });
+  }
+  return build(parts);
+}
+
+/* ================================================================== */
 /*  Public builders                                                     */
 /* ================================================================== */
 
@@ -490,7 +851,21 @@ export function hullGeometryFor(def: VehicleDef): THREE.BufferGeometry | null {
     case "medium_tank":
       return null; // uses the existing tankHullGeometry, tinted by team
     case "fighter":
-      return null; // uses the existing plane rig
+      return null; // uses the existing planeBody geometry, tinted by team
+    case "rhomboid_tank":
+      return rhomboidHullGeometry(def.tint, def.weapons.includes("sixpdr"));
+    case "box_tank":
+      return boxTankGeometry(def.tint);
+    case "vintage_armored_car":
+      return vintageCarHullGeometry(def.tint);
+    case "field_gun":
+      return gunCarriageGeometry(def.tint, false);
+    case "howitzer":
+      return gunCarriageGeometry(def.tint, true);
+    case "wagon":
+      return wagonGeometry(def.tint);
+    case "biplane":
+      return biplaneGeometry(def.tint, def.id === "fokker_dr1");
   }
 }
 
@@ -505,6 +880,16 @@ export function turretGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
       return heavyTankTurretGeometry(def.tint);
     case "medium_tank":
       return null; // existing tankTurretGeometry
+    case "vintage_armored_car":
+      return vintageCarTurretGeometry(def.tint);
+    case "box_tank":
+      return boxTankMantletGeometry(def.tint);
+    case "field_gun":
+      return gunBarrelMountGeometry(def.tint, false);
+    case "howitzer":
+      return gunBarrelMountGeometry(def.tint, true);
+    // Rhomboids carry their guns in fixed sponsons that are part of the hull,
+    // so there is nothing to put on the turret node.
     default:
       return null;
   }
@@ -512,9 +897,20 @@ export function turretGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
 
 /** Barrel mesh for chassis whose gun differs from the standard medium's. */
 export function barrelGeometryFor(def: VehicleDef): THREE.BufferGeometry | null {
-  if (def.chassis === "heavy_tank") return heavyBarrelGeometry();
-  if (def.chassis === "armored_car") return armoredCarBarrelGeometry();
-  return null; // medium/TD reuse tankBarrelGeometry
+  switch (def.chassis) {
+    case "heavy_tank":
+      return heavyBarrelGeometry();
+    case "armored_car":
+      return armoredCarBarrelGeometry();
+    case "box_tank":
+      return shortCannonGeometry();
+    case "field_gun":
+      return towedGunBarrelGeometry(false);
+    case "howitzer":
+      return towedGunBarrelGeometry(true);
+    default:
+      return null; // medium/TD reuse tankBarrelGeometry
+  }
 }
 
 /**
@@ -527,6 +923,12 @@ export function barrelMount(chassis: Chassis): [number, number, number] {
   switch (chassis) {
     case "armored_car":
       return [0, 0.34, 0.72];
+    case "box_tank":
+      return [0, 0.2, 0.35];
+    case "field_gun":
+      return [0, 0.1, 0.3];
+    case "howitzer":
+      return [0, 0.13, 0.4];
     case "tank_destroyer":
       return [0, 0.3, 0.3];
     case "heavy_tank":
@@ -541,6 +943,14 @@ export function turretRingHeight(chassis: Chassis): number {
   switch (chassis) {
     case "armored_car":
       return 1.65;
+    case "vintage_armored_car":
+      return 2.05;
+    case "box_tank":
+      return 1.75;
+    case "field_gun":
+      return 0.85;
+    case "howitzer":
+      return 1.05;
     case "tank_destroyer":
       return 1.3;
     case "heavy_tank":
@@ -555,7 +965,7 @@ export function isArmed(def: VehicleDef): boolean {
   return def.weapons.length > 0;
 }
 
-/** Does this chassis carry a main cannon (as opposed to just an MG)? */
+/** Does this vehicle carry a main gun (as opposed to just machine guns)? */
 export function hasCannon(def: VehicleDef): boolean {
-  return def.weapons.includes("cannon");
+  return mainGunOf(def.id) !== null;
 }

@@ -4,13 +4,14 @@ import { WEAPONS, type ClassId, type Soldier, type WeaponSpec } from "./units";
  * Era and class data. `units.ts` and `combat.ts` only ever look up weapons by
  * id through the shared `WEAPONS` table — this module's job is to populate
  * that table with each era's roster and describe how classes draw from it.
- * Only WWII is populated; Cold War and Modern are registered as empty eras so
- * the switcher has somewhere to plug in later without touching this shape.
+ * WWI and WWII are populated; Cold War and Modern are registered as empty eras
+ * so the switcher has somewhere to plug in later without touching this shape.
  */
 
-export type EraId = "ww2" | "coldwar" | "modern";
+export type EraId = "ww1" | "ww2" | "coldwar" | "modern";
 
 export const ERA_LABEL: Record<EraId, string> = {
+  ww1: "WWI",
   ww2: "WWII",
   coldwar: "Cold War",
   modern: "Modern",
@@ -353,18 +354,355 @@ const WW2_CLASSES: ClassDef[] = [
   },
 ];
 
-/** Player-selectable classes for the deploy screen. */
-export const PLAYABLE_CLASSES: ClassDef[] = WW2_CLASSES.filter((c) => !c.aiOnly);
+
+/* ================================================================== */
+/*  Great War                                                          */
+/* ================================================================== */
+
+/**
+ * 1917 infantry. Everything is slower, heavier and holds fewer rounds than
+ * its 1944 equivalent: bolt rifles with long strokes, one blowback SMG that
+ * only arrived at the very end, and machine guns that need a crew and a
+ * tripod. There is no shoulder-fired anti-tank weapon, because there wasn't
+ * one — armour is answered with a bolt-action AT rifle or a grenade bundle.
+ */
+const WW1_WEAPONS: Record<string, WeaponSpec> = {
+  smle_rifle: {
+    name: "SMLE",
+    rpm: 45,
+    speed: 490,
+    damage: 56,
+    penetration: 0,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.0058,
+    magazine: 10,
+    reloadTime: 4.4,
+    auto: false,
+    tracer: 0xffd08a,
+    category: "rifle",
+    recoilKick: 0.052,
+    recoilRecover: 4.3,
+    swayAmount: 0.0065,
+    adsZoom: 1.6,
+    adsSwayMul: 0.35,
+  },
+  gewehr98: {
+    name: "Gewehr 98",
+    rpm: 36,
+    speed: 520,
+    damage: 60,
+    penetration: 0,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.0052,
+    magazine: 5,
+    reloadTime: 3.6,
+    auto: false,
+    tracer: 0xffd08a,
+    category: "rifle",
+    recoilKick: 0.058,
+    recoilRecover: 4.1,
+    swayAmount: 0.0062,
+    adsZoom: 1.7,
+    adsSwayMul: 0.33,
+  },
+  mp18: {
+    name: "MP 18",
+    rpm: 420,
+    speed: 380,
+    damage: 26,
+    penetration: 0,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.026,
+    magazine: 32,
+    reloadTime: 3.4,
+    auto: true,
+    tracer: 0xffd08a,
+    category: "smg",
+    recoilKick: 0.019,
+    recoilRecover: 8,
+    swayAmount: 0.009,
+    adsZoom: 1.15,
+    adsSwayMul: 0.5,
+  },
+  /** Trench shotgun. Murderous inside a bay, useless past it. */
+  trench_gun: {
+    name: "Trench Gun",
+    rpm: 75,
+    speed: 300,
+    damage: 74,
+    penetration: 0,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.055,
+    magazine: 6,
+    reloadTime: 4.8,
+    auto: false,
+    tracer: 0xffc890,
+    category: "smg",
+    recoilKick: 0.075,
+    recoilRecover: 5,
+    swayAmount: 0.008,
+    adsZoom: 1.1,
+    adsSwayMul: 0.6,
+  },
+  lewis_gun: {
+    name: "Lewis Gun",
+    rpm: 550,
+    speed: 460,
+    damage: 34,
+    penetration: 2,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.019,
+    magazine: 47,
+    reloadTime: 5.6,
+    auto: true,
+    tracer: 0xffd08a,
+    category: "lmg",
+    recoilKick: 0.016,
+    recoilRecover: 7,
+    swayAmount: 0.013,
+    adsZoom: 1.2,
+    adsSwayMul: 0.55,
+  },
+  mg08_15: {
+    name: "MG 08/15",
+    rpm: 480,
+    speed: 470,
+    damage: 36,
+    penetration: 3,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.021,
+    magazine: 100,
+    reloadTime: 7,
+    auto: true,
+    tracer: 0xffd08a,
+    category: "lmg",
+    recoilKick: 0.015,
+    recoilRecover: 6.5,
+    swayAmount: 0.016,
+    adsZoom: 1.15,
+    adsSwayMul: 0.6,
+  },
+  /** Scoped Gewehr. The war's sniping was done with iron-sight rifles and these. */
+  scoped_gewehr: {
+    name: "Scoped Gewehr",
+    rpm: 30,
+    speed: 540,
+    damage: 88,
+    penetration: 0,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.0016,
+    magazine: 5,
+    reloadTime: 3.8,
+    auto: false,
+    tracer: 0xffd08a,
+    category: "marksman",
+    recoilKick: 0.062,
+    recoilRecover: 3.6,
+    swayAmount: 0.0042,
+    adsZoom: 4.2,
+    adsSwayMul: 0.16,
+  },
+  /** 13 mm anti-tank rifle. One shot, both shoulders, and it does open a Mark IV. */
+  tankgewehr: {
+    name: "Tankgewehr",
+    rpm: 12,
+    speed: 560,
+    damage: 95,
+    penetration: 22,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.005,
+    magazine: 1,
+    reloadTime: 4.6,
+    auto: false,
+    tracer: 0xffe0b0,
+    category: "heavy",
+    recoilKick: 0.16,
+    recoilRecover: 2.4,
+    swayAmount: 0.02,
+    adsZoom: 2.4,
+    adsSwayMul: 0.3,
+  },
+  /** Bundled stick grenades, thrown against a track. Short range, real punch. */
+  grenade_bundle: {
+    name: "Grenade Bundle",
+    rpm: 20,
+    speed: 26,
+    damage: 60,
+    penetration: 26,
+    blast: 6,
+    blastDamage: 190,
+    spread: 0.02,
+    magazine: 1,
+    reloadTime: 4.2,
+    auto: false,
+    tracer: 0x8a8f7a,
+    category: "heavy",
+    recoilKick: 0.03,
+    recoilRecover: 5,
+    swayAmount: 0.012,
+    adsZoom: 1,
+    adsSwayMul: 1,
+  },
+  webley: {
+    name: "Webley",
+    rpm: 110,
+    speed: 300,
+    damage: 34,
+    penetration: 0,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.02,
+    magazine: 6,
+    reloadTime: 2.6,
+    auto: false,
+    tracer: 0xffd08a,
+    category: "sidearm",
+    recoilKick: 0.038,
+    recoilRecover: 7,
+    swayAmount: 0.012,
+    adsZoom: 1.1,
+    adsSwayMul: 0.6,
+  },
+  luger: {
+    name: "Luger",
+    rpm: 150,
+    speed: 330,
+    damage: 28,
+    penetration: 0,
+    blast: 0,
+    blastDamage: 0,
+    spread: 0.018,
+    magazine: 8,
+    reloadTime: 2.3,
+    auto: false,
+    tracer: 0xffd08a,
+    category: "sidearm",
+    recoilKick: 0.03,
+    recoilRecover: 8,
+    swayAmount: 0.011,
+    adsZoom: 1.1,
+    adsSwayMul: 0.6,
+  },
+};
+
+const WW1_CLASSES: ClassDef[] = [
+  {
+    id: "rifleman",
+    name: "Rifleman",
+    description: "A bolt rifle and a revolver. Ten rounds if you took the SMLE.",
+    loadout: ["smle_rifle", "webley"],
+    slotOptions: { 0: ["smle_rifle", "gewehr98"], 1: ["webley", "luger"] },
+    reserve: { smle_rifle: 6, gewehr98: 7, webley: 2, luger: 2 },
+    grenades: 2,
+    speedMul: 1,
+    staminaMul: 1,
+  },
+  {
+    id: "assault",
+    name: "Trench Raider",
+    description: "An MP 18 or a trench gun. Built for clearing a bay at arm's length.",
+    loadout: ["mp18", "webley"],
+    slotOptions: { 0: ["mp18", "trench_gun"], 1: ["webley", "luger"] },
+    reserve: { mp18: 4, trench_gun: 5, webley: 2, luger: 2 },
+    grenades: 4,
+    speedMul: 1.06,
+    staminaMul: 1.05,
+  },
+  {
+    id: "support",
+    name: "Support",
+    description: "A crew-served automatic and something that opens armour.",
+    loadout: ["lewis_gun", "tankgewehr", "webley"],
+    slotOptions: {
+      0: ["lewis_gun", "mg08_15"],
+      1: ["tankgewehr", "grenade_bundle"],
+      2: ["webley", "luger"],
+    },
+    reserve: { lewis_gun: 3, mg08_15: 2, tankgewehr: 5, grenade_bundle: 2, webley: 2, luger: 2 },
+    grenades: 1,
+    speedMul: 0.88,
+    staminaMul: 0.86,
+  },
+  {
+    id: "marksman",
+    name: "Sniper",
+    description: "A scoped Gewehr. Slow, precise, and the best reach on the field.",
+    loadout: ["scoped_gewehr", "webley"],
+    slotOptions: { 0: ["scoped_gewehr"], 1: ["webley", "luger"] },
+    reserve: { scoped_gewehr: 6, webley: 2, luger: 2 },
+    grenades: 1,
+    speedMul: 0.96,
+    staminaMul: 1,
+  },
+  {
+    id: "officer",
+    name: "Officer",
+    description: "A revolver and a whistle. Leads from the parapet.",
+    loadout: ["webley", "smle_rifle"],
+    slotOptions: { 0: ["webley", "luger"], 1: ["smle_rifle", "gewehr98"] },
+    reserve: { webley: 4, luger: 4, smle_rifle: 3, gewehr98: 3 },
+    grenades: 2,
+    speedMul: 1.02,
+    staminaMul: 1.05,
+    aiOnly: true,
+  },
+];
+
+/**
+ * The era the current match is being fought in. A match runs one era at a
+ * time, so this is set once from the match settings before anything spawns and
+ * then read by every class and weapon lookup below. It is module state rather
+ * than a parameter threaded through every call site because the alternative is
+ * passing an era id into `classById` from a dozen places that have no other
+ * reason to know about eras.
+ */
+let activeEra: EraId = "ww2";
+
+export function setActiveEra(era: EraId) {
+  if (ERAS[era].classes.length === 0) {
+    throw new Error(`ironfront: era "${era}" has no classes registered`);
+  }
+  activeEra = era;
+}
+
+export function getActiveEra(): EraId {
+  return activeEra;
+}
+
+/** Every class in the era currently selected, player-facing and AI-only alike. */
+export function classesOfEra(era: EraId = activeEra): ClassDef[] {
+  return ERAS[era].classes;
+}
+
+/** Player-selectable classes for the deploy screen, in the active era. */
+export function playableClasses(era: EraId = activeEra): ClassDef[] {
+  return classesOfEra(era).filter((c) => !c.aiOnly);
+}
+
 
 type EraDef = { weapons: Partial<Record<string, WeaponSpec>>; classes: ClassDef[] };
 
 const EMPTY_ERA: EraDef = { weapons: {}, classes: [] };
 
 export const ERAS: Record<EraId, EraDef> = {
+  ww1: { weapons: WW1_WEAPONS, classes: WW1_CLASSES },
   ww2: { weapons: WW2_WEAPONS, classes: WW2_CLASSES },
   coldwar: EMPTY_ERA,
   modern: EMPTY_ERA,
 };
+
+/** Eras that are actually playable — the empty placeholders are filtered out. */
+export const AVAILABLE_ERAS: EraId[] = (Object.keys(ERAS) as EraId[]).filter(
+  (e) => ERAS[e].classes.length > 0,
+);
 
 export const CURRENT_ERA: EraId = "ww2";
 
@@ -375,9 +713,9 @@ for (const era of Object.values(ERAS)) {
   Object.assign(WEAPONS, era.weapons);
 }
 
-export function classById(id: ClassId): ClassDef {
-  const found = WW2_CLASSES.find((c) => c.id === id);
-  if (!found) throw new Error(`ironfront: unknown class "${id}"`);
+export function classById(id: ClassId, era: EraId = activeEra): ClassDef {
+  const found = classesOfEra(era).find((c) => c.id === id);
+  if (!found) throw new Error(`ironfront: unknown class "${id}" in era "${era}"`);
   return found;
 }
 
@@ -399,8 +737,8 @@ export function weaponCategory(weaponId: string): WeaponCategory {
 }
 
 /** Primary-weapon choices offered on the deploy screen for a given class. */
-export function primaryOptionsFor(classId: ClassId): string[] {
-  const cls = classById(classId);
+export function primaryOptionsFor(classId: ClassId, era: EraId = activeEra): string[] {
+  const cls = classById(classId, era);
   return cls.slotOptions[0] ?? [cls.loadout[0]];
 }
 

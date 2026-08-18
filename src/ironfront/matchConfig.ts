@@ -1,4 +1,5 @@
 import type { Team } from "./units";
+import { AVAILABLE_ERAS as PLAYABLE_ERAS, ERA_LABEL, type EraId } from "./eras";
 
 /**
  * Match configuration: the vehicle/weapon catalog, per-team loadouts, map list
@@ -29,15 +30,24 @@ export type Chassis =
   | "medium_tank" // turret, balanced — Sherman, Panzer IV
   | "heavy_tank" // turret, thick armour, slow — Tiger I
   | "tank_destroyer" // casemate hull, no turret, limited traverse — StuG III
-  | "fighter"; // propeller aircraft
+  | "fighter" // monoplane propeller aircraft
+  /* ---- Great War ---- */
+  | "rhomboid_tank" // all-round track frame, guns in side sponsons — Mark IV
+  | "box_tank" // tall armoured box on a short track base — A7V
+  | "vintage_armored_car" // spoked wheels, tall riveted body, small turret
+  | "field_gun" // towed gun, emplaced: it aims but does not drive
+  | "howitzer" // heavier towed piece, lobbed fire, punishing reload
+  | "wagon" // horse-drawn supply cart, unarmed
+  | "biplane"; // two-wing scout — Camel, Dr.I, SPAD
 
 /** Broad grouping used by the setup UI's category rows and Select-All buttons. */
-export type VehicleCategory = "light" | "transport" | "armor" | "air";
+export type VehicleCategory = "light" | "transport" | "armor" | "artillery" | "air";
 
 export const CATEGORY_LABEL: Record<VehicleCategory, string> = {
   light: "Light Vehicles",
   transport: "Transports",
   armor: "Armor",
+  artillery: "Artillery & Support",
   air: "Aircraft",
 };
 
@@ -79,6 +89,12 @@ export type Mobility = {
 
 export type VehicleDef = {
   id: string;
+  /**
+   * Which era this vehicle belongs to. A match runs one era at a time, so a
+   * Mark IV never has to share a map with a Tiger unless someone deliberately
+   * asks for it.
+   */
+  era: EraId;
   /** Short label for the HUD and kill feed. */
   name: string;
   /** Full historical designation, shown in the setup screen. */
@@ -123,6 +139,33 @@ const MEDIUM_ARMOR: ArmorScheme = {
   turretFront: 89, turretSide: 51, turretRear: 51, turretTop: 19,
 };
 
+/**
+ * Great War plate. Riveted boiler steel stops rifle fire and not much else —
+ * a Mark IV's 12 mm is proof against the machine guns it was built to cross,
+ * and paper against anything with a gun.
+ */
+const RIVETED_ARMOR: ArmorScheme = {
+  hullFront: 12, hullSide: 8, hullRear: 8, hullTop: 6,
+  turretFront: 12, turretSide: 8, turretRear: 8, turretTop: 6,
+};
+
+/** The A7V carried the thickest plate of the war on its nose. */
+const A7V_ARMOR: ArmorScheme = {
+  hullFront: 30, hullSide: 15, hullRear: 20, hullTop: 6,
+  turretFront: 30, turretSide: 15, turretRear: 20, turretTop: 6,
+};
+
+const RIVETED_LIGHT: ArmorScheme = {
+  hullFront: 8, hullSide: 6, hullRear: 6, hullTop: 4,
+  turretFront: 9, turretSide: 7, turretRear: 7, turretTop: 4,
+};
+
+/** A gun shield covers the crew from the front and nothing from anywhere else. */
+const GUN_SHIELD: ArmorScheme = {
+  hullFront: 6, hullSide: 1, hullRear: 1, hullTop: 1,
+  turretFront: 6, turretSide: 1, turretRear: 1, turretTop: 1,
+};
+
 const HEAVY_ARMOR: ArmorScheme = {
   hullFront: 102, hullSide: 82, hullRear: 82, hullTop: 26,
   turretFront: 120, turretSide: 82, turretRear: 82, turretTop: 26,
@@ -136,6 +179,7 @@ export const VEHICLES: VehicleDef[] = [
   /* ---------- Light vehicles ---------- */
   {
     id: "willys_jeep",
+    era: "ww2",
     name: "Jeep",
     displayName: "Willys MB Jeep",
     chassis: "light_car",
@@ -152,6 +196,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "kubelwagen",
+    era: "ww2",
     name: "Kübel",
     displayName: "Kübelwagen",
     chassis: "light_car",
@@ -168,6 +213,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "motorcycle_sidecar",
+    era: "ww2",
     name: "Motorcycle",
     displayName: "Motorcycle with Sidecar",
     chassis: "motorcycle",
@@ -186,6 +232,7 @@ export const VEHICLES: VehicleDef[] = [
   /* ---------- Transports ---------- */
   {
     id: "gmc_cckw",
+    era: "ww2",
     name: "GMC Truck",
     displayName: "GMC CCKW 353 Truck",
     chassis: "truck",
@@ -202,6 +249,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "opel_blitz",
+    era: "ww2",
     name: "Opel Blitz",
     displayName: "Opel Blitz Truck",
     chassis: "truck",
@@ -218,6 +266,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "dukw",
+    era: "ww2",
     name: "DUKW",
     displayName: "GMC DUKW Amphibious Truck",
     chassis: "amphibious",
@@ -234,6 +283,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "sdkfz_251",
+    era: "ww2",
     name: "Half-track",
     displayName: "SdKfz 251 Half-track",
     chassis: "halftrack",
@@ -252,6 +302,7 @@ export const VEHICLES: VehicleDef[] = [
   /* ---------- Armor ---------- */
   {
     id: "m8_greyhound",
+    era: "ww2",
     name: "Greyhound",
     displayName: "M8 Greyhound Armored Car",
     chassis: "armored_car",
@@ -269,6 +320,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "m4_sherman",
+    era: "ww2",
     name: "Sherman",
     displayName: "M4 Sherman Tank",
     chassis: "medium_tank",
@@ -286,6 +338,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "panzer_iv",
+    era: "ww2",
     name: "Panzer IV",
     displayName: "Panzer IV Ausf. H",
     chassis: "medium_tank",
@@ -307,6 +360,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "tiger_i",
+    era: "ww2",
     name: "Tiger",
     displayName: "Tiger I",
     chassis: "heavy_tank",
@@ -324,6 +378,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "stug_iii",
+    era: "ww2",
     name: "StuG III",
     displayName: "StuG III Ausf. G",
     chassis: "tank_destroyer",
@@ -352,6 +407,7 @@ export const VEHICLES: VehicleDef[] = [
   /* ---------- Aircraft ---------- */
   {
     id: "fighter_allied",
+    era: "ww2",
     name: "Fighter",
     displayName: "Allied Fighter",
     chassis: "fighter",
@@ -368,6 +424,7 @@ export const VEHICLES: VehicleDef[] = [
   },
   {
     id: "fighter_axis",
+    era: "ww2",
     name: "Fighter",
     displayName: "Axis Fighter",
     chassis: "fighter",
@@ -381,6 +438,229 @@ export const VEHICLES: VehicleDef[] = [
     tint: 0x8a5240,
     triangles: 600,
     blurb: "Propeller fighter with 20 mm cannon and two bombs.",
+  },
+
+  /* ================================================================ */
+  /*  Great War roster                                                 */
+  /* ================================================================ */
+
+  /* ---------- Tanks ---------- */
+  {
+    id: "mark_iv_male",
+    era: "ww1",
+    name: "Mark IV",
+    displayName: "British Mark IV (Male)",
+    chassis: "rhomboid_tank",
+    category: "armor",
+    faction: "allies",
+    hp: 150,
+    armor: RIVETED_ARMOR,
+    // Walking pace. The sponson guns barely traverse — you aim the whole tank.
+    mobility: { maxSpeed: 4.4, reverseSpeed: 2.2, accel: 2.2, turnRate: 0.34, turretTraverse: 0.34, turretArc: 0.5 },
+    weapons: ["sixpdr", "vickers_mg"],
+    ammo: { ap: 22, he: 26 },
+    passengerSeats: 2,
+    tint: 0x8a7c52,
+    triangles: 720,
+    blurb: "8 m of riveted rhomboid. Two 6-pdr sponsons, no turret — you aim it by steering.",
+  },
+  {
+    id: "mark_iv_female",
+    era: "ww1",
+    name: "Mark IV F",
+    displayName: "British Mark IV (Female)",
+    chassis: "rhomboid_tank",
+    category: "armor",
+    faction: "allies",
+    hp: 150,
+    armor: RIVETED_ARMOR,
+    mobility: { maxSpeed: 4.6, reverseSpeed: 2.2, accel: 2.3, turnRate: 0.36, turretTraverse: 0.5, turretArc: 0.7 },
+    // No cannon at all — the Female was built to sweep infantry off the tank.
+    weapons: ["vickers_mg"],
+    passengerSeats: 2,
+    tint: 0x8a7c52,
+    triangles: 700,
+    blurb: "Same hull, machine guns only. Deadly to infantry, helpless against armour.",
+  },
+  {
+    id: "a7v",
+    era: "ww1",
+    name: "A7V",
+    displayName: "German A7V",
+    chassis: "box_tank",
+    category: "armor",
+    faction: "axis",
+    hp: 170,
+    armor: A7V_ARMOR,
+    mobility: { maxSpeed: 4.0, reverseSpeed: 2.0, accel: 2.0, turnRate: 0.3, turretTraverse: 0.3, turretArc: 0.42 },
+    weapons: ["maxim57", "vickers_mg"],
+    ammo: { ap: 20, he: 24 },
+    passengerSeats: 4,
+    tint: 0x4c4f4a,
+    triangles: 640,
+    blurb: "A moving blockhouse. Thickest armour of the war, and it tips over on any slope.",
+  },
+
+  /* ---------- Armored cars ---------- */
+  {
+    id: "rolls_royce_ac",
+    era: "ww1",
+    name: "Rolls-Royce",
+    displayName: "British Rolls-Royce Armored Car",
+    chassis: "vintage_armored_car",
+    category: "armor",
+    faction: "allies",
+    hp: 70,
+    armor: RIVETED_LIGHT,
+    mobility: { maxSpeed: 17, reverseSpeed: 7, accel: 8, turnRate: 1.25, turretTraverse: 0.55, turretArc: Math.PI },
+    weapons: ["vickers_mg"],
+    passengerSeats: 2,
+    tint: 0x7d7147,
+    triangles: 480,
+    blurb: "Riveted turret on a touring-car chassis. Fast on a road, useless off one.",
+  },
+  {
+    id: "lancia_iz",
+    era: "ww1",
+    name: "Lancia IZ",
+    displayName: "Lancia IZ Armored Car",
+    chassis: "vintage_armored_car",
+    category: "armor",
+    faction: "allies",
+    hp: 78,
+    armor: RIVETED_LIGHT,
+    mobility: { maxSpeed: 15.5, reverseSpeed: 6.5, accel: 7.4, turnRate: 1.15, turretTraverse: 0.5, turretArc: Math.PI },
+    weapons: ["vickers_mg"],
+    passengerSeats: 3,
+    tint: 0x5c6348,
+    triangles: 500,
+    blurb: "Heavier Italian car with a taller body. Carries a section as well as its gun.",
+  },
+  {
+    id: "austro_daimler_ac",
+    era: "ww1",
+    name: "Austro-Daimler",
+    displayName: "Austro-Daimler Armored Car",
+    chassis: "vintage_armored_car",
+    category: "armor",
+    faction: "axis",
+    hp: 72,
+    armor: RIVETED_LIGHT,
+    mobility: { maxSpeed: 16, reverseSpeed: 7, accel: 7.8, turnRate: 1.3, turretTraverse: 0.55, turretArc: Math.PI },
+    weapons: ["vickers_mg"],
+    passengerSeats: 2,
+    tint: 0x4f5349,
+    triangles: 470,
+    blurb: "Short and stubby with a domed turret. The Central Powers' scout car.",
+  },
+
+  /* ---------- Artillery and support ---------- */
+  {
+    id: "field_gun_75",
+    era: "ww1",
+    name: "75 mm Gun",
+    displayName: "75mm Field Gun",
+    chassis: "field_gun",
+    category: "artillery",
+    faction: "both",
+    hp: 55,
+    armor: GUN_SHIELD,
+    // Emplaced: it traverses on its trail but it does not go anywhere.
+    mobility: { maxSpeed: 0, reverseSpeed: 0, accel: 0, turnRate: 0, turretTraverse: 0.42, turretArc: 0.55 },
+    weapons: ["field_75"],
+    ammo: { ap: 12, he: 40 },
+    passengerSeats: 0,
+    tint: 0x6a6b45,
+    triangles: 300,
+    blurb: "Quick-firing gun behind a thin shield. Devastating against infantry in the open.",
+  },
+  {
+    id: "schneider_155",
+    era: "ww1",
+    name: "155 Howitzer",
+    displayName: "Schneider 155mm Howitzer",
+    chassis: "howitzer",
+    category: "artillery",
+    faction: "both",
+    hp: 70,
+    armor: GUN_SHIELD,
+    mobility: { maxSpeed: 0, reverseSpeed: 0, accel: 0, turnRate: 0, turretTraverse: 0.26, turretArc: 0.38 },
+    weapons: ["howitzer_155"],
+    ammo: { ap: 6, he: 30 },
+    passengerSeats: 0,
+    tint: 0x5e6242,
+    triangles: 340,
+    blurb: "Lobs a 43 kg shell. Thirteen seconds between rounds — make each one count.",
+  },
+  {
+    id: "supply_wagon",
+    era: "ww1",
+    name: "Wagon",
+    displayName: "Supply Wagon",
+    chassis: "wagon",
+    category: "artillery",
+    faction: "both",
+    hp: 40,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 4.5, reverseSpeed: 2, accel: 3, turnRate: 1.1, turretTraverse: 0, turretArc: 0 },
+    weapons: [],
+    passengerSeats: 4,
+    tint: 0x6b4f2e,
+    triangles: 220,
+    blurb: "Four planks and two axles. Unarmed, unarmoured, and the only thing that moves the guns.",
+  },
+
+  /* ---------- Aircraft ---------- */
+  {
+    id: "sopwith_camel",
+    era: "ww1",
+    name: "Camel",
+    displayName: "Sopwith Camel",
+    chassis: "biplane",
+    category: "air",
+    faction: "allies",
+    hp: 70,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 52, reverseSpeed: 0, accel: 7, turnRate: 1.6, turretTraverse: 0, turretArc: 0 },
+    weapons: ["air_mg"],
+    passengerSeats: 0,
+    tint: 0x8a7c52,
+    triangles: 620,
+    blurb: "Twitchy, torque-heavy and quick to turn right. Twin Vickers, no bombs.",
+  },
+  {
+    id: "fokker_dr1",
+    era: "ww1",
+    name: "Dr.I",
+    displayName: "Fokker Dr.I",
+    chassis: "biplane",
+    category: "air",
+    faction: "axis",
+    hp: 68,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 48, reverseSpeed: 0, accel: 7.6, turnRate: 1.85, turretTraverse: 0, turretArc: 0 },
+    weapons: ["air_mg"],
+    passengerSeats: 0,
+    tint: 0x6d4038,
+    triangles: 660,
+    blurb: "Slowest of the three and the tightest turner. Wins any fight it can drag into a circle.",
+  },
+  {
+    id: "spad_xiii",
+    era: "ww1",
+    name: "SPAD XIII",
+    displayName: "SPAD S.XIII",
+    chassis: "biplane",
+    category: "air",
+    faction: "allies",
+    hp: 76,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 58, reverseSpeed: 0, accel: 8.2, turnRate: 1.35, turretTraverse: 0, turretArc: 0 },
+    weapons: ["air_mg"],
+    passengerSeats: 0,
+    tint: 0x5c6348,
+    triangles: 600,
+    blurb: "Fast and steady but turns like a barn door. Fight it in a dive, never in a circle.",
   },
 ];
 
@@ -401,6 +681,52 @@ export function vehicleById(id: string): VehicleDef {
  * dies to anything. Both return the catalog's own objects — callers must treat
  * them as read-only.
  */
+/**
+ * Weapon ids that behave as a vehicle main gun: single-shot, long reload,
+ * shell-class projectile. Everything else a vehicle carries is a secondary.
+ * Listed explicitly rather than inferred from the spec so adding a weapon
+ * cannot silently reclassify an existing vehicle's armament.
+ */
+const CANNON_WEAPONS = new Set(["cannon", "sixpdr", "maxim57", "field_75", "howitzer_155"]);
+
+/** The main gun a vehicle fires, or null if it only has machine guns. */
+export function mainGunOf(defId: string): string | null {
+  return vehicleById(defId).weapons.find((w) => CANNON_WEAPONS.has(w)) ?? null;
+}
+
+/** The gun an aircraft fires — a 20 mm cannon in 1944, twin Vickers in 1917. */
+export function airGunOf(defId: string): string {
+  return vehicleById(defId).weapons.find((w) => w !== "bomb") ?? "aircannon";
+}
+
+/** The secondary/coaxial machine gun, or null if it has none. */
+export function coaxOf(defId: string): string | null {
+  return vehicleById(defId).weapons.find((w) => !CANNON_WEAPONS.has(w) && w !== "bomb") ?? null;
+}
+
+/** Aircraft chassis — spawned as Plane objects rather than parked vehicles. */
+export function isAircraft(def: VehicleDef): boolean {
+  return def.chassis === "fighter" || def.chassis === "biplane";
+}
+
+/** The spec `makePlane` needs, derived from a catalog entry. */
+export function planeSpecOf(def: VehicleDef): {
+  defId: string;
+  hp: number;
+  name: string;
+  gun: string;
+  bombs: number;
+} {
+  return {
+    defId: def.id,
+    hp: def.hp,
+    name: def.name,
+    gun: def.weapons.find((w) => w !== "bomb") ?? "aircannon",
+    // No scout in 1917 carried a 100 kg bomb.
+    bombs: def.weapons.includes("bomb") ? 2 : 0,
+  };
+}
+
 export function mobilityOf(defId: string): Mobility {
   return vehicleById(defId).mobility;
 }
@@ -410,12 +736,16 @@ export function armorOf(defId: string): ArmorScheme {
 }
 
 /** Every vehicle a given side is allowed to field (its own plus shared ones). */
-export function vehiclesForFaction(faction: "allies" | "axis"): VehicleDef[] {
-  return VEHICLES.filter((v) => v.faction === faction || v.faction === "both");
+export function vehiclesForFaction(faction: "allies" | "axis", era: EraId = "ww2"): VehicleDef[] {
+  return VEHICLES.filter((v) => v.era === era && (v.faction === faction || v.faction === "both"));
 }
 
-export function vehiclesInCategory(faction: "allies" | "axis", category: VehicleCategory): VehicleDef[] {
-  return vehiclesForFaction(faction).filter((v) => v.category === category);
+export function vehiclesInCategory(
+  faction: "allies" | "axis",
+  category: VehicleCategory,
+  era: EraId = "ww2",
+): VehicleDef[] {
+  return vehiclesForFaction(faction, era).filter((v) => v.category === category);
 }
 
 /* ================================================================== */
@@ -434,18 +764,44 @@ export const WEAPON_GROUP_LABEL: Record<WeaponGroup, string> = {
 };
 
 /**
- * Which infantry weapons sit in which setup-screen group. Ids match the WWII
- * roster in eras.ts; a new era adds its ids here to appear in the menu.
+ * Which infantry weapons sit in which setup-screen group, per era. Ids match
+ * the rosters registered in eras.ts; a new era adds an entry here to appear in
+ * the menu. Eras with no infantry yet map to empty groups.
  */
-export const WEAPON_GROUPS: Record<WeaponGroup, string[]> = {
-  rifles: ["bolt_rifle", "garand_rifle", "marksman_rifle", "marksman_semi"],
-  smgs: ["smg", "smg_drum"],
-  machine_guns: ["lmg", "lmg_light"],
-  anti_tank: ["panzerfaust", "at_rifle"],
-  sidearms: ["pistol", "revolver"],
+const WEAPON_GROUPS_BY_ERA: Record<EraId, Record<WeaponGroup, string[]>> = {
+  ww1: {
+    rifles: ["smle_rifle", "gewehr98", "scoped_gewehr"],
+    smgs: ["mp18", "trench_gun"],
+    machine_guns: ["lewis_gun", "mg08_15"],
+    anti_tank: ["tankgewehr", "grenade_bundle"],
+    sidearms: ["webley", "luger"],
+  },
+  ww2: {
+    rifles: ["bolt_rifle", "garand_rifle", "marksman_rifle", "marksman_semi"],
+    smgs: ["smg", "smg_drum"],
+    machine_guns: ["lmg", "lmg_light"],
+    anti_tank: ["panzerfaust", "at_rifle"],
+    sidearms: ["pistol", "revolver"],
+  },
+  coldwar: { rifles: [], smgs: [], machine_guns: [], anti_tank: [], sidearms: [] },
+  modern: { rifles: [], smgs: [], machine_guns: [], anti_tank: [], sidearms: [] },
 };
 
-export const ALL_WEAPON_IDS: string[] = Object.values(WEAPON_GROUPS).flat();
+export function weaponGroups(era: EraId): Record<WeaponGroup, string[]> {
+  return WEAPON_GROUPS_BY_ERA[era];
+}
+
+export function allWeaponIds(era: EraId): string[] {
+  return Object.values(WEAPON_GROUPS_BY_ERA[era]).flat();
+}
+
+/** Which era a weapon id belongs to, for validation of saved loadouts. */
+export function eraOfWeapon(weaponId: string): EraId | null {
+  for (const era of Object.keys(WEAPON_GROUPS_BY_ERA) as EraId[]) {
+    if (allWeaponIds(era).includes(weaponId)) return era;
+  }
+  return null;
+}
 
 /* ================================================================== */
 /*  Maps                                                                */
@@ -527,7 +883,12 @@ export type TeamLoadout = {
   skill: number;
 };
 
+export { PLAYABLE_ERAS, ERA_LABEL };
+export type { EraId };
+
 export type MatchSettings = {
+  /** Which era the match is fought in. Gates both the vehicle and weapon lists. */
+  eraId: EraId;
   mapId: string;
   seed: number;
   teams: { team1: TeamLoadout; team2: TeamLoadout };
@@ -549,33 +910,41 @@ export type Preset = {
    * you can put Armor Clash on the bocage if you want to watch tanks struggle.
    * Called fresh each time so presets never share mutable state.
    */
-  build: () => { team1: TeamLoadout; team2: TeamLoadout };
+  build: (era: EraId) => { team1: TeamLoadout; team2: TeamLoadout };
 };
 
 /** Every vehicle a side can field, by category filter. */
-function vehiclesWhere(faction: "allies" | "axis", pred: (v: VehicleDef) => boolean): string[] {
-  return vehiclesForFaction(faction).filter(pred).map((v) => v.id);
+function vehiclesWhere(faction: "allies" | "axis", era: EraId, pred: (v: VehicleDef) => boolean): string[] {
+  return vehiclesForFaction(faction, era).filter(pred).map((v) => v.id);
 }
 
-function baseTeam(faction: "allies" | "axis"): TeamLoadout {
+function baseTeam(faction: "allies" | "axis", era: EraId): TeamLoadout {
   return {
-    label: faction === "allies" ? "Allies" : "Axis",
+    label: faction === "allies" ? ALLIED_LABEL[era] : AXIS_LABEL[era],
     faction,
     team: faction === "allies" ? "blue" : "red",
-    enabledWeapons: [...ALL_WEAPON_IDS],
-    enabledVehicles: vehiclesWhere(faction, () => true),
+    enabledWeapons: allWeaponIds(era),
+    enabledVehicles: vehiclesWhere(faction, era, () => true),
     botCount: 13,
     tickets: 320,
     skill: 0.55,
   };
 }
 
+/** Side names change with the era: it is Entente and Central Powers in 1917. */
+const ALLIED_LABEL: Record<EraId, string> = {
+  ww1: "Entente", ww2: "Allies", coldwar: "Blue", modern: "Blue",
+};
+const AXIS_LABEL: Record<EraId, string> = {
+  ww1: "Central Powers", ww2: "Axis", coldwar: "Red", modern: "Red",
+};
+
 /** Applies the same mutation to both sides, so presets stay symmetric. */
-function bothTeams(mutate: (t: TeamLoadout) => void): { team1: TeamLoadout; team2: TeamLoadout } {
-  const team1 = baseTeam("allies");
-  const team2 = baseTeam("axis");
-  mutate(team1);
-  mutate(team2);
+function bothTeams(era: EraId, mutate: (t: TeamLoadout, era: EraId) => void): { team1: TeamLoadout; team2: TeamLoadout } {
+  const team1 = baseTeam("allies", era);
+  const team2 = baseTeam("axis", era);
+  mutate(team1, era);
+  mutate(team2, era);
   return { team1, team2 };
 }
 
@@ -584,24 +953,24 @@ export const PRESETS: Preset[] = [
     id: "all_out",
     name: "All-Out Warfare",
     blurb: "Everything unlocked. Tanks, trucks, aircraft, the lot.",
-    build: () => bothTeams(() => {}),
+    build: (era) => bothTeams(era, () => {}),
   },
   {
     id: "ww2_historical",
     name: "WW2 Historical",
     blurb: "Each side fields only what it historically operated. No shared kit.",
-    build: () =>
-      bothTeams((t) => {
+    build: (era) =>
+      bothTeams(era, (t, e) => {
         // Drop anything marked as shared — historical mode is strict.
-        t.enabledVehicles = vehiclesWhere(t.faction, (v) => v.faction === t.faction);
+        t.enabledVehicles = vehiclesWhere(t.faction, e, (v) => v.faction === t.faction);
       }),
   },
   {
     id: "infantry_only",
     name: "Infantry Only",
     blurb: "No vehicles at all. Rifles, SMGs and the ground between you.",
-    build: () =>
-      bothTeams((t) => {
+    build: (era) =>
+      bothTeams(era, (t) => {
         t.enabledVehicles = [];
         t.botCount = 18;
       }),
@@ -610,9 +979,9 @@ export const PRESETS: Preset[] = [
     id: "armor_clash",
     name: "Armor Clash",
     blurb: "Tanks and tank destroyers only. Bring AT weapons.",
-    build: () =>
-      bothTeams((t) => {
-        t.enabledVehicles = vehiclesWhere(t.faction, (v) => v.category === "armor");
+    build: (era) =>
+      bothTeams(era, (t, e) => {
+        t.enabledVehicles = vehiclesWhere(t.faction, e, (v) => v.category === "armor" || v.category === "artillery");
         t.botCount = 10;
       }),
   },
@@ -620,9 +989,9 @@ export const PRESETS: Preset[] = [
     id: "air_superiority",
     name: "Air Superiority",
     blurb: "Aircraft and light ground transport. The fight is overhead.",
-    build: () =>
-      bothTeams((t) => {
-        t.enabledVehicles = vehiclesWhere(t.faction, (v) => v.category === "air" || v.category === "light");
+    build: (era) =>
+      bothTeams(era, (t, e) => {
+        t.enabledVehicles = vehiclesWhere(t.faction, e, (v) => v.category === "air" || v.category === "light");
         t.botCount = 10;
       }),
   },
@@ -651,14 +1020,19 @@ export type MapLoadout = {
 };
 
 /** Bumped whenever the saved shape changes, so old saves are discarded. */
-const STORAGE_KEY = "claudefield.matchConfig.v1";
+const STORAGE_KEY = "claudefield.matchConfig.v2";
 
 function cloneTeam(t: TeamLoadout): TeamLoadout {
   return { ...t, enabledWeapons: [...t.enabledWeapons], enabledVehicles: [...t.enabledVehicles] };
 }
 
-function defaultLoadout(map: MapDef): MapLoadout {
-  return { seed: map.seed, presetId: map.defaultPreset, teams: presetById(map.defaultPreset).build() };
+function defaultLoadout(map: MapDef, era: EraId): MapLoadout {
+  return { seed: map.seed, presetId: map.defaultPreset, teams: presetById(map.defaultPreset).build(era) };
+}
+
+/** Rosters are stored per era *and* per map, so switching era keeps both. */
+function slotKey(era: EraId, mapId: string) {
+  return `${era}:${mapId}`;
 }
 
 /**
@@ -667,8 +1041,8 @@ function defaultLoadout(map: MapDef): MapLoadout {
  * be able to put an unknown id into the spawner, so anything unrecognised is
  * dropped rather than trusted.
  */
-function sanitizeLoadout(map: MapDef, raw: unknown): MapLoadout {
-  const base = defaultLoadout(map);
+function sanitizeLoadout(map: MapDef, era: EraId, raw: unknown): MapLoadout {
+  const base = defaultLoadout(map, era);
   if (typeof raw !== "object" || raw === null) return base;
   const r = raw as Partial<MapLoadout>;
   if (typeof r.seed === "number" && Number.isFinite(r.seed)) base.seed = Math.floor(r.seed);
@@ -677,9 +1051,10 @@ function sanitizeLoadout(map: MapDef, raw: unknown): MapLoadout {
     const saved = r.teams?.[slot];
     if (!saved) continue;
     const team = base.teams[slot];
-    const allowedVehicles = new Set(vehiclesForFaction(team.faction).map((v) => v.id));
+    const allowedVehicles = new Set(vehiclesForFaction(team.faction, era).map((v) => v.id));
+    const allowedWeapons = allWeaponIds(era);
     if (Array.isArray(saved.enabledWeapons)) {
-      team.enabledWeapons = saved.enabledWeapons.filter((w) => ALL_WEAPON_IDS.includes(w));
+      team.enabledWeapons = saved.enabledWeapons.filter((w) => allowedWeapons.includes(w));
     }
     if (Array.isArray(saved.enabledVehicles)) {
       team.enabledVehicles = saved.enabledVehicles.filter((v) => allowedVehicles.has(v));
@@ -706,13 +1081,18 @@ function clampInt(n: number, lo: number, hi: number) {
  * after a page reload.
  */
 export class MatchConfig {
+  private eraId: EraId;
   private mapId: string;
-  private byMap = new Map<string, MapLoadout>();
+  /** Keyed `era:map` — every era keeps its own roster for every map. */
+  private slots = new Map<string, MapLoadout>();
   private listeners = new Set<(s: MatchSettings) => void>();
 
-  constructor(startMapId: string = MAPS[0].id) {
-    for (const m of MAPS) this.byMap.set(m.id, defaultLoadout(m));
+  constructor(startMapId: string = MAPS[0].id, startEra: EraId = "ww2") {
+    this.eraId = PLAYABLE_ERAS.includes(startEra) ? startEra : PLAYABLE_ERAS[0];
     this.mapId = MAPS.some((m) => m.id === startMapId) ? startMapId : MAPS[0].id;
+    for (const era of PLAYABLE_ERAS) {
+      for (const m of MAPS) this.slots.set(slotKey(era, m.id), defaultLoadout(m, era));
+    }
     this.load();
   }
 
@@ -721,15 +1101,23 @@ export class MatchConfig {
   private load() {
     const raw = readStorage();
     if (!raw) return;
+    if (typeof raw.eraId === "string" && PLAYABLE_ERAS.includes(raw.eraId as EraId)) {
+      this.eraId = raw.eraId as EraId;
+    }
     if (typeof raw.mapId === "string" && MAPS.some((m) => m.id === raw.mapId)) this.mapId = raw.mapId;
-    for (const m of MAPS) {
-      const saved = (raw.byMap as Record<string, unknown> | undefined)?.[m.id];
-      if (saved !== undefined) this.byMap.set(m.id, sanitizeLoadout(m, saved));
+    const slots = raw.slots as Record<string, unknown> | undefined;
+    if (!slots) return;
+    for (const era of PLAYABLE_ERAS) {
+      for (const m of MAPS) {
+        const key = slotKey(era, m.id);
+        const saved = slots[key];
+        if (saved !== undefined) this.slots.set(key, sanitizeLoadout(m, era, saved));
+      }
     }
   }
 
   private save() {
-    writeStorage({ mapId: this.mapId, byMap: Object.fromEntries(this.byMap) });
+    writeStorage({ eraId: this.eraId, mapId: this.mapId, slots: Object.fromEntries(this.slots) });
   }
 
   /* ---------------- subscriptions ---------------- */
@@ -749,8 +1137,8 @@ export class MatchConfig {
 
   /** The loadout being edited: whichever map is currently selected. */
   private current(): MapLoadout {
-    const l = this.byMap.get(this.mapId);
-    if (!l) throw new Error(`matchConfig: no loadout for map "${this.mapId}"`);
+    const l = this.slots.get(slotKey(this.eraId, this.mapId));
+    if (!l) throw new Error(`matchConfig: no loadout for ${this.eraId} on "${this.mapId}"`);
     return l;
   }
 
@@ -758,6 +1146,7 @@ export class MatchConfig {
   getMatchSettings(): MatchSettings {
     const l = this.current();
     return {
+      eraId: this.eraId,
       mapId: this.mapId,
       seed: l.seed,
       teams: { team1: cloneTeam(l.teams.team1), team2: cloneTeam(l.teams.team2) },
@@ -771,9 +1160,23 @@ export class MatchConfig {
 
   /** A one-line summary of a map's saved roster, for the map picker. */
   summaryFor(mapId: string): { vehicles: number; weapons: number; bots: number } {
-    const l = this.byMap.get(mapId) ?? defaultLoadout(mapById(mapId));
+    const l = this.slots.get(slotKey(this.eraId, mapId)) ?? defaultLoadout(mapById(mapId), this.eraId);
     const t = l.teams.team1;
     return { vehicles: t.enabledVehicles.length, weapons: t.enabledWeapons.length, bots: t.botCount };
+  }
+
+  era(): EraId {
+    return this.eraId;
+  }
+
+  /**
+   * Switches era. The previous era's rosters are left exactly as they were, so
+   * flipping between 1917 and 1944 does not cost you either setup.
+   */
+  setEra(era: EraId) {
+    if (!PLAYABLE_ERAS.includes(era)) return;
+    this.eraId = era;
+    this.emit();
   }
 
   /* ---------------- editing ---------------- */
@@ -787,14 +1190,14 @@ export class MatchConfig {
   /** Applies a preset's rosters to the map currently being configured. */
   applyPreset(id: PresetId) {
     const l = this.current();
-    l.teams = presetById(id).build();
+    l.teams = presetById(id).build(this.eraId);
     l.presetId = id;
     this.emit();
   }
 
   /** Puts this map back to the roster it shipped with. */
   resetMap() {
-    this.byMap.set(this.mapId, defaultLoadout(mapById(this.mapId)));
+    this.slots.set(slotKey(this.eraId, this.mapId), defaultLoadout(mapById(this.mapId), this.eraId));
     this.emit();
   }
 
@@ -803,7 +1206,7 @@ export class MatchConfig {
     const source = this.current();
     for (const m of MAPS) {
       if (m.id === this.mapId) continue;
-      const target = this.byMap.get(m.id);
+      const target = this.slots.get(slotKey(this.eraId, m.id));
       if (!target) continue;
       target.presetId = source.presetId;
       target.teams = { team1: cloneTeam(source.teams.team1), team2: cloneTeam(source.teams.team2) };
@@ -847,7 +1250,7 @@ export class MatchConfig {
   /** Select-All / Deselect-All for one weapon group. */
   setWeaponGroup(slot: "team1" | "team2", group: WeaponGroup, enabled: boolean) {
     const t = this.teamOf(slot);
-    const ids = WEAPON_GROUPS[group];
+    const ids = weaponGroups(this.eraId)[group];
     t.enabledWeapons = enabled
       ? Array.from(new Set([...t.enabledWeapons, ...ids]))
       : t.enabledWeapons.filter((w) => !ids.includes(w));
@@ -858,7 +1261,7 @@ export class MatchConfig {
   /** Select-All / Deselect-All for one vehicle category. */
   setVehicleCategory(slot: "team1" | "team2", category: VehicleCategory, enabled: boolean) {
     const t = this.teamOf(slot);
-    const ids = vehiclesInCategory(t.faction, category).map((v) => v.id);
+    const ids = vehiclesInCategory(t.faction, category, this.eraId).map((v) => v.id);
     t.enabledVehicles = enabled
       ? Array.from(new Set([...t.enabledVehicles, ...ids]))
       : t.enabledVehicles.filter((v) => !ids.includes(v));
@@ -896,7 +1299,8 @@ export class MatchConfig {
       if (t.enabledWeapons.length === 0) {
         problems.push(`${t.label} has no weapons enabled.`);
       }
-      const hasPrimary = t.enabledWeapons.some((w) => !WEAPON_GROUPS.sidearms.includes(w));
+      const sidearms = weaponGroups(this.eraId).sidearms;
+      const hasPrimary = t.enabledWeapons.some((w) => !sidearms.includes(w));
       if (t.enabledWeapons.length > 0 && !hasPrimary) {
         problems.push(`${t.label} has only sidearms — enable at least one primary weapon.`);
       }
@@ -912,18 +1316,20 @@ export class MatchConfig {
  * browsing, so both directions are best-effort: a failure to persist costs the
  * player their saved rosters, it must never stop the menu from opening.
  */
-function readStorage(): { mapId?: string; byMap?: unknown } | null {
+function readStorage(): { eraId?: string; mapId?: string; slots?: unknown } | null {
   try {
     const text = window.localStorage.getItem(STORAGE_KEY);
     if (!text) return null;
     const parsed: unknown = JSON.parse(text);
-    return typeof parsed === "object" && parsed !== null ? (parsed as { mapId?: string; byMap?: unknown }) : null;
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as { eraId?: string; mapId?: string; slots?: unknown })
+      : null;
   } catch {
     return null;
   }
 }
 
-function writeStorage(value: { mapId: string; byMap: Record<string, MapLoadout> }) {
+function writeStorage(value: { eraId: EraId; mapId: string; slots: Record<string, MapLoadout> }) {
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
   } catch {
