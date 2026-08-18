@@ -254,7 +254,12 @@ function amphibiousGeometry(tint: number): THREE.BufferGeometry {
 /*  Half-track — SdKfz 251                                              */
 /* ================================================================== */
 
-function halftrackGeometry(tint: number): THREE.BufferGeometry {
+/**
+ * `tapered` builds the SdKfz 251, whose flanks converge to a narrow rear door.
+ * The Allied M3 is the same class of vehicle built the plain way: a square
+ * armoured nose, vertical sides, and a machine-gun ring over the cab.
+ */
+function halftrackGeometry(tint: number, tapered: boolean): THREE.BufferGeometry {
   const body = tint;
   const dark = shade(tint, 0.72);
   const light = shade(tint, 1.25);
@@ -262,16 +267,10 @@ function halftrackGeometry(tint: number): THREE.BufferGeometry {
     // Sloped armoured nose.
     { g: "box", size: [2.2, 0.8, 1.8], pos: [0, 1.0, 2.3], color: body },
     { g: "box", size: [2.2, 0.28, 1.0], pos: [0, 1.42, 2.9], rot: [-0.7, 0, 0], color: light },
-    // Crew compartment. The 251's signature is its sharply tapered flanks, so
-    // the sides are separate plates canted well outboard of the body box.
-    { g: "box", size: [1.9, 0.9, 3.4], pos: [0, 1.25, -0.5], color: body },
-    { g: "box", size: [0.22, 1.0, 3.4], pos: [1.12, 1.28, -0.5], rot: [0, 0, 0.34], color: light },
-    { g: "box", size: [0.22, 1.0, 3.4], pos: [-1.12, 1.28, -0.5], rot: [0, 0, -0.34], color: light },
-    // Tapered tail plates, drawing the rear in to a narrow door.
-    { g: "box", size: [0.22, 0.95, 1.1], pos: [0.78, 1.26, -2.0], rot: [0, 0.5, 0.34], color: light },
-    { g: "box", size: [0.22, 0.95, 1.1], pos: [-0.78, 1.26, -2.0], rot: [0, -0.5, -0.34], color: light },
+    // Crew compartment.
+    { g: "box", size: tapered ? [1.9, 0.9, 3.4] : [2.3, 0.9, 3.6], pos: [0, 1.25, -0.5], color: body },
     // Open top: a rim rather than a roof.
-    { g: "box", size: [2.3, 0.1, 3.4], pos: [0, 1.74, -0.5], color: dark },
+    { g: "box", size: [2.4, 0.1, 3.5], pos: [0, 1.74, -0.5], color: dark },
     // Vision slit.
     { g: "box", size: [1.4, 0.14, 0.1], pos: [0, 1.42, 1.42], color: 0x1a1a1a },
     // Pintle MG at the front of the troop bay.
@@ -280,6 +279,26 @@ function halftrackGeometry(tint: number): THREE.BufferGeometry {
     // Rear doors, narrow because the flanks have converged by this point.
     { g: "box", size: [1.3, 0.85, 0.14], pos: [0, 1.25, -2.45], color: dark },
   ];
+  if (tapered) {
+    // The 251's signature: flanks canted well outboard, converging to a narrow
+    // rear door.
+    parts.push(
+      { g: "box", size: [0.22, 1.0, 3.4], pos: [1.12, 1.28, -0.5], rot: [0, 0, 0.34], color: light },
+      { g: "box", size: [0.22, 1.0, 3.4], pos: [-1.12, 1.28, -0.5], rot: [0, 0, -0.34], color: light },
+      { g: "box", size: [0.22, 0.95, 1.1], pos: [0.78, 1.26, -2.0], rot: [0, 0.5, 0.34], color: light },
+      { g: "box", size: [0.22, 0.95, 1.1], pos: [-0.78, 1.26, -2.0], rot: [0, -0.5, -0.34], color: light },
+    );
+  } else {
+    // The M3: vertical sides, a square nose, and a ring mount over the cab.
+    parts.push(
+      { g: "box", size: [0.16, 1.0, 3.6], pos: [1.2, 1.28, -0.5], color: light },
+      { g: "box", size: [0.16, 1.0, 3.6], pos: [-1.2, 1.28, -0.5], color: light },
+      { g: "cyl", r: 0.62, r2: 0.62, h: 0.12, seg: 12, pos: [0, 1.86, 1.0], color: STEEL_DARK },
+      { g: "cyl", r: 0.2, h: 0.34, seg: 8, pos: [0, 2.0, 1.0], color: GUNMETAL },
+      // Unditching roller on the nose — the M3's other giveaway.
+      { g: "cyl", r: 0.38, h: 1.6, seg: 10, pos: [0, 0.72, 3.35], rot: [0, 0, Math.PI / 2], color: STEEL_DARK },
+    );
+  }
   headlights(parts, 0.9, 1.5, 3.15);
   // Front steering wheels...
   wheels(parts, 1.05, 0.44, [2.5]);
@@ -459,6 +478,167 @@ function heavyBarrelGeometry(): THREE.BufferGeometry {
     { g: "cyl", r: 0.16, h: 4.6, seg: 10, pos: [0, 0, 2.3], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
     { g: "cyl", r: 0.22, h: 0.6, seg: 10, pos: [0, 0, 0.4], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
     { g: "cyl", r: 0.26, h: 0.55, seg: 10, pos: [0, 0, 4.5], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+  ]);
+}
+
+/* ================================================================== */
+/*  Heavy half-track — SdKfz 7 artillery tractor                        */
+/* ================================================================== */
+
+/**
+ * Longer than the 251 and not armoured at all: a soft cab, a long open bed of
+ * crew benches, and a great deal more running gear. It exists to drag a gun,
+ * so the silhouette is all bed and track.
+ */
+function heavyHalftrackGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    // Soft-skin bonnet and cab.
+    { g: "box", size: [2.1, 0.85, 2.0], pos: [0, 1.12, 2.9], color: body },
+    { g: "box", size: [1.9, 0.75, 0.16], pos: [0, 1.12, 3.94], color: dark },
+    { g: "box", size: [2.2, 0.9, 1.5], pos: [0, 1.5, 1.6], color: body },
+    { g: "box", size: [1.95, 0.6, 0.1], pos: [0, 1.72, 2.32], rot: [-0.14, 0, 0], color: GLASS },
+    // Long open crew bed with bench seats down each side.
+    { g: "box", size: [2.3, 0.14, 4.4], pos: [0, 1.24, -1.4], color: dark },
+    { g: "box", size: [0.14, 0.55, 4.4], pos: [1.15, 1.5, -1.4], color: body },
+    { g: "box", size: [0.14, 0.55, 4.4], pos: [-1.15, 1.5, -1.4], color: body },
+    { g: "box", size: [2.3, 0.55, 0.14], pos: [0, 1.5, -3.65], color: body },
+    { g: "box", size: [0.55, 0.16, 4.0], pos: [0.72, 1.6, -1.4], color: light },
+    { g: "box", size: [0.55, 0.16, 4.0], pos: [-0.72, 1.6, -1.4], color: light },
+    // Towing pintle at the tail — the whole point of the vehicle.
+    { g: "box", size: [0.3, 0.3, 0.5], pos: [0, 1.05, -3.95], color: STEEL_DARK },
+    { g: "cyl", r: 0.13, h: 0.3, seg: 8, pos: [0, 1.05, -4.2], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    // Fenders over the front wheels.
+    { g: "box", size: [2.5, 0.1, 1.8], pos: [0, 1.0, 3.0], color: dark },
+  ];
+  headlights(parts, 0.8, 1.45, 3.98);
+  wheels(parts, 1.08, 0.46, [3.2]);
+  // A long belt with a lot of road wheels: eight tonnes needs the footprint.
+  // Built centred and then shifted aft, so it sits under the bed and not the cab.
+  for (const side of [-1, 1]) {
+    const belt: Part[] = [];
+    trackBelt(belt, 0, {
+      width: 0.55, length: 5.4, wheelY: 0.5, wheelR: 0.4, wheelCount: 7, endR: 0.44, endZ: 2.3,
+    });
+    for (const part of belt) {
+      part.pos = [side * 1.24, part.pos[1], part.pos[2] - 1.1];
+      parts.push(part);
+    }
+  }
+  return build(parts);
+}
+
+/* ================================================================== */
+/*  Heavy armoured car — SdKfz 234/2 Puma                               */
+/* ================================================================== */
+
+function pumaHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.22);
+  const parts: Part[] = [
+    // Long faceted hull, pointed at both ends — it drives either way.
+    { g: "box", size: [2.4, 0.75, 5.4], pos: [0, 1.05, 0], color: body },
+    { g: "box", size: [2.4, 0.3, 1.5], pos: [0, 1.38, 2.5], rot: [-0.52, 0, 0], color: light },
+    { g: "box", size: [2.4, 0.3, 1.5], pos: [0, 1.38, -2.5], rot: [0.52, 0, 0], color: light },
+    { g: "box", size: [2.3, 0.45, 2.6], pos: [0, 1.5, 0], color: body },
+    // Sharply angled side skirts, the Puma's signature wedge.
+    { g: "box", size: [0.18, 0.7, 5.0], pos: [1.22, 1.15, 0], rot: [0, 0, 0.3], color: light },
+    { g: "box", size: [0.18, 0.7, 5.0], pos: [-1.22, 1.15, 0], rot: [0, 0, -0.3], color: light },
+    // Fenders and stowage bins.
+    { g: "box", size: [2.9, 0.1, 5.0], pos: [0, 1.18, 0], color: dark },
+    { g: "box", size: [0.4, 0.3, 1.2], pos: [1.3, 1.4, -1.6], color: dark },
+    { g: "box", size: [0.4, 0.3, 1.2], pos: [-1.3, 1.4, -1.6], color: dark },
+  ];
+  headlights(parts, 1.0, 1.45, 2.98);
+  // Eight wheels, all driven, in two pairs at each end.
+  wheels(parts, 1.28, 0.52, [2.05, 0.75, -0.75, -2.05]);
+  return build(parts);
+}
+
+/** Open-topped turret with the 50 mm. Origin sits on the ring. */
+function pumaTurretGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const light = shade(tint, 1.22);
+  return build([
+    { g: "box", size: [1.6, 0.62, 1.9], pos: [0, 0.34, 0], color: body },
+    // Faceted front plates rather than a flat face.
+    { g: "box", size: [1.3, 0.6, 0.6], pos: [0, 0.34, 1.0], rot: [0.3, 0, 0], color: light },
+    { g: "box", size: [0.2, 0.6, 1.9], pos: [0.8, 0.34, 0], rot: [0, 0, 0.22], color: light },
+    { g: "box", size: [0.2, 0.6, 1.9], pos: [-0.8, 0.34, 0], rot: [0, 0, -0.22], color: light },
+    { g: "box", size: [1.55, 0.08, 1.85], pos: [0, 0.68, 0], color: shade(tint, 0.7) },
+    { g: "cyl", r: 0.3, h: 0.45, seg: 10, pos: [0, 0.34, 1.05], rot: [Math.PI / 2, 0, 0], color: STEEL },
+  ]);
+}
+
+/** 50 mm L/60 — longer and thinner than a 75. */
+function pumaBarrelGeometry(): THREE.BufferGeometry {
+  return build([
+    { g: "cyl", r: 0.11, h: 3.0, seg: 10, pos: [0, 0, 1.5], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "cyl", r: 0.16, h: 0.45, seg: 10, pos: [0, 0, 0.25], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+    { g: "cyl", r: 0.19, h: 0.4, seg: 10, pos: [0, 0, 2.95], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+  ]);
+}
+
+/* ================================================================== */
+/*  Sloped medium — T-34/76                                             */
+/* ================================================================== */
+
+/**
+ * The T-34 is one idea applied everywhere: put the plate at sixty degrees.
+ * The glacis, the sides and the turret cheeks are all raked, which the armour
+ * model rewards directly — the same 45 mm defeats far more than it should.
+ * Big Christie road wheels with no return rollers finish the silhouette.
+ */
+function slopedTankHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    { g: "box", size: [2.9, 0.7, 6.0], pos: [0, 1.05, 0], color: body },
+    // The famous glacis, and a matching rear plate.
+    { g: "box", size: [2.9, 0.3, 2.0], pos: [0, 1.45, 2.55], rot: [-0.95, 0, 0], color: light },
+    { g: "box", size: [2.9, 0.3, 1.6], pos: [0, 1.42, -2.7], rot: [0.85, 0, 0], color: light },
+    // Raked hull sides.
+    { g: "box", size: [0.22, 0.8, 5.6], pos: [1.5, 1.15, 0], rot: [0, 0, 0.34], color: light },
+    { g: "box", size: [0.22, 0.8, 5.6], pos: [-1.5, 1.15, 0], rot: [0, 0, -0.34], color: light },
+    // Deck, engine louvres and the driver's hatch in the glacis.
+    { g: "box", size: [2.7, 0.12, 5.4], pos: [0, 1.42, 0], color: dark },
+    { g: "box", size: [1.9, 0.14, 1.3], pos: [0, 1.5, -2.0], color: STEEL_DARK },
+    { g: "box", size: [1.0, 0.1, 0.7], pos: [-0.55, 1.62, 2.4], rot: [-0.95, 0, 0], color: dark },
+    { g: "cyl", r: 0.09, h: 0.8, seg: 6, pos: [0.72, 1.6, 2.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    // External fuel drums on the rear flanks — never seen without them.
+    { g: "cyl", r: 0.3, h: 1.1, seg: 10, pos: [1.62, 1.55, -1.9], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "cyl", r: 0.3, h: 1.1, seg: 10, pos: [-1.62, 1.55, -1.9], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "box", size: [1.4, 0.14, 0.5], pos: [0, 1.6, 2.9], color: TRACK },
+  ];
+  headlights(parts, 0.95, 1.5, 3.05);
+  // Wide tracks on five big road wheels, and no return rollers at all — the
+  // top run rides straight on the wheels, which is why a T-34 looks like this.
+  for (const side of [-1, 1]) {
+    trackBelt(parts, side * 1.62, {
+      width: 0.8, length: 6.2, wheelY: 0.66, wheelR: 0.62, wheelCount: 5, endR: 0.5, endZ: 2.75,
+    });
+  }
+  return build(parts);
+}
+
+/** Rounded cast turret, cramped and two-man. */
+function slopedTankTurretGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.2);
+  return build([
+    // Truncated cone reads as a cast turret in a way no box ever will.
+    { g: "cyl", r: 1.15, r2: 0.95, h: 0.8, seg: 10, pos: [0, 0.42, 0], color: body },
+    { g: "box", size: [1.5, 0.7, 0.7], pos: [0, 0.42, 1.0], rot: [0.22, 0, 0], color: light },
+    { g: "cyl", r: 0.34, h: 0.6, seg: 10, pos: [0, 0.42, 1.25], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    // Rear overhang and the big split roof hatch.
+    { g: "box", size: [1.5, 0.6, 0.7], pos: [0, 0.42, -1.0], rot: [-0.2, 0, 0], color: light },
+    { g: "box", size: [1.6, 0.1, 1.0], pos: [0, 0.86, -0.15], color: dark },
+    { g: "cyl", r: 0.06, h: 0.9, seg: 6, pos: [-0.8, 1.2, -0.5], rot: [Math.PI / 2 - 0.2, 0, 0], color: GUNMETAL },
   ]);
 }
 
@@ -841,7 +1021,7 @@ export function hullGeometryFor(def: VehicleDef): THREE.BufferGeometry | null {
     case "amphibious":
       return amphibiousGeometry(def.tint);
     case "halftrack":
-      return halftrackGeometry(def.tint);
+      return halftrackGeometry(def.tint, def.id === "sdkfz_251");
     case "armored_car":
       return armoredCarHullGeometry(def.tint);
     case "tank_destroyer":
@@ -852,6 +1032,12 @@ export function hullGeometryFor(def: VehicleDef): THREE.BufferGeometry | null {
       return null; // uses the existing tankHullGeometry, tinted by team
     case "fighter":
       return null; // uses the existing planeBody geometry, tinted by team
+    case "heavy_halftrack":
+      return heavyHalftrackGeometry(def.tint);
+    case "heavy_armored_car":
+      return pumaHullGeometry(def.tint);
+    case "sloped_medium":
+      return slopedTankHullGeometry(def.tint);
     case "rhomboid_tank":
       return rhomboidHullGeometry(def.tint, def.weapons.includes("sixpdr"));
     case "box_tank":
@@ -880,6 +1066,10 @@ export function turretGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
       return heavyTankTurretGeometry(def.tint);
     case "medium_tank":
       return null; // existing tankTurretGeometry
+    case "heavy_armored_car":
+      return pumaTurretGeometry(def.tint);
+    case "sloped_medium":
+      return slopedTankTurretGeometry(def.tint);
     case "vintage_armored_car":
       return vintageCarTurretGeometry(def.tint);
     case "box_tank":
@@ -902,6 +1092,8 @@ export function barrelGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
       return heavyBarrelGeometry();
     case "armored_car":
       return armoredCarBarrelGeometry();
+    case "heavy_armored_car":
+      return pumaBarrelGeometry();
     case "box_tank":
       return shortCannonGeometry();
     case "field_gun":
@@ -923,6 +1115,10 @@ export function barrelMount(chassis: Chassis): [number, number, number] {
   switch (chassis) {
     case "armored_car":
       return [0, 0.34, 0.72];
+    case "heavy_armored_car":
+      return [0, 0.34, 1.05];
+    case "sloped_medium":
+      return [0, 0.42, 1.2];
     case "box_tank":
       return [0, 0.2, 0.35];
     case "field_gun":
@@ -945,6 +1141,10 @@ export function turretRingHeight(chassis: Chassis): number {
       return 1.65;
     case "vintage_armored_car":
       return 2.05;
+    case "heavy_armored_car":
+      return 1.72;
+    case "sloped_medium":
+      return 1.48;
     case "box_tank":
       return 1.75;
     case "field_gun":

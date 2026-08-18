@@ -27,6 +27,9 @@ export type Chassis =
   | "amphibious" // truck that floats — DUKW
   | "halftrack" // wheels front, tracks rear; light armour, carries a squad
   | "armored_car" // wheeled, small turret, light armour — M8 Greyhound
+  | "heavy_armored_car" // 8x8, real turret and gun — SdKfz 234/2 Puma
+  | "heavy_halftrack" // long artillery tractor, open bed — SdKfz 7
+  | "sloped_medium" // medium tank built round sloped plate — T-34/76
   | "medium_tank" // turret, balanced — Sherman, Panzer IV
   | "heavy_tank" // turret, thick armour, slow — Tiger I
   | "tank_destroyer" // casemate hull, no turret, limited traverse — StuG III
@@ -166,6 +169,22 @@ const GUN_SHIELD: ArmorScheme = {
   turretFront: 6, turretSide: 1, turretRear: 1, turretTop: 1,
 };
 
+/**
+ * The T-34's plate is thinner than a Sherman's but set at 60 degrees, and the
+ * combat model already divides thickness by the cosine of the strike angle —
+ * so the numbers here are the real ones and the geometry does the rest.
+ */
+const SLOPED_MEDIUM_ARMOR: ArmorScheme = {
+  hullFront: 45, hullSide: 45, hullRear: 40, hullTop: 20,
+  turretFront: 60, turretSide: 52, turretRear: 45, turretTop: 20,
+};
+
+/** Puma: proof against autocannon from the front, rifle-proof elsewhere. */
+const PUMA_ARMOR: ArmorScheme = {
+  hullFront: 30, hullSide: 8, hullRear: 10, hullTop: 6,
+  turretFront: 30, turretSide: 14, turretRear: 14, turretTop: 6,
+};
+
 const HEAVY_ARMOR: ArmorScheme = {
   hullFront: 102, hullSide: 82, hullRear: 82, hullTop: 26,
   turretFront: 120, turretSide: 82, turretRear: 82, turretTop: 26,
@@ -191,7 +210,7 @@ export const VEHICLES: VehicleDef[] = [
     weapons: [],
     passengerSeats: 3,
     tint: 0x5a6338, // olive drab
-    triangles: 180,
+    triangles: 450,
     blurb: "Fast open scout car. No protection whatsoever — speed is the armour.",
   },
   {
@@ -208,14 +227,14 @@ export const VEHICLES: VehicleDef[] = [
     weapons: [],
     passengerSeats: 3,
     tint: 0x7a6f4a, // khaki
-    triangles: 170,
+    triangles: 400,
     blurb: "The Axis scout car. Slightly nimbler than the Jeep, just as fragile.",
   },
   {
     id: "motorcycle_sidecar",
     era: "ww2",
     name: "Motorcycle",
-    displayName: "Motorcycle with Sidecar",
+    displayName: "BMW R75 Motorcycle",
     chassis: "motorcycle",
     category: "light",
     faction: "axis",
@@ -225,7 +244,7 @@ export const VEHICLES: VehicleDef[] = [
     weapons: [],
     passengerSeats: 1,
     tint: 0x6d6444,
-    triangles: 200,
+    triangles: 350,
     blurb: "The fastest thing on the map, and the easiest to kill. One passenger in the sidecar.",
   },
 
@@ -244,7 +263,7 @@ export const VEHICLES: VehicleDef[] = [
     weapons: [],
     passengerSeats: 8,
     tint: 0x5a6338,
-    triangles: 420,
+    triangles: 850,
     blurb: "Six-wheel hauler. Moves a whole squad, but a soft target the entire way.",
   },
   {
@@ -261,7 +280,7 @@ export const VEHICLES: VehicleDef[] = [
     weapons: [],
     passengerSeats: 8,
     tint: 0x7a6f4a,
-    triangles: 400,
+    triangles: 800,
     blurb: "Canvas-topped Axis squad truck. Fractionally quicker than the GMC.",
   },
   {
@@ -295,7 +314,7 @@ export const VEHICLES: VehicleDef[] = [
     weapons: ["coax"],
     passengerSeats: 6,
     tint: 0x4a4d4a, // dark gray
-    triangles: 460,
+    triangles: 900,
     blurb: "Armoured squad carrier with a pintle MG. Shrugs off rifle fire, not cannon.",
   },
 
@@ -333,7 +352,7 @@ export const VEHICLES: VehicleDef[] = [
     ammo: { ap: 42, he: 24 },
     passengerSeats: 0,
     tint: 0x5a6338,
-    triangles: 550,
+    triangles: 1200,
     blurb: "The Allied workhorse. Sloped glacis, fast turret, dies to a Tiger at range.",
   },
   {
@@ -355,7 +374,7 @@ export const VEHICLES: VehicleDef[] = [
     ammo: { ap: 40, he: 26 },
     passengerSeats: 0,
     tint: 0x4a4d4a,
-    triangles: 580,
+    triangles: 1150,
     blurb: "Thick flat plate and a good gun. Angle the hull or the slope advantage is lost.",
   },
   {
@@ -438,6 +457,79 @@ export const VEHICLES: VehicleDef[] = [
     tint: 0x8a5240,
     triangles: 600,
     blurb: "Propeller fighter with 20 mm cannon and two bombs.",
+  },
+
+  {
+    id: "m3_halftrack",
+    era: "ww2",
+    name: "M3",
+    displayName: "M3 Half-track",
+    chassis: "halftrack",
+    category: "transport",
+    faction: "allies",
+    hp: 95,
+    armor: LIGHT_ARMOR,
+    mobility: { maxSpeed: 17, reverseSpeed: 6, accel: 7.4, turnRate: 1.05, turretTraverse: 0.7, turretArc: Math.PI },
+    weapons: ["coax"],
+    passengerSeats: 10,
+    tint: 0x53603b,
+    triangles: 850,
+    blurb: "The Allied half-track. Square armoured nose, a ring-mounted .50, and room for a squad.",
+  },
+  {
+    id: "sdkfz_7",
+    era: "ww2",
+    name: "SdKfz 7",
+    displayName: "SdKfz 7 (8t) Half-track",
+    chassis: "heavy_halftrack",
+    category: "transport",
+    faction: "axis",
+    hp: 110,
+    armor: UNARMORED,
+    // Built to tow guns, not to fight: heavy, steady, and slow to change its mind.
+    mobility: { maxSpeed: 14, reverseSpeed: 5, accel: 5.4, turnRate: 0.85, turretTraverse: 0, turretArc: 0 },
+    weapons: [],
+    passengerSeats: 11,
+    tint: 0x5c5a44,
+    triangles: 950,
+    blurb: "Eight-tonne artillery tractor. Unarmed and unarmoured, but it carries a whole gun crew.",
+  },
+  {
+    id: "sdkfz_234_puma",
+    era: "ww2",
+    name: "Puma",
+    displayName: "SdKfz 234/2 Puma",
+    chassis: "heavy_armored_car",
+    category: "armor",
+    faction: "axis",
+    hp: 95,
+    armor: PUMA_ARMOR,
+    // Eight driven wheels and a rear steering position — quick, and quick to leave.
+    mobility: { maxSpeed: 23, reverseSpeed: 16, accel: 9.5, turnRate: 1.3, turretTraverse: 0.62, turretArc: Math.PI },
+    weapons: ["cannon", "coax"],
+    ammo: { ap: 28, he: 22 },
+    passengerSeats: 1,
+    tint: 0x4a4d45,
+    triangles: 950,
+    blurb: "8x8 with a 50 mm in a real turret. Reverses as fast as it advances — hit and run.",
+  },
+  {
+    id: "t34_76",
+    era: "ww2",
+    name: "T-34",
+    displayName: "T-34/76 Tank (Soviet)",
+    chassis: "sloped_medium",
+    category: "armor",
+    faction: "allies",
+    hp: 155,
+    armor: SLOPED_MEDIUM_ARMOR,
+    mobility: { maxSpeed: 14.5, reverseSpeed: 5, accel: 6.2, turnRate: 0.8, turretTraverse: 0.42, turretArc: Math.PI },
+    weapons: ["cannon", "coax"],
+    ammo: { ap: 30, he: 26 },
+    passengerSeats: 4,
+    tint: 0x4a5540,
+    triangles: 1100,
+    blurb: "Sloped plate everywhere and wide tracks. Faster than a Sherman, and the turret is cramped.",
   },
 
   /* ================================================================ */
