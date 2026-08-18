@@ -241,6 +241,10 @@ export type Tank = {
   ai: TankBrain | null;
   name: string;
   kills: number;
+  /** "halftrack" skips the turret entirely and ferries soldiers instead of fighting. */
+  vehicleType: "medium" | "halftrack";
+  /** Soldier ids currently riding in the troop bed. Empty for medium tanks. */
+  passengerIds: number[];
 };
 
 export type TankBrain = {
@@ -319,6 +323,14 @@ export const TANK_MAX_SPEED = 12.5;
 export const TANK_REVERSE_SPEED = 5.5;
 export const TANK_ACCEL = 5.2;
 export const TANK_TURN_RATE = 0.72;
+
+/** A halftrack is unarmoured but road-quick and turns on a dime by comparison. */
+export const HALFTRACK_MAX_SPEED = 16;
+export const HALFTRACK_REVERSE_SPEED = 6;
+export const HALFTRACK_ACCEL = 7;
+export const HALFTRACK_TURN_RATE = 1.05;
+export const HALFTRACK_MAX_PASSENGERS = 6;
+export const HALFTRACK_HULL = { hw: 1.3, hh: 0.65, hd: 2.6, y: 0.95 };
 export const TURRET_TRAVERSE = 0.55;
 export const BARREL_RATE = 0.34;
 export const BARREL_MIN = -0.16;
@@ -381,7 +393,14 @@ export function makeSoldier(id: number, team: Team, pos: THREE.Vector3, isPlayer
   };
 }
 
-export function makeTank(id: number, team: Team, pos: THREE.Vector3, yaw: number): Tank {
+export function makeTank(
+  id: number,
+  team: Team,
+  pos: THREE.Vector3,
+  yaw: number,
+  vehicleType: "medium" | "halftrack" = "medium",
+): Tank {
+  const halftrack = vehicleType === "halftrack";
   return {
     kind: "tank",
     id,
@@ -393,7 +412,7 @@ export function makeTank(id: number, team: Team, pos: THREE.Vector3, yaw: number
     turret: 0,
     barrel: 0,
     speed: 0,
-    hp: 100,
+    hp: halftrack ? 60 : 100,
     alive: true,
     respawnAt: 0,
     modules: { engine: 100, tracks: 100, gunner: 100, driver: 100, ammo: 100 },
@@ -407,8 +426,12 @@ export function makeTank(id: number, team: Team, pos: THREE.Vector3, yaw: number
     driverId: null,
     isPlayer: false,
     ai: null,
-    name: `${team === "blue" ? "Anvil" : "Kobra"}-${id % 90}`,
+    name: halftrack
+      ? `${team === "blue" ? "Wagon" : "Karren"}-${id % 90}`
+      : `${team === "blue" ? "Anvil" : "Kobra"}-${id % 90}`,
     kills: 0,
+    vehicleType,
+    passengerIds: [],
   };
 }
 
