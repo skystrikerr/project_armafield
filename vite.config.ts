@@ -10,4 +10,14 @@ export default defineConfig({
   resolve: {
     alias: { "@": path.resolve(import.meta.dirname, "src") },
   },
+  build: {
+    rollupOptions: {
+      // Two games share the toolchain: the colony at "/" and Ironfront at
+      // "/ironfront.html". Both need to end up in dist.
+      input: {
+        main: path.resolve(import.meta.dirname, "index.html"),
+        ironfront: path.resolve(import.meta.dirname, "ironfront.html"),
+      },
+    },
+  },
 });

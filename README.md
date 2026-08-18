@@ -24,15 +24,20 @@ inherited traits drift across the population.
 
 ![day 8 of the second year: 344 alive across fourteen peoples, the age of Settled four-fifths done, and a third of them aware they are being observed](docs/colony.png)
 
+> This repository also holds **[Ironfront](#ironfront)** — an unrelated
+> low-poly combined-arms battle game that happens to share the toolchain. It is
+> a separate game with its own entry point; the two do not touch.
+
 ## Running it
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
+npm run dev      # http://localhost:5173             — Thronglets
+                 # http://localhost:5173/ironfront.html — Ironfront
 ```
 
-`npm run build` produces a static site in `dist/` — it's a pure client-side
-app, so that folder can be served from anywhere.
+`npm run build` produces a static site in `dist/` — both games are pure
+client-side apps, so that folder can be served from anywhere.
 
 ## Running it as a desktop app
 
@@ -350,7 +355,80 @@ src/
 [src/thronglets/README.md](src/thronglets/README.md) goes into how the AI and
 the renderer work.
 
+The section above is Thronglets; Ironfront's own layout is listed below.
+
+## Ironfront
+
+A second, entirely separate game living in the same repository: low-poly
+combined arms, somewhere between Arma and War Thunder. Infantry, tanks and
+aircraft fighting over the same three capture points, and you can be any of
+them. Open it at `/ironfront.html`.
+
+You start on the deploy screen and pick what to be. **On foot** you get a
+rifle, an AT launcher and grenades, with stances, stamina and sprinting; the
+launcher is the only thing an infantryman has that will trouble a tank.
+**Crewing a tank** gives you a 75 mm gun with AP and HE, a slow turret
+traverse, a coaxial machine gun and a gunner's sight that zooms to a 12° field
+of view. **Taking an aircraft** means rolling down the strip at your own
+airfield until the wings bite, then 20 mm cannons and two bombs.
+
+The armour model is the point of the tank half. Every plate has a thickness,
+and what actually matters is the thickness divided by the cosine of the impact
+angle — so a hull turned 40° off square is far harder to defeat than the same
+plate face-on. Rounds lose penetration over distance, bounce off steeply angled
+armour and carry on flying, and a round that does get through breaks something
+specific: engine, tracks, driver, gunner, or the ammunition, which usually ends
+the argument immediately. The HUD tells you which, and tells you the numbers
+when a shot fails: `NO PENETRATION — 96 mm vs 141 mm effective`.
+
+Shells are real projectiles with travel time and drop, not hitscan. The
+gunner's sight ranges whatever is under the crosshair and elevates the barrel
+for it, so hitting something 600 m away is a matter of putting the sight on it
+and waiting out the traverse. Rifle rounds drop too, and crack past your head
+when they miss.
+
+Both sides field a squad of thirteen riflemen, three tank crews and a fighter,
+all run by the same behaviour code. They advance on whichever objective is
+worth taking, break line of sight when they are hurt or suppressed, go prone
+under fire, and swap to a launcher when armour appears. Nothing about the match
+is scripted: the fight goes where the AI takes it. Holding more of the three
+points bleeds the other side's reinforcement tickets, and the match ends when
+one side runs out.
+
+### Controls
+
+| | |
+| --- | --- |
+| WASD · Shift | Move · sprint |
+| C · Z | Crouch · prone |
+| LMB · RMB | Fire · aim down sights (gunner's sight in a tank) |
+| R · G | Reload · grenade |
+| 1 · 2 | Rifle · AT launcher, or AP · HE in a tank |
+| F · V | Enter/leave a vehicle · first/third person |
+| C (in a tank) | Coaxial machine gun |
+| Mouse · A/D · W/S (flying) | Pitch and roll · rudder · throttle |
+| B | Drop a bomb |
+| Esc · M | Pause · mute |
+
+### Layout
+
+```
+src/
+  Ironfront.tsx         the page: canvas + HUD, minimap, deploy screens
+  ironfront/
+    game.ts             world assembly, player control, match flow, camera
+    combat.ts           projectiles, ballistics, armour penetration, blast
+    ai.ts               squad, crew and pilot behaviour
+    units.ts            unit records and every stat table
+    terrain.ts          heightfield, roads, villages, line of sight
+    models.ts           every model, baked from boxes and cylinders
+    rigs.ts             the three.js nodes that animate a unit
+    effects.ts          particles, tracers, scorch marks
+    audio.ts            synthesised gunfire and engines — no audio files
+    random.ts           seeded RNG and value noise
+```
+
 ## Built with
 
-React + TypeScript, Vite, Tailwind, three.js. No art assets — every model,
-texture and icon is generated in code.
+React + TypeScript, Vite, Tailwind, three.js. No art assets in either game —
+every model, texture, icon and sound is generated in code.

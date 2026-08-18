@@ -1,0 +1,289 @@
+import * as THREE from "three";
+import {
+  launcherGeometry,
+  lowPolyMaterial,
+  planeBodyGeometry,
+  propellerGeometry,
+  rifleGeometry,
+  soldierArmsGeometry,
+  soldierLegGeometry,
+  soldierTorsoGeometry,
+  tankBarrelGeometry,
+  tankHullGeometry,
+  tankTurretGeometry,
+  wreckGeometry,
+} from "./models";
+import {
+  TANK_RING_Y,
+  TEAM_COLOR,
+  type Plane,
+  type Soldier,
+  type Tank,
+  type Team,
+} from "./units";
+
+/**
+ * The visual half of a unit. Simulation state lives in plain objects; a rig is
+ * the pile of three.js nodes that gets pushed around to match it each frame.
+ */
+
+/** Geometries are shared across every unit of a team, built once up front. */
+export class RigAssets {
+  readonly material = lowPolyMaterial();
+  readonly hull: Record<Team, THREE.BufferGeometry>;
+  readonly turret: Record<Team, THREE.BufferGeometry>;
+  readonly torso: Record<Team, THREE.BufferGeometry>;
+  readonly planeBody: Record<Team, THREE.BufferGeometry>;
+  readonly barrel = tankBarrelGeometry();
+  readonly leg = soldierLegGeometry();
+  readonly arms = soldierArmsGeometry();
+  readonly rifle = rifleGeometry();
+  readonly launcher = launcherGeometry();
+  readonly propeller = propellerGeometry();
+  readonly wreck = wreckGeometry();
+
+  constructor() {
+    const teams: Team[] = ["blue", "red"];
+    const rec = <T>(fn: (t: Team) => T) =>
+      Object.fromEntries(teams.map((t) => [t, fn(t)])) as Record<Team, T>;
+    this.hull = rec(tankHullGeometry);
+    this.turret = rec(tankTurretGeometry);
+    this.torso = rec(soldierTorsoGeometry);
+    this.planeBody = rec(planeBodyGeometry);
+  }
+
+  dispose() {
+    const all: THREE.BufferGeometry[] = [
+      this.barrel, this.leg, this.arms, this.rifle, this.launcher, this.propeller, this.wreck,
+      ...Object.values(this.hull), ...Object.values(this.turret),
+      ...Object.values(this.torso), ...Object.values(this.planeBody),
+    ];
+    for (const g of all) g.dispose();
+    this.material.dispose();
+  }
+}
+
+/**
+ * Friendly markers are drawn from a generated chevron rather than a bare
+ * sprite, which otherwise renders as a solid white square.
+ */
+let markerTexture: THREE.Texture | null = null;
+
+function chevronTexture() {
+  if (markerTexture) return markerTexture;
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.moveTo(size / 2, size * 0.82);
+  ctx.lineTo(size * 0.12, size * 0.2);
+  ctx.lineTo(size / 2, size * 0.42);
+  ctx.lineTo(size * 0.88, size * 0.2);
+  ctx.closePath();
+  ctx.fill();
+  markerTexture = new THREE.CanvasTexture(canvas);
+  markerTexture.colorSpace = THREE.SRGBColorSpace;
+  return markerTexture;
+}
+
+function marker(team: Team, scale: number, height: number) {
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: chevronTexture(),
+      color: TEAM_COLOR[team].hud,
+      depthTest: false,
+      transparent: true,
+      opacity: 0.8,
+    }),
+  );
+  sprite.scale.set(scale, scale, 1);
+  sprite.position.set(0, height, 0);
+  sprite.renderOrder = 5;
+  return sprite;
+}
+
+function mesh(geo: THREE.BufferGeometry, mat: THREE.Material) {
+  const m = new THREE.Mesh(geo, mat);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  return m;
+}
+
+/* ---------------- infantry ---------------- */
+
+export class SoldierRig {
+  readonly root = new THREE.Group();
+  private body = new THREE.Group();
+  private torso = new THREE.Group();
+  private armsPivot = new THREE.Group();
+  private legs: THREE.Mesh[] = [];
+  private rifle: THREE.Mesh;
+  private launcher: THREE.Mesh;
+  /** Marker floating above friendlies so a firefight stays legible. */
+  readonly marker: THREE.Sprite;
+
+  constructor(assets: RigAssets, team: Team) {
+    const mat = assets.material;
+    for (const side of [-1, 1]) {
+      const leg = mesh(assets.leg, mat);
+      leg.position.set(side * 0.16, 0, 0);
+      this.legs.push(leg);
+      this.body.add(leg);
+    }
+    this.torso.add(mesh(assets.torso[team], mat));
+    this.armsPivot.position.set(0, 0.62, 0);
+    this.rifle = mesh(assets.rifle, mat);
+    this.rifle.position.set(0.06, -0.3, 0.22);
+    this.launcher = mesh(assets.launcher, mat);
+    this.launcher.position.set(0.06, -0.22, 0.2);
+    this.launcher.visible = false;
+    this.armsPivot.add(mesh(assets.arms, mat), this.rifle, this.launcher);
+    this.torso.add(this.armsPivot);
+    this.body.add(this.torso);
+    this.root.add(this.body);
+
+    this.marker = marker(team, 0.45, 2.35);
+    this.root.add(this.marker);
+  }
+
+  update(s: Soldier, showMarker: boolean, hidden: boolean) {
+    this.root.visible = !hidden;
+    if (hidden) return;
+    this.root.position.copy(s.pos);
+    this.root.rotation.y = s.yaw;
+    this.marker.visible = showMarker && s.alive;
+
+    if (!s.alive) {
+      // Fallen: face down, flat on the ground, arms out of the way.
+      this.body.position.y = 0.24;
+      this.body.rotation.x = Math.PI / 2;
+      this.torso.rotation.y = 0;
+      this.armsPivot.rotation.x = 0.2;
+      for (let i = 0; i < 2; i++) this.legs[i].rotation.x = i === 0 ? 0.2 : -0.15;
+      this.rifle.visible = false;
+      this.launcher.visible = false;
+      return;
+    }
+
+    const hipY = s.stance === "stand" ? 0.9 : s.stance === "crouch" ? 0.62 : 0.3;
+    this.body.position.y = hipY;
+    this.body.rotation.x = s.stance === "prone" ? Math.PI / 2 : 0;
+
+    // Legs swing on the gait phase when moving, and settle when still.
+    const moving = Math.hypot(s.vel.x, s.vel.z) > 0.4;
+    const swing = moving ? Math.sin(s.gait * 2.4) * (s.sprinting ? 0.85 : 0.55) : 0;
+    const bend = s.stance === "crouch" ? 0.85 : 0;
+    this.legs[0].rotation.x = swing + bend;
+    this.legs[1].rotation.x = -swing + bend;
+
+    // Upper body twists towards where the soldier is looking.
+    this.torso.rotation.y = wrap(s.aimYaw - s.yaw);
+    this.torso.rotation.x = s.stance === "prone" ? -Math.PI / 2 + 0.25 : 0;
+    this.armsPivot.rotation.x = -s.aimPitch + (moving && !s.sprinting ? Math.sin(s.gait * 4.8) * 0.05 : 0);
+    // Sprinting soldiers carry the weapon low.
+    this.armsPivot.rotation.z = s.sprinting ? -0.5 : 0;
+
+    this.rifle.visible = s.weapon === "rifle";
+    this.launcher.visible = s.weapon === "launcher";
+  }
+
+  dispose() {
+    (this.marker.material as THREE.Material).dispose();
+  }
+}
+
+/* ---------------- armour ---------------- */
+
+export class TankRig {
+  readonly root = new THREE.Group();
+  private hull: THREE.Mesh;
+  private turret = new THREE.Group();
+  private barrel = new THREE.Group();
+  private wreck: THREE.Mesh;
+  readonly marker: THREE.Sprite;
+
+  constructor(assets: RigAssets, team: Team) {
+    const mat = assets.material;
+    this.hull = mesh(assets.hull[team], mat);
+    this.root.add(this.hull);
+
+    this.turret.position.set(0, TANK_RING_Y, -0.25);
+    this.turret.add(mesh(assets.turret[team], mat));
+    this.barrel.position.set(0, 0.5, 1.45);
+    this.barrel.add(mesh(assets.barrel, mat));
+    this.turret.add(this.barrel);
+    this.root.add(this.turret);
+
+    this.wreck = mesh(assets.wreck, mat);
+    this.wreck.visible = false;
+    this.root.add(this.wreck);
+
+    this.marker = marker(team, 0.7, 3.6);
+    this.root.add(this.marker);
+  }
+
+  update(t: Tank, showMarker: boolean, hideForFirstPerson: boolean) {
+    this.root.position.copy(t.pos);
+    this.root.rotation.set(t.pitch, t.yaw, t.roll, "YXZ");
+    const dead = !t.alive;
+    this.hull.visible = !dead && !hideForFirstPerson;
+    this.turret.visible = !dead && !hideForFirstPerson;
+    this.wreck.visible = dead;
+    this.marker.visible = showMarker && !dead;
+    if (dead) return;
+    this.turret.rotation.y = t.turret;
+    this.barrel.rotation.x = -t.barrel;
+  }
+
+  dispose() {
+    (this.marker.material as THREE.Material).dispose();
+  }
+}
+
+/* ---------------- aircraft ---------------- */
+
+export class PlaneRig {
+  readonly root = new THREE.Group();
+  private body: THREE.Mesh;
+  private prop: THREE.Mesh;
+  readonly marker: THREE.Sprite;
+  private spin = 0;
+
+  constructor(assets: RigAssets, team: Team) {
+    const mat = assets.material;
+    this.body = mesh(assets.planeBody[team], mat);
+    this.root.add(this.body);
+    this.prop = mesh(assets.propeller, mat);
+    this.prop.position.set(0, 0, 4.25);
+    this.root.add(this.prop);
+
+    this.marker = marker(team, 0.9, 2.6);
+    this.root.add(this.marker);
+  }
+
+  update(p: Plane, dt: number, showMarker: boolean, hide: boolean) {
+    this.root.visible = p.alive;
+    if (!p.alive) return;
+    this.root.position.copy(p.pos);
+    this.root.quaternion.copy(p.quat);
+    this.body.visible = !hide;
+    this.prop.visible = !hide;
+    this.marker.visible = showMarker;
+    this.spin += dt * (6 + p.throttle * 60);
+    this.prop.rotation.z = this.spin;
+  }
+
+  dispose() {
+    (this.marker.material as THREE.Material).dispose();
+  }
+}
+
+function wrap(a: number) {
+  let x = a % (Math.PI * 2);
+  if (x > Math.PI) x -= Math.PI * 2;
+  if (x < -Math.PI) x += Math.PI * 2;
+  return x;
+}
