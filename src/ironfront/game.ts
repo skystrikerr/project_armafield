@@ -127,6 +127,7 @@ export type HudSnapshot = {
   prompt: string | null;
   spawnOptions: { tanks: number; planes: number };
   muted: boolean;
+  gamepadConnected: boolean;
   paused: boolean;
   aimDistance: number | null;
 };
@@ -211,6 +212,9 @@ export class Ironfront {
   private mouseDown = new Set<number>();
   private locked = false;
   private paused = false;
+  /** Which mapped gamepad buttons were down last poll, for edge-triggered actions. */
+  private gpPrevButtons: boolean[] = [];
+  private gpConnected = false;
   private phase: HudSnapshot["phase"] = "briefing";
   private respawnAt = 0;
   /** Kills the player has scored, on foot or in anything they were crewing. */
@@ -679,7 +683,15 @@ export class Ironfront {
       return;
     }
     if (this.phase !== "playing" || this.paused) return;
+    this.performKeyAction(code);
+  };
 
+  /**
+   * The discrete (press-once) actions bound to a key code. Shared by the
+   * keyboard handler above and the gamepad poller below, so a controller
+   * button and its keyboard equivalent always do exactly the same thing.
+   */
+  private performKeyAction(code: string) {
     switch (code) {
       case "KeyV":
         this.thirdPerson = !this.thirdPerson;
@@ -719,7 +731,7 @@ export class Ironfront {
       default:
         break;
     }
-  };
+  }
 
   private onKeyUp = (e: KeyboardEvent) => {
     this.keys.delete(e.code);
@@ -757,6 +769,110 @@ export class Ironfront {
     if (this.mode === "plane" || !this.locked) return;
     e.preventDefault();
   };
+
+  /* ---------------- gamepad ---------------- */
+
+  /**
+   * A controller is treated as a second input source feeding the exact same
+   * state mouse and keyboard already drive: held buttons flow into `keys` /
+   * `mouseDown` (so every continuous check downstream — movement, firing,
+   * the tank's coaxial hold — needs no gamepad-aware branch of its own), and
+   * fresh presses call `performKeyAction` with the keyboard code they stand
+   * in for. Only aiming needed its own logic, since a stick has no direct
+   * mouse-delta equivalent.
+   */
+  private pollGamepad(dt: number) {
+    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+    const gp = pads[0];
+    if (!gp) {
+      this.gpConnected = false;
+      return;
+    }
+    this.gpConnected = true;
+    const dead = 0.18;
+    const axis = (v: number) => (Math.abs(v) < dead ? 0 : v);
+    const lx = axis(gp.axes[0] ?? 0);
+    const ly = axis(gp.axes[1] ?? 0);
+    const rx = axis(gp.axes[2] ?? 0);
+    const ry = axis(gp.axes[3] ?? 0);
+    const held = (i: number) => gp.buttons[i]?.pressed ?? false;
+
+    // Left stick: synthesized into WASD, so movement code never needs to
+    // know whether a key or a stick asked for it.
+    this.setKey("KeyW", ly < 0);
+    this.setKey("KeyS", ly > 0);
+    this.setKey("KeyA", lx < 0);
+    this.setKey("KeyD", lx > 0);
+    // A = jump, L3 = sprint (held), C = coax hold in a tank.
+    this.setKey("Space", held(0));
+    this.setKey("ShiftLeft", held(10));
+    this.setKey("KeyC", held(1));
+
+    // RT = fire, held like a mouse button; LT = ADS, mode-dependent because
+    // the mouse itself treats it differently per mode (infantry holds it,
+    // the tank sight is a click-toggle).
+    if (held(7)) this.mouseDown.add(0);
+    else this.mouseDown.delete(0);
+    if (this.mode === "infantry") {
+      if (held(6)) this.mouseDown.add(2);
+      else this.mouseDown.delete(2);
+    }
+
+    // Right stick: infantry/tank treat aimYaw/aimPitch as a persistent look
+    // direction, so the stick accumulates onto it at a fixed rate, the same
+    // way repeated mousemove deltas do. A plane treats those fields as a
+    // live control-stick deflection that recentres itself every frame (see
+    // controlPlane), so the stick sets them directly instead.
+    if (this.mode === "plane") {
+      if (Math.abs(rx) > 0 || Math.abs(ry) > 0) {
+        this.aimYaw = clamp(rx * 1.2, -1.2, 1.2);
+        this.aimPitch = clamp(ry * 1.2, -1.2, 1.2);
+      }
+    } else {
+      const rate = this.zoomed ? 0.9 : 2.6;
+      this.aimYaw -= rx * rate * dt;
+      this.aimPitch = clamp(this.aimPitch - ry * rate * dt, -1.35, 1.35);
+    }
+
+    // Everything else is a one-shot press: fire only on the rising edge, and
+    // route through the same code path a keyboard press would take.
+    const edge = (i: number, code: string) => {
+      const now = held(i);
+      if (now && !this.gpPrevButtons[i]) this.fireGamepadAction(code);
+      this.gpPrevButtons[i] = now;
+    };
+    edge(9, "Escape"); // Start
+    edge(8, "KeyV"); // Back/Select — third person
+    edge(2, "KeyR"); // X
+    edge(3, "KeyZ"); // Y — prone
+    edge(1, "KeyC"); // B — crouch (also the held coax check above)
+    edge(4, "KeyG"); // LB — grenade
+    edge(5, "KeyF"); // RB — enter/exit vehicle, always: a tank driver still needs a way out
+    edge(11, "RStick"); // Right stick click — tank gunner's sight toggle
+    edge(12, "Digit1"); // D-pad up
+    edge(14, "Digit2"); // D-pad left
+    edge(15, "Digit3"); // D-pad right
+    edge(13, "KeyB"); // D-pad down — drop bomb
+  }
+
+  private setKey(code: string, down: boolean) {
+    if (down) this.keys.add(code);
+    else this.keys.delete(code);
+  }
+
+  /** Routes one gamepad press through the same handling a keyboard press gets. */
+  private fireGamepadAction(code: string) {
+    if (code === "Escape") {
+      this.setPaused(!this.paused);
+      return;
+    }
+    if (this.phase !== "playing" || this.paused) return;
+    if (code === "RStick") {
+      if (this.mode === "tank") this.zoomed = !this.zoomed;
+      return;
+    }
+    this.performKeyAction(code);
+  }
 
   /* ---------------- public API ---------------- */
 
@@ -875,7 +991,10 @@ export class Ironfront {
   };
 
   private step(dt: number) {
-    if (this.phase === "playing") this.controlPlayer(dt);
+    if (this.phase === "playing") {
+      this.pollGamepad(dt);
+      this.controlPlayer(dt);
+    }
 
     const ctx: AiContext = {
       terrain: this.terrain,
@@ -2140,6 +2259,7 @@ export class Ironfront {
       prompt: this.promptText(),
       spawnOptions: { tanks: this.countFree("tank"), planes: this.countFree("plane") },
       muted: this.audio.muted,
+      gamepadConnected: this.gpConnected,
       paused: this.paused,
       aimDistance: this.aimDistance,
     });

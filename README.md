@@ -24,7 +24,7 @@ inherited traits drift across the population.
 
 ![day 8 of the second year: 344 alive across fourteen peoples, the age of Settled four-fifths done, and a third of them aware they are being observed](docs/colony.png)
 
-> This repository also holds **[Ironfront](#ironfront)** — an unrelated
+> This repository also holds **[Claudefield](#claudefield)** — an unrelated
 > low-poly combined-arms battle game that happens to share the toolchain. It is
 > a separate game with its own entry point; the two do not touch.
 
@@ -33,7 +33,7 @@ inherited traits drift across the population.
 ```bash
 npm install
 npm run dev      # http://localhost:5173             — Thronglets
-                 # http://localhost:5173/ironfront.html — Ironfront
+                 # http://localhost:5173/ironfront.html — Claudefield
 ```
 
 `npm run build` produces a static site in `dist/` — both games are pure
@@ -355,9 +355,9 @@ src/
 [src/thronglets/README.md](src/thronglets/README.md) goes into how the AI and
 the renderer work.
 
-The section above is Thronglets; Ironfront's own layout is listed below.
+The section above is Thronglets; Claudefield's own layout is listed below.
 
-## Ironfront
+## Claudefield
 
 A second, entirely separate game living in the same repository: low-poly
 combined arms, somewhere between Arma and War Thunder. Infantry, tanks and
@@ -395,26 +395,31 @@ is scripted: the fight goes where the AI takes it. Holding more of the three
 points bleeds the other side's reinforcement tickets, and the match ends when
 one side runs out.
 
+A gamepad works too — plug one in and press any button; a controller and
+the keyboard both drive the same movement and aim state, so nothing needs
+switching, and the HUD's corner readout confirms one is connected.
+
 ### Controls
 
-| | |
-| --- | --- |
-| WASD · Shift | Move · sprint |
-| C · Z | Crouch · prone |
-| LMB · RMB | Fire · aim down sights (gunner's sight in a tank) |
-| R · G | Reload · grenade |
-| 1 · 2 | Rifle · AT launcher, or AP · HE in a tank |
-| F · V | Enter/leave a vehicle · first/third person |
-| C (in a tank) | Coaxial machine gun |
-| Mouse · A/D · W/S (flying) | Pitch and roll · rudder · throttle |
-| B | Drop a bomb |
-| Esc · M | Pause · mute |
+| Keyboard | Controller | |
+| --- | --- | --- |
+| WASD · Shift | Left stick · L3 | Move · sprint |
+| C · Z | B · Y | Crouch · prone |
+| LMB · RMB | RT · LT | Fire · aim down sights (gunner's sight in a tank) |
+| R · G | X · LB | Reload · grenade |
+| 1 / 2 / 3 | D-pad | Switch loadout slot, or AP · HE in a tank |
+| F · V | RB · Back | Enter/leave a vehicle · first/third person |
+| C (in a tank) | RT | Coaxial machine gun |
+| — | Right-stick click | Gunner's sight toggle (in a tank) |
+| Mouse · A/D · W/S (flying) | Right stick · A/D · W/S | Pitch and roll · rudder · throttle |
+| B | D-pad down | Drop a bomb |
+| Esc · M | Start · — | Pause · mute |
 
 ### Layout
 
 ```
 src/
-  Ironfront.tsx         the page: canvas + HUD, minimap, deploy screens
+  Ironfront.tsx         the page: canvas + HUD, minimap, deploy screens (still Claudefield — the component and file are named for the internal module, not the game's title)
   ironfront/
     game.ts             world assembly, player control, match flow, camera
     combat.ts           projectiles, ballistics, armour penetration, blast

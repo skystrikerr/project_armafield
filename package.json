@@ -12,10 +12,15 @@
     "check": "tsc --noEmit",
     "electron": "electron .",
     "electron:dev": "THRONGLETS_DEV_URL=http://localhost:5173 electron .",
+    "electron:claudefield": "electron electron/claudefield-main.cjs",
+    "electron:claudefield:dev": "CLAUDEFIELD_DEV_URL=http://localhost:5173/ironfront.html electron electron/claudefield-main.cjs",
     "dist": "npm run build && electron-builder --publish=never",
     "dist:win": "npm run build && electron-builder --win portable --publish=never",
+    "dist:claudefield:win": "npm run build && electron-builder --win portable --publish=never --config electron-builder.claudefield.json",
     "dist:linux": "npm run build && electron-builder --linux AppImage --publish=never",
-    "dist:mac": "npm run build && electron-builder --mac --publish=never"
+    "dist:claudefield:linux": "npm run build && electron-builder --linux AppImage --publish=never --config electron-builder.claudefield.json",
+    "dist:mac": "npm run build && electron-builder --mac --publish=never",
+    "dist:claudefield:mac": "npm run build && electron-builder --mac --publish=never --config electron-builder.claudefield.json"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -53,16 +58,38 @@
       "!node_modules/**/*"
     ],
     "win": {
-      "target": [{ "target": "portable", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "Thronglets-${version}-win.${ext}"
     },
     "linux": {
-      "target": [{ "target": "AppImage", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "category": "Game",
       "artifactName": "Thronglets-${version}-linux.${ext}"
     },
     "mac": {
-      "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
       "category": "public.app-category.games",
       "artifactName": "Thronglets-${version}-mac.${ext}"
     }

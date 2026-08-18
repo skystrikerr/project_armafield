@@ -1,0 +1,31 @@
+{
+  "appId": "com.skystrikerr.claudefield",
+  "productName": "Claudefield",
+  "asar": true,
+  "directories": {
+    "output": "release"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json",
+    "!node_modules/**/*"
+  ],
+  "extraMetadata": {
+    "main": "electron/claudefield-main.cjs"
+  },
+  "win": {
+    "target": [{ "target": "portable", "arch": ["x64"] }],
+    "artifactName": "Claudefield-${version}-win.${ext}"
+  },
+  "linux": {
+    "target": [{ "target": "AppImage", "arch": ["x64"] }],
+    "category": "Game",
+    "artifactName": "Claudefield-${version}-linux.${ext}"
+  },
+  "mac": {
+    "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+    "category": "public.app-category.games",
+    "artifactName": "Claudefield-${version}-mac.${ext}"
+  }
+}

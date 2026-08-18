@@ -92,7 +92,7 @@ export default function Ironfront() {
 
       {hud && (
         <div className="pointer-events-none absolute right-3 top-3 text-[10px] uppercase tracking-[0.2em] text-white/35">
-          {hud.fps} fps{hud.muted ? " · muted" : ""}
+          {hud.fps} fps{hud.muted ? " · muted" : ""}{hud.gamepadConnected ? " · controller" : ""}
         </div>
       )}
     </div>
@@ -503,7 +503,7 @@ function Briefing({ onDeploy, selectedClass, onSelectClass, selectedPrimary, onS
   return (
     <Shell>
       <div className="text-[10px] uppercase tracking-[0.4em] text-white/35">Combined arms · Valley sector</div>
-      <h1 className="mt-2 text-4xl font-semibold tracking-tight">IRONFRONT</h1>
+      <h1 className="mt-2 text-4xl font-semibold tracking-tight">CLAUDEFIELD</h1>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
         Two companies, three villages and a road between them. Take the capture points and hold them: whoever
         owns more ground bleeds the other side's reinforcements away. Fight it on foot, crew a tank, or take
@@ -728,36 +728,37 @@ function Controls({ onClose }: { onClose: () => void }) {
 }
 
 function ControlsGrid() {
+  // Keyboard bindings first, controller equivalent after the "·".
   const groups: { title: string; rows: [string, string][] }[] = [
     {
       title: "On foot",
       rows: [
-        ["WASD", "Move"],
-        ["Shift", "Sprint"],
-        ["C / Z", "Crouch / prone"],
-        ["LMB / RMB", "Fire / aim down sights"],
-        ["R · G", "Reload · grenade"],
-        ["1 / 2 / 3", "Switch loadout slot"],
+        ["WASD · stick", "Move"],
+        ["Shift · L3", "Sprint"],
+        ["C / Z · B / Y", "Crouch / prone"],
+        ["LMB/RMB · RT/LT", "Fire / aim down sights"],
+        ["R · G · X · LB", "Reload · grenade"],
+        ["1/2/3 · D-pad", "Switch loadout slot"],
       ],
     },
     {
       title: "In a tank",
       rows: [
-        ["W / S", "Throttle / reverse"],
-        ["A / D", "Steer"],
-        ["Mouse", "Traverse turret"],
-        ["LMB · C", "Main gun · coaxial"],
-        ["RMB", "Gunner's sight"],
+        ["W/S · stick", "Throttle / reverse"],
+        ["A/D · stick", "Steer"],
+        ["Mouse · R-stick", "Traverse turret"],
+        ["LMB · C · RT", "Main gun · coaxial"],
+        ["RMB · R3", "Gunner's sight"],
         ["1 · 2", "Load AP · HE"],
       ],
     },
     {
       title: "In the air",
       rows: [
-        ["Mouse", "Pitch and roll"],
+        ["Mouse · R-stick", "Pitch and roll"],
         ["A / D", "Rudder"],
         ["W / S", "Throttle"],
-        ["LMB · B", "Cannons · bomb"],
+        ["LMB · B · RT · ↓", "Cannons · bomb"],
         ["", ""],
         ["", ""],
       ],
@@ -765,10 +766,10 @@ function ControlsGrid() {
     {
       title: "General",
       rows: [
-        ["F", "Enter / leave vehicle"],
-        ["V", "First / third person"],
+        ["F · RB", "Enter / leave vehicle"],
+        ["V · Back", "First / third person"],
         ["M", "Mute"],
-        ["Esc", "Pause"],
+        ["Esc · Start", "Pause"],
         ["", ""],
         ["", ""],
       ],
