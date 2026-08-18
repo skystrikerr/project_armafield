@@ -13,6 +13,7 @@ import {
   tankTurretGeometry,
   wreckGeometry,
 } from "./models";
+import { weaponCategory } from "./eras";
 import {
   TANK_RING_Y,
   TEAM_COLOR,
@@ -186,8 +187,12 @@ export class SoldierRig {
     // Sprinting soldiers carry the weapon low.
     this.armsPivot.rotation.z = s.sprinting ? -0.5 : 0;
 
-    this.rifle.visible = s.weapon === "rifle";
-    this.launcher.visible = s.weapon === "launcher";
+    // Only two weapon meshes exist today — everything reads as the rifle
+    // silhouette except AT weapons, which read as the launcher. A wider
+    // roster of low-poly meshes is a follow-up art pass, not a data one.
+    const heavy = weaponCategory(s.weapon) === "heavy";
+    this.rifle.visible = !heavy;
+    this.launcher.visible = heavy;
   }
 
   dispose() {

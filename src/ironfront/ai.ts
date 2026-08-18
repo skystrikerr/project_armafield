@@ -19,6 +19,7 @@ import {
   type Unit,
 } from "./units";
 import { angleDelta, approachAngle, clamp } from "./random";
+import { heavyWeaponOf, weaponCategory } from "./eras";
 
 /**
  * Squad and crew behaviour. Everything is a small state machine on a think
@@ -143,7 +144,9 @@ export function updateSoldierAI(s: Soldier, ctx: AiContext, dt: number) {
       ai.strafe = 0;
     } else {
       const d = s.pos.distanceTo(target.pos);
-      const scared = s.hp < 45 || s.suppression > 55 || (target.kind === "tank" && s.mags.launcher <= 0 && s.ammo.launcher <= 0);
+      const heavy = heavyWeaponOf(s.classId);
+      const atExhausted = !heavy || (s.mags[heavy] <= 0 && s.ammo[heavy] <= 0);
+      const scared = s.hp < 45 || s.suppression > 55 || (target.kind === "tank" && atExhausted);
       if (scared && now > ai.coverUntil) {
         ai.state = "cover";
         const spot = coverSpot(s, target.pos, terrain, _v);
@@ -161,9 +164,10 @@ export function updateSoldierAI(s: Soldier, ctx: AiContext, dt: number) {
           ai.goal.copy(s.pos);
         }
       }
-      // Pull out the launcher for armour, put it away for people.
-      const wantLauncher = target.kind === "tank" && d < 130 && (s.ammo.launcher > 0 || s.mags.launcher > 0);
-      s.weapon = wantLauncher ? "launcher" : "rifle";
+      // Pull out the AT weapon for armour, if this soldier carries one; put it
+      // away for people.
+      const wantHeavy = heavy !== null && target.kind === "tank" && d < 130 && (s.ammo[heavy] > 0 || s.mags[heavy] > 0);
+      s.weapon = wantHeavy && heavy ? heavy : s.loadout[0];
     }
   }
 
@@ -225,7 +229,7 @@ export function updateSoldierAI(s: Soldier, ctx: AiContext, dt: number) {
     s.yaw = approachAngle(s.yaw, s.aimYaw, dt * 5);
 
     const aligned = Math.abs(angleDelta(s.aimYaw, wantYaw)) < 0.09;
-    const inRange = dist < (s.weapon === "launcher" ? 140 : 175);
+    const inRange = dist < (weaponCategory(s.weapon) === "heavy" ? 140 : 175);
     if (aligned && inRange && now >= s.reloadUntil) {
       if (now >= ai.burstCooldown) {
         if (now >= ai.burstUntil) {
@@ -271,8 +275,8 @@ function fireSoldier(s: Soldier, ctx: AiContext, dist: number) {
       s.mags[s.weapon]--;
       s.ammo[s.weapon] = spec.magazine;
       s.reloadUntil = ctx.now + spec.reloadTime;
-    } else if (s.weapon === "launcher") {
-      s.weapon = "rifle";
+    } else if (weaponCategory(s.weapon) === "heavy") {
+      s.weapon = s.loadout[0];
     }
     return;
   }
@@ -286,7 +290,7 @@ function fireSoldier(s: Soldier, ctx: AiContext, dist: number) {
   // Bot dispersion: worse at range, worse when the shooter is rattled.
   const err = spec.spread * (2.6 - ctx.skill * 1.4) * (1 + dist / 260) * (1 + s.suppression / 90);
   ctx.battle.fire({
-    kind: s.weapon === "launcher" ? "rocket" : "bullet",
+    kind: weaponCategory(s.weapon) === "heavy" ? "rocket" : "bullet",
     weapon: s.weapon,
     from: _muzzle,
     dir: _dir,

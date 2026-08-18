@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Ironfront as Game, type HudSnapshot, type MinimapUnit } from "@/ironfront/game";
+import { PLAYABLE_CLASSES } from "@/ironfront/eras";
 import { MAP_HALF, ZONES } from "@/ironfront/terrain";
-import { TEAM_COLOR } from "@/ironfront/units";
+import { TEAM_COLOR, type ClassId } from "@/ironfront/units";
 import { cn } from "@/lib/utils";
 
 /**
@@ -31,9 +32,14 @@ export default function Ironfront() {
     };
   }, []);
 
-  const deploy = useCallback((as: "infantry" | "tank" | "plane") => {
-    gameRef.current?.deploy(as);
-  }, []);
+  const [selectedClass, setSelectedClass] = useState<ClassId>(PLAYABLE_CLASSES[0].id);
+
+  const deploy = useCallback(
+    (as: "infantry" | "tank" | "plane") => {
+      gameRef.current?.deploy(as, selectedClass);
+    },
+    [selectedClass],
+  );
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0d1117] font-[JetBrains_Mono,ui-monospace,monospace] text-[#e6e3da] select-none">
@@ -51,8 +57,12 @@ export default function Ironfront() {
         </div>
       )}
 
-      {hud?.phase === "briefing" && <Briefing onDeploy={deploy} />}
-      {hud?.phase === "deploy" && <Deploy hud={hud} onDeploy={deploy} />}
+      {hud?.phase === "briefing" && (
+        <Briefing onDeploy={deploy} selectedClass={selectedClass} onSelectClass={setSelectedClass} />
+      )}
+      {hud?.phase === "deploy" && (
+        <Deploy hud={hud} onDeploy={deploy} selectedClass={selectedClass} onSelectClass={setSelectedClass} />
+      )}
       {hud?.phase === "over" && <Result hud={hud} />}
       {hud?.paused && hud.phase === "playing" && (
         <Pause hud={hud} onResume={() => gameRef.current?.setPaused(false)} onControls={() => setShowControls(true)} />
@@ -279,7 +289,7 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
 
 function InfantryPanel({ hud }: { hud: HudSnapshot }) {
   return (
-    <div>
+    <div className="w-56">
       <div className="flex items-baseline justify-between">
         <span className="text-xs uppercase tracking-[0.16em] text-white/55">{hud.weapon}</span>
         <span className="text-2xl font-semibold tabular-nums">
@@ -292,9 +302,22 @@ function InfantryPanel({ hud }: { hud: HudSnapshot }) {
           <div className="h-full bg-[#ffd479]" style={{ width: `${hud.reload * 100}%` }} />
         </div>
       )}
+      <div className="mt-2 flex gap-1.5">
+        {hud.loadout.map((w) => (
+          <div
+            key={w.slot}
+            className={cn(
+              "flex-1 rounded-sm border px-1.5 py-1 text-center text-[9px] uppercase tracking-wider",
+              w.equipped ? "border-[#ffd479]/60 bg-[#ffd479]/10 text-[#ffd479]" : "border-white/10 text-white/40",
+            )}
+          >
+            [{w.slot + 1}] {w.name}
+          </div>
+        ))}
+      </div>
       <div className="mt-2 flex justify-between text-[10px] uppercase tracking-[0.16em] text-white/40">
+        <span>{hud.className}</span>
         <span>Grenades {hud.grenades}</span>
-        <span>[1] rifle · [2] AT</span>
       </div>
     </div>
   );
@@ -447,7 +470,13 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Briefing({ onDeploy }: { onDeploy: (as: "infantry" | "tank" | "plane") => void }) {
+type DeployProps = {
+  onDeploy: (as: "infantry" | "tank" | "plane") => void;
+  selectedClass: ClassId;
+  onSelectClass: (id: ClassId) => void;
+};
+
+function Briefing({ onDeploy, selectedClass, onSelectClass }: DeployProps) {
   return (
     <Shell>
       <div className="text-[10px] uppercase tracking-[0.4em] text-white/35">Combined arms · Valley sector</div>
@@ -457,8 +486,9 @@ function Briefing({ onDeploy }: { onDeploy: (as: "infantry" | "tank" | "plane") 
         owns more ground bleeds the other side's reinforcements away. Fight it on foot, crew a tank, or take
         one of the aircraft off the strip behind your lines.
       </p>
-      <div className="mt-6 grid grid-cols-3 gap-3">
-        <DeployButton title="Infantry" note="Rifle, AT launcher, grenades" onClick={() => onDeploy("infantry")} />
+      <ClassPicker selected={selectedClass} onSelect={onSelectClass} />
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        <DeployButton title="Infantry" note="Deploy with the class above" onClick={() => onDeploy("infantry")} />
         <DeployButton title="Tank" note="75 mm, AP and HE, real armour" onClick={() => onDeploy("tank")} />
         <DeployButton title="Aircraft" note="20 mm cannon and two bombs" onClick={() => onDeploy("plane")} />
       </div>
@@ -467,7 +497,7 @@ function Briefing({ onDeploy }: { onDeploy: (as: "infantry" | "tank" | "plane") 
   );
 }
 
-function Deploy({ hud, onDeploy }: { hud: HudSnapshot; onDeploy: (as: "infantry" | "tank" | "plane") => void }) {
+function Deploy({ hud, onDeploy, selectedClass, onSelectClass }: DeployProps & { hud: HudSnapshot }) {
   const waiting = hud.respawnIn > 0;
   return (
     <Shell>
@@ -477,8 +507,9 @@ function Deploy({ hud, onDeploy }: { hud: HudSnapshot; onDeploy: (as: "infantry"
           {waiting ? `Reinforcements in ${hud.respawnIn.toFixed(1)}s` : "Ready"}
         </div>
       </div>
-      <div className="mt-5 grid grid-cols-3 gap-3">
-        <DeployButton title="Infantry" note="Always available" disabled={waiting} onClick={() => onDeploy("infantry")} />
+      <ClassPicker selected={selectedClass} onSelect={onSelectClass} />
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        <DeployButton title="Infantry" note="Deploy with the class above" disabled={waiting} onClick={() => onDeploy("infantry")} />
         <DeployButton
           title="Tank"
           note={hud.spawnOptions.tanks > 0 ? `${hud.spawnOptions.tanks} in the yard` : "None left in the yard"}
@@ -501,6 +532,33 @@ function Deploy({ hud, onDeploy }: { hud: HudSnapshot; onDeploy: (as: "infantry"
         </span>
       </div>
     </Shell>
+  );
+}
+
+function ClassPicker({ selected, onSelect }: { selected: ClassId; onSelect: (id: ClassId) => void }) {
+  return (
+    <div className="mt-6">
+      <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-white/35">Class</div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {PLAYABLE_CLASSES.map((c) => (
+          <button
+            key={c.id}
+            type="button"
+            onClick={() => onSelect(c.id)}
+            aria-pressed={selected === c.id}
+            className={cn(
+              "rounded border p-3 text-left transition",
+              selected === c.id
+                ? "border-[#ffd479]/70 bg-[#ffd479]/10"
+                : "border-white/12 bg-white/[0.04] hover:border-white/30 hover:bg-white/[0.08]",
+            )}
+          >
+            <div className="text-sm font-semibold">{c.name}</div>
+            <div className="mt-1 text-[11px] leading-snug text-white/45">{c.description}</div>
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -605,7 +663,7 @@ function ControlsGrid() {
         ["C / Z", "Crouch / prone"],
         ["LMB / RMB", "Fire / aim down sights"],
         ["R · G", "Reload · grenade"],
-        ["1 · 2", "Rifle · AT launcher"],
+        ["1 / 2 / 3", "Switch loadout slot"],
       ],
     },
     {

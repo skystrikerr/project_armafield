@@ -57,6 +57,7 @@ import {
   makePlane,
   makeSoldier,
   makeTank,
+  type ClassId,
   type Plane,
   type ShellType,
   type Soldier,
@@ -65,6 +66,7 @@ import {
   type Team,
   type Unit,
 } from "./units";
+import { classById, equipSoldier, squadClassFor, weaponCategory } from "./eras";
 import { angleDelta, approachAngle, clamp, mulberry32, range } from "./random";
 
 /* ---------------- HUD contract ---------------- */
@@ -88,6 +90,9 @@ export type HudSnapshot = {
   hp: number;
   stance: string;
   stamina: number;
+  className: string;
+  /** Every weapon this soldier carries, in loadout-slot order, for the HUD's weapon strip. */
+  loadout: { slot: number; name: string; equipped: boolean }[];
   weapon: string;
   ammo: number;
   mags: number;
@@ -190,6 +195,14 @@ export class Ironfront {
   private ridingPlane: Plane | null = null;
   private aimYaw = 0;
   private aimPitch = 0;
+  /** Per-shot camera kick that eases back out, plus idle weapon drift — both
+   *  additive on top of the raw mouse-driven aim above, so recoil never
+   *  fights the player's own tracking the way mutating `aimYaw` would. */
+  private recoilYaw = 0;
+  private recoilPitch = 0;
+  private swayPhase = 0;
+  private effAimYaw = 0;
+  private effAimPitch = 0;
   private thirdPerson = false;
   private zoomed = false;
   private aimDistance: number | null = null;
@@ -202,7 +215,7 @@ export class Ironfront {
   private respawnAt = 0;
   /** Kills the player has scored, on foot or in anything they were crewing. */
   private playerKills = 0;
-  private reloadWeapon: "rifle" | "launcher" | null = null;
+  private reloadWeapon: string | null = null;
 
   private now = 0;
   private nextId = 1;
@@ -466,7 +479,7 @@ export class Ironfront {
     for (const team of ["blue", "red"] as Team[]) {
       const isPlayerTeam = team === "blue";
       for (let i = 0; i < SQUAD_SIZE; i++) {
-        const s = this.makeBot(team);
+        const s = this.makeBot(team, i);
         if (isPlayerTeam && i === 0) {
           // The player takes the first slot on the blue roster.
           s.isPlayer = true;
@@ -517,10 +530,11 @@ export class Ironfront {
     return new THREE.Vector3(x, this.terrain.heightAt(x, z), z);
   }
 
-  private makeBot(team: Team): Soldier {
+  private makeBot(team: Team, squadIndex: number): Soldier {
     const id = this.nextId++;
     const s = makeSoldier(id, team, new THREE.Vector3(), false);
     s.name = callsign(id);
+    equipSoldier(s, squadClassFor(squadIndex));
     s.ai = {
       state: "advance",
       targetId: null,
@@ -692,12 +706,15 @@ export class Ironfront {
         this.audio.setMuted(!this.audio.muted);
         break;
       case "Digit1":
-        if (this.mode === "infantry") this.player.weapon = "rifle";
+        if (this.mode === "infantry") this.switchWeapon(0);
         else if (this.mode === "tank" && this.ridingTank) this.selectShell(this.ridingTank, "ap");
         break;
       case "Digit2":
-        if (this.mode === "infantry") this.player.weapon = "launcher";
+        if (this.mode === "infantry") this.switchWeapon(1);
         else if (this.mode === "tank" && this.ridingTank) this.selectShell(this.ridingTank, "he");
+        break;
+      case "Digit3":
+        if (this.mode === "infantry") this.switchWeapon(2);
         break;
       default:
         break;
@@ -760,18 +777,15 @@ export class Ironfront {
     this.audio.setMuted(muted);
   }
 
-  /** Called from the deploy screen. */
-  deploy(as: PlayerMode) {
+  /** Called from the deploy screen. `classId` only matters for infantry. */
+  deploy(as: PlayerMode, classId: ClassId = "rifleman") {
     if (this.phase !== "deploy" && this.phase !== "briefing") return;
     this.leaveVehicle(false);
     this.player.alive = true;
     this.player.hp = 100;
     this.player.stamina = 100;
     this.player.stance = "stand";
-    this.player.weapon = "rifle";
-    this.player.ammo = { rifle: WEAPONS.rifle.magazine, launcher: 1 };
-    this.player.mags = { rifle: 6, launcher: 2 };
-    this.player.grenades = 3;
+    equipSoldier(this.player, classId);
     this.player.reloadUntil = 0;
     this.reloadWeapon = null;
     this.placeAtSpawn(this.player);
@@ -921,8 +935,9 @@ export class Ironfront {
   private controlInfantry(dt: number) {
     const s = this.player;
     this.settleReload();
-    s.aimYaw = this.aimYaw;
-    s.aimPitch = this.aimPitch;
+    this.updateRecoilAndSway(dt, s);
+    s.aimYaw = this.effAimYaw;
+    s.aimPitch = this.effAimPitch;
 
     let fx = 0;
     let fz = 0;
@@ -972,10 +987,39 @@ export class Ironfront {
     }
     this.zoomed = this.mouseDown.has(2);
 
-    // Auto-reload the launcher after its single round.
-    if (s.weapon === "launcher" && s.ammo.launcher === 0 && s.mags.launcher > 0 && this.now >= s.reloadUntil) {
+    // Single-shot weapons (the AT launcher, marksman-style bolt actions with
+    // an empty chamber) auto-reload rather than sitting empty in your hands.
+    const equippedSpec = WEAPONS[s.weapon];
+    if (equippedSpec.magazine === 1 && s.ammo[s.weapon] === 0 && s.mags[s.weapon] > 0 && this.now >= s.reloadUntil) {
       this.reloadPlayer();
     }
+  }
+
+  /** Equip the weapon in loadout slot `slot`, if the soldier carries one there. */
+  private switchWeapon(slot: number) {
+    const id = this.player.loadout[slot];
+    if (id) this.player.weapon = id;
+  }
+
+  /**
+   * Decays the recoil kick from previous shots and advances idle sway, then
+   * combines both with the raw mouse-driven aim into `effAimYaw/effAimPitch`
+   * — what firing direction and the camera actually use this frame.
+   */
+  private updateRecoilAndSway(dt: number, s: Soldier) {
+    const spec = WEAPONS[s.weapon];
+    const recover = spec.recoilRecover ?? 5;
+    this.recoilYaw *= Math.max(0, 1 - recover * dt);
+    this.recoilPitch *= Math.max(0, 1 - recover * dt);
+
+    this.swayPhase += dt;
+    const sprinting = s.sprinting;
+    const swayBase = (spec.swayAmount ?? 0.006) * (this.zoomed ? spec.adsSwayMul ?? 0.4 : 1) * (sprinting ? 0 : 1);
+    const swayYaw = Math.sin(this.swayPhase * 1.15) * swayBase;
+    const swayPitch = Math.sin(this.swayPhase * 1.47 + 1.1) * swayBase * 0.6;
+
+    this.effAimYaw = this.aimYaw + this.recoilYaw + swayYaw;
+    this.effAimPitch = clamp(this.aimPitch + this.recoilPitch + swayPitch, -1.35, 1.35);
   }
 
   private fireInfantry(s: Soldier) {
@@ -983,6 +1027,9 @@ export class Ironfront {
     s.ammo[s.weapon]--;
     s.nextShotAt = this.now + 60 / spec.rpm;
     s.flash = 0.05;
+    const kick = spec.recoilKick ?? 0.02;
+    this.recoilPitch += kick * (0.75 + Math.random() * 0.5);
+    this.recoilYaw += (Math.random() - 0.5) * kick * 0.5;
     muzzleOf(s, this.tmpVec);
     const cp = Math.cos(s.aimPitch);
     this.tmpVec2.set(Math.sin(s.aimYaw) * cp, Math.sin(s.aimPitch), Math.cos(s.aimYaw) * cp).normalize();
@@ -991,7 +1038,7 @@ export class Ironfront {
     const stanceScale = s.stance === "prone" ? 0.4 : s.stance === "crouch" ? 0.7 : 1;
     const aimScale = this.zoomed ? 0.45 : 1;
     this.battle.fire({
-      kind: s.weapon === "launcher" ? "rocket" : "bullet",
+      kind: weaponCategory(s.weapon) === "heavy" ? "rocket" : "bullet",
       weapon: s.weapon,
       from: this.tmpVec,
       dir: this.tmpVec2,
@@ -1729,10 +1776,7 @@ export class Ironfront {
         s.hp = 100;
         s.stance = "stand";
         s.suppression = 0;
-        s.weapon = "rifle";
-        s.ammo = { rifle: WEAPONS.rifle.magazine, launcher: 1 };
-        s.mags = { rifle: 6, launcher: 2 };
-        s.grenades = 2;
+        equipSoldier(s, s.classId);
         s.reloadUntil = 0;
         this.placeAtSpawn(s);
       }
@@ -1872,22 +1916,23 @@ export class Ironfront {
 
     let fov = 70;
     if (this.mode === "infantry") {
-      fov = this.zoomed ? 32 : 72;
+      const zoomMul = WEAPONS[this.player.weapon]?.adsZoom ?? 2.2;
+      fov = this.zoomed ? 72 / zoomMul : 72;
       const eye = STANCE_EYE[this.player.stance];
       if (this.thirdPerson) {
         const back = 5.5;
-        const cp = Math.cos(this.aimPitch);
+        const cp = Math.cos(this.effAimPitch);
         this.camera.position.set(
-          this.player.pos.x - Math.sin(this.aimYaw) * cp * back + Math.cos(this.aimYaw) * 1.2,
-          this.player.pos.y + eye + 1.4 + Math.sin(this.aimPitch) * back,
-          this.player.pos.z - Math.cos(this.aimYaw) * cp * back - Math.sin(this.aimYaw) * 1.2,
+          this.player.pos.x - Math.sin(this.effAimYaw) * cp * back + Math.cos(this.effAimYaw) * 1.2,
+          this.player.pos.y + eye + 1.4 + Math.sin(this.effAimPitch) * back,
+          this.player.pos.z - Math.cos(this.effAimYaw) * cp * back - Math.sin(this.effAimYaw) * 1.2,
         );
         this.pullInCamera(this.player.pos.x, this.player.pos.y + eye, this.player.pos.z, 1.4);
       } else {
         const bob = Math.hypot(this.player.vel.x, this.player.vel.z) > 0.5 ? Math.sin(this.player.gait * 4.8) * 0.045 : 0;
         this.camera.position.set(this.player.pos.x, this.player.pos.y + eye + bob, this.player.pos.z);
       }
-      this.applyLook(this.aimYaw, this.aimPitch);
+      this.applyLook(this.effAimYaw, this.effAimPitch);
     } else if (this.mode === "tank" && this.ridingTank) {
       const t = this.ridingTank;
       if (this.zoomed && !this.thirdPerson) {
@@ -1959,8 +2004,13 @@ export class Ironfront {
 
   /** Range to whatever the crosshair is on, used by the sight and the HUD. */
   private measureAim() {
-    const cp = Math.cos(this.aimPitch);
-    this.tmpVec2.set(Math.sin(this.aimYaw) * cp, Math.sin(this.aimPitch), Math.cos(this.aimYaw) * cp).normalize();
+    // Infantry aims along the same effective direction the camera renders
+    // (raw mouse plus recoil and sway); other modes have neither, so the raw
+    // mouse-driven values are already what the camera shows.
+    const yaw = this.mode === "infantry" ? this.effAimYaw : this.aimYaw;
+    const pitch = this.mode === "infantry" ? this.effAimPitch : this.aimPitch;
+    const cp = Math.cos(pitch);
+    this.tmpVec2.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp).normalize();
     if (this.mode === "plane" && this.ridingPlane) forward(this.ridingPlane, this.tmpVec2);
     let best = Infinity;
     const origin = this.camera.position;
@@ -2030,6 +2080,8 @@ export class Ironfront {
       hp: Math.max(0, Math.round(t ? t.hp : p ? p.hp : s.hp)),
       stance: s.stance,
       stamina: Math.round(s.stamina),
+      className: classById(s.classId).name,
+      loadout: s.loadout.map((id, slot) => ({ slot, name: WEAPONS[id].name, equipped: id === s.weapon })),
       weapon: t ? SHELLS[t.shell].name : p ? WEAPONS.aircannon.name : spec.name,
       ammo: s.ammo[s.weapon],
       mags: s.mags[s.weapon],

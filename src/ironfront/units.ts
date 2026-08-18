@@ -23,7 +23,10 @@ export const STANCE_SPEED: Record<Stance, number> = { stand: 4.1, crouch: 2.1, p
 /** Multiplier on incoming hit chance from AI: lying down is worth something. */
 export const STANCE_EXPOSURE: Record<Stance, number> = { stand: 1, crouch: 0.72, prone: 0.42 };
 
-export type WeaponId = "rifle" | "launcher" | "grenade" | "cannon" | "coax" | "aircannon" | "bomb";
+export type WeaponId = string;
+
+/** Soldier archetype id. Definitions live in eras.ts to keep the data out of this file. */
+export type ClassId = "rifleman" | "assault" | "support" | "marksman" | "officer";
 
 export type WeaponSpec = {
   name: string;
@@ -44,37 +47,25 @@ export type WeaponSpec = {
   reloadTime: number;
   auto: boolean;
   tracer: number;
+  /** Which low-poly mesh and AI stand-off distance this weapon reads as. Infantry only. */
+  category?: "rifle" | "smg" | "lmg" | "marksman" | "heavy" | "sidearm";
+  /** Camera kick per shot, in radians, and how fast it eases back out per second. */
+  recoilKick?: number;
+  recoilRecover?: number;
+  /** Idle aim drift amplitude in radians, and its multiplier while aiming down sights. */
+  swayAmount?: number;
+  adsSwayMul?: number;
+  /** Field-of-view divisor while aiming down sights. 1 = no zoom. */
+  adsZoom?: number;
 };
 
+/**
+ * Base table: universal and vehicle weapons only. Each era registers its own
+ * infantry roster into this same object at load time (see eras.ts), so every
+ * consumer here keeps resolving weapons through one generic `WEAPONS[id]`
+ * lookup regardless of which era populated it.
+ */
 export const WEAPONS: Record<WeaponId, WeaponSpec> = {
-  rifle: {
-    name: "Rifle",
-    rpm: 550,
-    speed: 480,
-    damage: 34,
-    penetration: 0,
-    blast: 0,
-    blastDamage: 0,
-    spread: 0.011,
-    magazine: 30,
-    reloadTime: 2.6,
-    auto: true,
-    tracer: 0xffd08a,
-  },
-  launcher: {
-    name: "AT Launcher",
-    rpm: 20,
-    speed: 105,
-    damage: 90,
-    penetration: 210,
-    blast: 6,
-    blastDamage: 85,
-    spread: 0.006,
-    magazine: 1,
-    reloadTime: 4.5,
-    auto: false,
-    tracer: 0xffb347,
-  },
   grenade: {
     name: "Grenade",
     rpm: 0,
@@ -183,9 +174,12 @@ export type Soldier = {
   stamina: number;
   sprinting: boolean;
   onGround: boolean;
-  weapon: "rifle" | "launcher";
-  ammo: Record<"rifle" | "launcher", number>;
-  mags: Record<"rifle" | "launcher", number>;
+  classId: ClassId;
+  /** Weapon ids this soldier carries, in number-key order. Index 0 is the primary. */
+  loadout: string[];
+  weapon: string;
+  ammo: Record<string, number>;
+  mags: Record<string, number>;
   grenades: number;
   reloadUntil: number;
   nextShotAt: number;
@@ -366,10 +360,14 @@ export function makeSoldier(id: number, team: Team, pos: THREE.Vector3, isPlayer
     stamina: 100,
     sprinting: false,
     onGround: true,
-    weapon: "rifle",
-    ammo: { rifle: WEAPONS.rifle.magazine, launcher: 1 },
-    mags: { rifle: 6, launcher: 2 },
-    grenades: 3,
+    // Left empty: the caller equips a class immediately via `equipSoldier`
+    // (eras.ts) before the soldier ever takes a frame of simulation.
+    classId: "rifleman",
+    loadout: [],
+    weapon: "",
+    ammo: {},
+    mags: {},
+    grenades: 0,
     reloadUntil: 0,
     nextShotAt: 0,
     flash: 0,
