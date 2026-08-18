@@ -241,9 +241,13 @@ export type Tank = {
   ai: TankBrain | null;
   name: string;
   kills: number;
-  /** "halftrack" skips the turret entirely and ferries soldiers instead of fighting. */
-  vehicleType: "medium" | "halftrack";
-  /** Soldier ids currently riding in the troop bed. Empty for medium tanks. */
+  /**
+   * Catalog id from matchConfig (e.g. "m4_sherman"). Every stat that varies
+   * between vehicles — armour, speed, turret arc, mesh — is looked up from
+   * that entry rather than stored here, so the catalog stays authoritative.
+   */
+  defId: string;
+  /** Soldier ids currently riding in the troop bed. Empty for gun tanks. */
   passengerIds: number[];
 };
 
@@ -301,37 +305,18 @@ export function isVehicle(u: Unit): u is Vehicle {
   return u.kind === "tank" || u.kind === "plane";
 }
 
-/** Armour in millimetres, by plate. Angling the hull is the whole game. */
-export const TANK_ARMOR = {
-  hullFront: 76,
-  hullSide: 38,
-  hullRear: 38,
-  hullTop: 19,
-  turretFront: 89,
-  turretSide: 51,
-  turretRear: 51,
-  turretTop: 19,
-};
-
 export const TANK_HULL = { hw: 1.65, hh: 0.75, hd: 3.2, y: 1.05 };
 export const TANK_TURRET = { hw: 1.15, hh: 0.5, hd: 1.45, y: 1.93, z: -0.25 };
 /** Height of the turret ring above the hull origin, and of the gun trunnion. */
 export const TANK_RING_Y = 1.45;
 export const TANK_GUN_Y = 1.95;
 
-export const TANK_MAX_SPEED = 12.5;
-export const TANK_REVERSE_SPEED = 5.5;
-export const TANK_ACCEL = 5.2;
-export const TANK_TURN_RATE = 0.72;
-
-/** A halftrack is unarmoured but road-quick and turns on a dime by comparison. */
-export const HALFTRACK_MAX_SPEED = 16;
-export const HALFTRACK_REVERSE_SPEED = 6;
-export const HALFTRACK_ACCEL = 7;
-export const HALFTRACK_TURN_RATE = 1.05;
-export const HALFTRACK_MAX_PASSENGERS = 6;
-export const HALFTRACK_HULL = { hw: 1.3, hh: 0.65, hd: 2.6, y: 0.95 };
-export const TURRET_TRAVERSE = 0.55;
+/**
+ * Speed, acceleration, turn rate, traverse and armour are no longer global:
+ * each vehicle carries its own in the matchConfig catalog, read via
+ * `mobilityOf()` / `armorOf()`. Only the geometry the collision boxes and
+ * rigs depend on stays fixed here.
+ */
 export const BARREL_RATE = 0.34;
 export const BARREL_MIN = -0.16;
 export const BARREL_MAX = 0.31;
@@ -393,14 +378,22 @@ export function makeSoldier(id: number, team: Team, pos: THREE.Vector3, isPlayer
   };
 }
 
+/**
+ * Builds a ground vehicle. `spec` carries the bits that vary per catalog
+ * entry; callers normally pass values straight out of a VehicleDef so the
+ * two never drift apart.
+ */
 export function makeTank(
   id: number,
   team: Team,
   pos: THREE.Vector3,
   yaw: number,
-  vehicleType: "medium" | "halftrack" = "medium",
+  spec: { defId: string; hp: number; name: string; ammo?: { ap: number; he: number } } = {
+    defId: "m4_sherman",
+    hp: 100,
+    name: "Tank",
+  },
 ): Tank {
-  const halftrack = vehicleType === "halftrack";
   return {
     kind: "tank",
     id,
@@ -412,12 +405,12 @@ export function makeTank(
     turret: 0,
     barrel: 0,
     speed: 0,
-    hp: halftrack ? 60 : 100,
+    hp: spec.hp,
     alive: true,
     respawnAt: 0,
     modules: { engine: 100, tracks: 100, gunner: 100, driver: 100, ammo: 100 },
     shell: "ap",
-    ammo: { ap: 42, he: 24 },
+    ammo: { ...(spec.ammo ?? { ap: 42, he: 24 }) },
     coaxAmmo: WEAPONS.coax.magazine,
     reloadUntil: 0,
     nextCoaxAt: 0,
@@ -426,11 +419,9 @@ export function makeTank(
     driverId: null,
     isPlayer: false,
     ai: null,
-    name: halftrack
-      ? `${team === "blue" ? "Wagon" : "Karren"}-${id % 90}`
-      : `${team === "blue" ? "Anvil" : "Kobra"}-${id % 90}`,
+    name: `${spec.name}-${id % 90}`,
     kills: 0,
-    vehicleType,
+    defId: spec.defId,
     passengerIds: [],
   };
 }

@@ -7,9 +7,7 @@ import {
   PLANE_MAX_SPEED,
   STANCE_EYE,
   TANK_GUN_Y,
-  TANK_MAX_SPEED,
   TANK_TURRET,
-  TURRET_TRAVERSE,
   WEAPONS,
   enemyOf,
   type Plane,
@@ -20,6 +18,7 @@ import {
 } from "./units";
 import { angleDelta, approachAngle, clamp } from "./random";
 import { heavyWeaponOfSoldier, weaponCategory } from "./eras";
+import { mobilityOf } from "./matchConfig";
 
 /**
  * Squad and crew behaviour. Everything is a small state machine on a think
@@ -348,6 +347,7 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
   if (!target || !target.alive) ai.hasLos = false;
 
   /* driving */
+  const mob = mobilityOf(t.defId);
   const trackHealth = t.modules.tracks / 100;
   const engineHealth = t.modules.engine / 100;
   const distToGoal = Math.hypot(ai.goal.x - t.pos.x, ai.goal.z - t.pos.z);
@@ -355,7 +355,7 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
   // Stuck detection: if we have barely moved while trying to, back up.
   const moved = t.pos.distanceTo(ai.lastPos);
   ai.lastPos.copy(t.pos);
-  if (distToGoal > 6 && moved < 0.03 * TANK_MAX_SPEED * 0.1) ai.stuckFor += dt;
+  if (distToGoal > 6 && moved < 0.03 * mob.maxSpeed * 0.1) ai.stuckFor += dt;
   else ai.stuckFor = Math.max(0, ai.stuckFor - dt * 2);
   if (ai.stuckFor > 1.2 && now > ai.reverseUntil) {
     ai.reverseUntil = now + 1.6;
@@ -373,8 +373,8 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
     // Slow into turns so the tank does not scrub sideways across a hillside.
     throttle = Math.abs(delta) > 1.1 ? 0.25 : 1;
   }
-  const maxSpeed = TANK_MAX_SPEED * (0.45 + 0.55 * engineHealth) * (0.35 + 0.65 * trackHealth);
-  const wantSpeed = throttle * (throttle < 0 ? 5 : maxSpeed);
+  const maxSpeed = mob.maxSpeed * (0.45 + 0.55 * engineHealth) * (0.35 + 0.65 * trackHealth);
+  const wantSpeed = throttle * (throttle < 0 ? mob.reverseSpeed : maxSpeed);
   t.speed += clamp(wantSpeed - t.speed, -12 * dt, 5 * dt);
 
   /* gunnery */
@@ -394,8 +394,14 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
     const wantYaw = Math.atan2(_aim.x - originX, _aim.z - originZ);
     const wantPitch = ballisticPitch(flat, _aim.y - originY, spec.speed) ?? Math.atan2(_aim.y - originY, flat);
 
-    const traverse = TURRET_TRAVERSE * (t.modules.gunner / 100) * dt;
-    const wantLocal = angleDelta(t.yaw, wantYaw);
+    const traverse = mob.turretTraverse * (t.modules.gunner / 100) * dt;
+    // A casemate gun cannot swing past its arc — it has to turn the whole hull.
+    const rawLocal = angleDelta(t.yaw, wantYaw);
+    const wantLocal = clamp(rawLocal, -mob.turretArc, mob.turretArc);
+    // How far off-arc the target is. This is aiming error the gun cannot train
+    // out, so it both blocks the shot below and steers the hull round instead.
+    const offArc = Math.abs(rawLocal - wantLocal);
+    if (offArc > 0.01) t.yaw += clamp(rawLocal, -1, 1) * dt * 0.5 * trackHealth;
     t.turret = approachAngle(t.turret, wantLocal, traverse);
     t.barrel = clamp(
       t.barrel + clamp(wantPitch - t.barrel, -dt * 0.3, dt * 0.3),
@@ -403,7 +409,7 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
       BARREL_MAX,
     );
 
-    const aimError = Math.abs(angleDelta(t.turret, wantLocal)) + Math.abs(wantPitch - t.barrel);
+    const aimError = Math.abs(angleDelta(t.turret, wantLocal)) + Math.abs(wantPitch - t.barrel) + offArc;
     if (aimError < 0.012 + (1 - ctx.skill) * 0.02 && now >= t.reloadUntil && dist < 400) {
       fireTankGun(t, ctx);
     } else if (target.kind === "soldier" && dist < 180 && aimError < 0.06 && now >= t.nextCoaxAt) {
@@ -411,7 +417,7 @@ export function updateTankAI(t: Tank, ctx: AiContext, dt: number) {
     }
   } else {
     // Point the gun where we are going.
-    t.turret = approachAngle(t.turret, 0, TURRET_TRAVERSE * dt * 0.5);
+    t.turret = approachAngle(t.turret, 0, mob.turretTraverse * dt * 0.5);
     t.barrel += clamp(-t.barrel, -dt * 0.2, dt * 0.2);
   }
 }

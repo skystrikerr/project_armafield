@@ -14,6 +14,14 @@ import {
   wreckGeometry,
 } from "./models";
 import { weaponCategory } from "./eras";
+import { vehicleById, type VehicleDef } from "./matchConfig";
+import {
+  barrelGeometryFor,
+  barrelMount,
+  hullGeometryFor,
+  turretGeometryFor,
+  turretRingHeight,
+} from "./vehicleModels";
 import {
   TANK_RING_Y,
   TEAM_COLOR,
@@ -53,6 +61,26 @@ export class RigAssets {
     this.planeBody = rec(planeBodyGeometry);
   }
 
+  /**
+   * Geometry for catalog vehicles, built on first request and shared by every
+   * instance of that vehicle. Chassis that reuse the stock medium-tank meshes
+   * fall back to the per-team ones above.
+   */
+  private vehicleCache = new Map<string, { hull: THREE.BufferGeometry; turret: THREE.BufferGeometry | null; barrel: THREE.BufferGeometry }>();
+
+  vehicleGeometry(def: VehicleDef, team: Team) {
+    const key = `${def.id}:${team}`;
+    const cached = this.vehicleCache.get(key);
+    if (cached) return cached;
+    const entry = {
+      hull: hullGeometryFor(def) ?? this.hull[team],
+      turret: turretGeometryFor(def) ?? (def.chassis === "medium_tank" ? this.turret[team] : null),
+      barrel: barrelGeometryFor(def) ?? this.barrel,
+    };
+    this.vehicleCache.set(key, entry);
+    return entry;
+  }
+
   dispose() {
     const all: THREE.BufferGeometry[] = [
       this.barrel, this.leg, this.arms, this.rifle, this.launcher, this.propeller, this.wreck,
@@ -60,6 +88,13 @@ export class RigAssets {
       ...Object.values(this.torso), ...Object.values(this.planeBody),
     ];
     for (const g of all) g.dispose();
+    // Cached vehicle meshes may alias the shared ones above, so only dispose
+    // geometry this cache actually created.
+    for (const entry of this.vehicleCache.values()) {
+      if (!all.includes(entry.hull)) entry.hull.dispose();
+      if (entry.turret && !all.includes(entry.turret)) entry.turret.dispose();
+      if (!all.includes(entry.barrel)) entry.barrel.dispose();
+    }
     this.material.dispose();
   }
 }
@@ -210,16 +245,23 @@ export class TankRig {
   private wreck: THREE.Mesh;
   readonly marker: THREE.Sprite;
 
-  constructor(assets: RigAssets, team: Team) {
+  constructor(assets: RigAssets, team: Team, defId = "m4_sherman") {
     const mat = assets.material;
-    this.hull = mesh(assets.hull[team], mat);
+    const def = vehicleById(defId);
+    const geo = assets.vehicleGeometry(def, team);
+
+    this.hull = mesh(geo.hull, mat);
     this.root.add(this.hull);
 
-    this.turret.position.set(0, TANK_RING_Y, -0.25);
-    this.turret.add(mesh(assets.turret[team], mat));
-    this.barrel.position.set(0, 0.5, 1.45);
-    this.barrel.add(mesh(assets.barrel, mat));
-    this.turret.add(this.barrel);
+    // Turretless chassis (trucks, half-tracks, cars) still get the node so
+    // the update path stays uniform — it just carries no mesh and never moves.
+    this.turret.position.set(0, turretRingHeight(def.chassis), def.chassis === "medium_tank" ? -0.25 : 0);
+    if (geo.turret) this.turret.add(mesh(geo.turret, mat));
+    if (def.weapons.includes("cannon")) {
+      this.barrel.position.set(...barrelMount(def.chassis));
+      this.barrel.add(mesh(geo.barrel, mat));
+      this.turret.add(this.barrel);
+    }
     this.root.add(this.turret);
 
     this.wreck = mesh(assets.wreck, mat);

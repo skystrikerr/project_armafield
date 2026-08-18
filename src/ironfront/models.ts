@@ -10,7 +10,7 @@ import { TEAM_COLOR, type Team } from "./units";
 
 type Vec3 = [number, number, number];
 
-type Part =
+export type Part =
   | { g: "box"; size: Vec3; pos: Vec3; rot?: Vec3; color: number }
   | { g: "cyl"; r: number; r2?: number; h: number; seg?: number; pos: Vec3; rot?: Vec3; color: number }
   | { g: "cone"; r: number; h: number; seg?: number; pos: Vec3; rot?: Vec3; color: number }

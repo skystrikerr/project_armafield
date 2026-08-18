@@ -5,7 +5,6 @@ import type { Audio } from "./audio";
 import {
   SHELLS,
   STANCE_EYE,
-  TANK_ARMOR,
   TANK_HULL,
   TANK_GUN_Y,
   TANK_TURRET,
@@ -18,6 +17,7 @@ import {
   type Unit,
   type WeaponId,
 } from "./units";
+import { armorOf } from "./matchConfig";
 
 export type ProjectileKind = "bullet" | "shell" | "rocket" | "grenade" | "bomb";
 
@@ -406,14 +406,17 @@ export class Battle {
   ) {
     const facing = part === "hull" ? tank.yaw : tank.yaw + tank.turret;
     const local = worldToLocalDir(normal, facing);
+    // Plate thickness comes from this vehicle's own scheme, so the same shot
+    // that punches a Greyhound's flank glances off a Tiger's.
+    const scheme = armorOf(tank.defId);
     let armor: number;
     if (Math.abs(local.y) > 0.6) {
-      armor = part === "hull" ? TANK_ARMOR.hullTop : TANK_ARMOR.turretTop;
+      armor = part === "hull" ? scheme.hullTop : scheme.turretTop;
     } else if (Math.abs(local.z) > Math.abs(local.x)) {
-      if (local.z > 0) armor = part === "hull" ? TANK_ARMOR.hullFront : TANK_ARMOR.turretFront;
-      else armor = part === "hull" ? TANK_ARMOR.hullRear : TANK_ARMOR.turretRear;
+      if (local.z > 0) armor = part === "hull" ? scheme.hullFront : scheme.turretFront;
+      else armor = part === "hull" ? scheme.hullRear : scheme.turretRear;
     } else {
-      armor = part === "hull" ? TANK_ARMOR.hullSide : TANK_ARMOR.turretSide;
+      armor = part === "hull" ? scheme.hullSide : scheme.turretSide;
     }
 
     // Impact angle from the plate normal.
@@ -544,7 +547,7 @@ export class Battle {
       let damage = p.blastDamage * falloff * falloff;
       if (u.kind === "tank") {
         // Splinters do nothing to armour; only real explosive charges tell.
-        const topArmor = TANK_ARMOR.hullTop;
+        const topArmor = armorOf(u.defId).hullTop;
         if (p.penetration < topArmor * 0.6) damage = 0;
         else damage *= 0.6;
       }

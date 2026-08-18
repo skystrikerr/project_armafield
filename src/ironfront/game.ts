@@ -43,14 +43,9 @@ import {
   SHELLS,
   STANCE_EYE,
   STANCE_SPEED,
-  TANK_ACCEL,
   TANK_GUN_Y,
-  TANK_MAX_SPEED,
-  TANK_REVERSE_SPEED,
-  TANK_TURN_RATE,
   TANK_TURRET,
   TEAM_COLOR,
-  TURRET_TRAVERSE,
   WEAPONS,
   callsign,
   enemyOf,
@@ -67,6 +62,15 @@ import {
   type Unit,
 } from "./units";
 import { classById, equipSoldier, squadClassFor, weaponCategory } from "./eras";
+import {
+  MatchConfig,
+  mapById,
+  mobilityOf,
+  vehicleById,
+  type MatchSettings,
+  type TeamLoadout,
+  type VehicleDef,
+} from "./matchConfig";
 import { angleDelta, approachAngle, clamp, mulberry32, range } from "./random";
 
 /* ---------------- HUD contract ---------------- */
@@ -186,6 +190,8 @@ export class Ironfront {
   private zones: ZoneState[] = [];
   private banners: THREE.Mesh[] = [];
   private tickets: Record<Team, number> = { blue: TICKETS, red: TICKETS };
+  /** Per-team AI skill, taken from the setup screen. */
+  private teamSkill: Record<Team, number> = { blue: 0.55, red: 0.55 };
   private winner: Team | null = null;
 
   private treeSlot = new Map<number, { mesh: THREE.InstancedMesh; index: number }>();
@@ -243,8 +249,17 @@ export class Ironfront {
   private tmpQuat = new THREE.Quaternion();
   private tmpObj = new THREE.Object3D();
   private rand: () => number;
+  /** The compiled loadout this match is running under. Never mutated. */
+  private settings: MatchSettings;
 
-  constructor(canvas: HTMLCanvasElement, seed = Math.floor(Math.random() * 1e9)) {
+  /**
+   * `settings` is the object the setup screen compiles (see matchConfig).
+   * Passing none runs the default All-Out preset, which keeps the game
+   * playable if it is ever constructed without going through the menu.
+   */
+  constructor(canvas: HTMLCanvasElement, settings?: MatchSettings) {
+    this.settings = settings ?? new MatchConfig("all_out").getMatchSettings();
+    const seed = this.settings.seed;
     this.canvas = canvas;
     this.rand = mulberry32(seed);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
@@ -479,10 +494,36 @@ export class Ironfront {
 
   /* ---------------- army setup ---------------- */
 
+  /** The loadout row for a team colour. */
+  private loadoutFor(team: Team): TeamLoadout {
+    const { team1, team2 } = this.settings.teams;
+    return team1.team === team ? team1 : team2;
+  }
+
+  /** Enabled catalog entries for a team, filtered to one category. */
+  private enabledVehicles(team: Team, predicate: (v: VehicleDef) => boolean): VehicleDef[] {
+    return this.loadoutFor(team)
+      .enabledVehicles.map(vehicleById)
+      .filter(predicate);
+  }
+
+  /**
+   * Spawns both armies from the compiled match settings: bot counts, ticket
+   * pools, AI skill and — crucially — only the vehicles each side actually
+   * enabled in the setup screen. Disabling every tank really does produce a
+   * match with no tanks; nothing here falls back to a hardcoded roster.
+   */
   private spawnArmies() {
     for (const team of ["blue", "red"] as Team[]) {
+      const loadout = this.loadoutFor(team);
       const isPlayerTeam = team === "blue";
-      for (let i = 0; i < SQUAD_SIZE; i++) {
+
+      this.tickets[team] = loadout.tickets;
+      this.teamSkill[team] = loadout.skill;
+
+      // The player always occupies a slot, even at a bot count of zero.
+      const infantry = Math.max(isPlayerTeam ? 1 : 0, loadout.botCount);
+      for (let i = 0; i < infantry; i++) {
         const s = this.makeBot(team, i);
         if (isPlayerTeam && i === 0) {
           // The player takes the first slot on the blue roster.
@@ -493,24 +534,51 @@ export class Ironfront {
         }
         this.addSoldier(s);
       }
-      for (let i = 0; i < AI_TANKS; i++) this.addTank(this.makeBotTank(team));
-      for (let i = 0; i < AI_PLANES; i++) this.addPlane(this.makeBotPlane(team));
-      for (let i = 0; i < FREE_TANKS; i++) {
-        const t = makeTank(this.nextId++, team, this.parkingSpot(team, i, FREE_TANKS), team === "blue" ? Math.PI : 0);
-        t.name = `${team === "blue" ? "Anvil" : "Kobra"}-${i + 1}`;
-        this.addTank(t);
+
+      // AI-crewed armour, drawn round-robin from whatever armour is enabled.
+      const armor = this.enabledVehicles(team, (v) => v.category === "armor");
+      if (armor.length > 0) {
+        for (let i = 0; i < AI_TANKS; i++) {
+          this.addTank(this.makeBotTank(team, armor[i % armor.length]));
+        }
       }
-      for (let i = 0; i < FREE_PLANES; i++) {
-        const a = AIRFIELDS[team];
-        const p = makePlane(
+
+      // AI aircraft.
+      const air = this.enabledVehicles(team, (v) => v.category === "air");
+      if (air.length > 0) {
+        for (let i = 0; i < AI_PLANES; i++) this.addPlane(this.makeBotPlane(team));
+      }
+
+      // Vehicles parked at base for the player to crew: one of each enabled
+      // ground type, so the deploy screen's options mirror the setup screen.
+      const ground = this.enabledVehicles(
+        team,
+        (v) => v.category !== "air" && v.chassis !== "fighter",
+      );
+      ground.forEach((def, i) => {
+        const t = makeTank(
           this.nextId++,
           team,
-          new THREE.Vector3(a.x + (i - 0.5) * 26, 0, a.z),
-          a.heading,
+          this.parkingSpot(team, i, Math.max(1, ground.length)),
+          team === "blue" ? Math.PI : 0,
+          { defId: def.id, hp: def.hp, name: def.name, ammo: def.ammo },
         );
-        p.pos.y = this.terrain.heightAt(p.pos.x, p.pos.z) + 1.05;
-        p.name = `${team === "blue" ? "Kite" : "Falke"}-${i + 1}`;
-        this.addPlane(p);
+        this.addTank(t);
+      });
+
+      if (air.length > 0) {
+        for (let i = 0; i < FREE_PLANES; i++) {
+          const a = AIRFIELDS[team];
+          const p = makePlane(
+            this.nextId++,
+            team,
+            new THREE.Vector3(a.x + (i - 0.5) * 26, 0, a.z),
+            a.heading,
+          );
+          p.pos.y = this.terrain.heightAt(p.pos.x, p.pos.z) + 1.05;
+          p.name = `${air[i % air.length].name}-${i + 1}`;
+          this.addPlane(p);
+        }
       }
     }
     this.placeAtSpawn(this.player);
@@ -556,12 +624,18 @@ export class Ironfront {
     return s;
   }
 
-  private makeBotTank(team: Team): Tank {
+  private makeBotTank(team: Team, def: VehicleDef): Tank {
     const id = this.nextId++;
     const b = BASES[team];
     const x = b.x + range(this.rand, -40, 40);
     const z = b.z + range(this.rand, -20, 20);
-    const t = makeTank(id, team, new THREE.Vector3(x, this.terrain.heightAt(x, z), z), team === "blue" ? Math.PI : 0);
+    const t = makeTank(
+      id,
+      team,
+      new THREE.Vector3(x, this.terrain.heightAt(x, z), z),
+      team === "blue" ? Math.PI : 0,
+      { defId: def.id, hp: def.hp, name: def.name, ammo: def.ammo },
+    );
     t.ai = {
       state: "advance",
       targetId: null,
@@ -599,7 +673,7 @@ export class Ironfront {
   private addTank(t: Tank) {
     this.tanks.push(t);
     this.units.push(t);
-    const rig = new TankRig(this.assets, t.team);
+    const rig = new TankRig(this.assets, t.team, t.defId);
     this.tankRigs.set(t.id, rig);
     this.scene.add(rig.root);
   }
@@ -1007,17 +1081,26 @@ export class Ironfront {
 
     for (const s of this.soldiers) {
       if (!s.alive || s.ridingId !== null) continue;
-      if (s.ai) updateSoldierAI(s, ctx, dt);
+      if (s.ai) {
+        ctx.skill = this.teamSkill[s.team];
+        updateSoldierAI(s, ctx, dt);
+      }
       this.moveSoldier(s, dt);
     }
     for (const t of this.tanks) {
       if (!t.alive) continue;
-      if (t.ai) updateTankAI(t, ctx, dt);
+      if (t.ai) {
+        ctx.skill = this.teamSkill[t.team];
+        updateTankAI(t, ctx, dt);
+      }
       this.moveTank(t, dt);
     }
     for (const p of this.planes) {
       if (!p.alive) continue;
-      if (p.ai) updatePlaneAI(p, ctx, dt);
+      if (p.ai) {
+        ctx.skill = this.teamSkill[p.team];
+        updatePlaneAI(p, ctx, dt);
+      }
       this.movePlane(p, dt);
     }
 
@@ -1227,16 +1310,19 @@ export class Ironfront {
     if (this.keys.has("KeyD")) steer += 1;
     const braking = this.keys.has("Space");
 
-    const maxFwd = TANK_MAX_SPEED * (0.4 + 0.6 * engine) * (0.3 + 0.7 * tracks);
-    const target = throttle > 0 ? maxFwd * throttle : TANK_REVERSE_SPEED * throttle;
-    const accel = TANK_ACCEL * (0.35 + 0.65 * engine);
+    // Every figure here comes from the vehicle's own catalog entry, so a Tiger
+    // lumbers and a Greyhound sprints without any special-casing.
+    const mob = mobilityOf(t.defId);
+    const maxFwd = mob.maxSpeed * (0.4 + 0.6 * engine) * (0.3 + 0.7 * tracks);
+    const target = throttle > 0 ? maxFwd * throttle : mob.reverseSpeed * throttle;
+    const accel = mob.accel * (0.35 + 0.65 * engine);
     if (braking) t.speed += clamp(-t.speed, -accel * 3 * dt, accel * 3 * dt);
     else if (throttle !== 0) t.speed += clamp(target - t.speed, -accel * 2.4 * dt, accel * dt);
     else t.speed *= 1 - Math.min(1, dt * 1.1);
 
     // Neutral steering when stopped, wider arcs at speed. Broken tracks pull.
-    const speedFactor = 0.45 + 0.55 * Math.min(1, Math.abs(t.speed) / (TANK_MAX_SPEED * 0.6));
-    t.yaw -= steer * TANK_TURN_RATE * dt * speedFactor * tracks * (0.5 + 0.5 * driver);
+    const speedFactor = 0.45 + 0.55 * Math.min(1, Math.abs(t.speed) / (mob.maxSpeed * 0.6));
+    t.yaw -= steer * mob.turnRate * dt * speedFactor * tracks * (0.5 + 0.5 * driver);
 
     this.aimTankGun(t, dt);
 
@@ -1273,8 +1359,12 @@ export class Ironfront {
     const solved = ballisticPitch(flat, this.tmpVec.y - originY, WEAPONS.cannon.speed);
     const wantPitch = solved ?? Math.atan2(this.tmpVec.y - originY, flat);
 
-    const traverse = TURRET_TRAVERSE * (0.3 + 0.7 * gunner) * dt;
-    t.turret = approachAngle(t.turret, angleDelta(t.yaw, wantYaw), traverse);
+    // A casemate gun (StuG) has a few degrees of traverse, not a full circle,
+    // so the aim point is clamped to the chassis' arc before the gun chases it.
+    const mob = mobilityOf(t.defId);
+    const traverse = mob.turretTraverse * (0.3 + 0.7 * gunner) * dt;
+    const wantLocal = clamp(angleDelta(t.yaw, wantYaw), -mob.turretArc, mob.turretArc);
+    t.turret = approachAngle(t.turret, wantLocal, traverse);
     const elevate = 0.32 * (0.3 + 0.7 * gunner) * dt;
     t.barrel = clamp(t.barrel + clamp(wantPitch - t.barrel, -elevate, elevate), BARREL_MIN, BARREL_MAX);
   }
@@ -1419,14 +1509,30 @@ export class Ironfront {
     this.zoomed = false;
   }
 
+  /**
+   * A free vehicle the player may crew. Every ground vehicle is a `Tank` in the
+   * simulation — jeeps included — so "deploy as tank" has to prefer the armour
+   * category explicitly, or the motor pool's first parked jeep wins and the
+   * player is handed a Willys when the briefing promised a 75 mm gun.
+   */
   private freeVehicle(kind: "tank" | "plane"): Tank | Plane | null {
     const pool: (Tank | Plane)[] = kind === "tank" ? this.tanks : this.planes;
-    for (const v of pool) {
-      if (v.team !== this.player.team || v.ai !== null || !v.alive) continue;
-      if (v.kind === "tank" ? v.driverId !== null : v.pilotId !== null) continue;
-      return v;
-    }
-    return null;
+    const available = pool.filter(
+      (v) =>
+        v.team === this.player.team &&
+        v.ai === null &&
+        v.alive &&
+        (v.kind === "tank" ? v.driverId === null : v.pilotId === null),
+    );
+    if (kind !== "tank") return available[0] ?? null;
+    const rank = (v: Tank | Plane) => {
+      if (v.kind !== "tank") return 3;
+      const def = vehicleById(v.defId);
+      if (def.category === "armor") return 0;
+      return def.weapons.length > 0 ? 1 : 2;
+    };
+    available.sort((a, b) => rank(a) - rank(b));
+    return available[0] ?? null;
   }
 
   private countFree(kind: "tank" | "plane") {
@@ -1902,18 +2008,21 @@ export class Ironfront {
     }
     for (const t of this.tanks) {
       if (t.alive || this.now < t.respawnAt) continue;
+      // Restore from the catalog entry, so a Tiger comes back a Tiger.
+      const def = vehicleById(t.defId);
       t.alive = true;
-      t.hp = 100;
+      t.hp = def.hp;
       t.modules = { engine: 100, tracks: 100, gunner: 100, driver: 100, ammo: 100 };
-      t.ammo = { ap: 42, he: 24 };
+      t.ammo = { ...(def.ammo ?? { ap: 42, he: 24 }) };
       t.coaxAmmo = WEAPONS.coax.magazine;
       t.speed = 0;
       t.turret = 0;
       t.barrel = 0;
       t.reloadUntil = 0;
+      const freeOfTeam = this.tanks.filter((v) => v.team === t.team && v.ai === null);
       const spot = t.ai
         ? new THREE.Vector3(BASES[t.team].x + range(this.rand, -40, 40), 0, BASES[t.team].z + range(this.rand, -20, 20))
-        : this.parkingSpot(t.team, this.tanks.filter((v) => v.team === t.team && v.ai === null).indexOf(t), FREE_TANKS);
+        : this.parkingSpot(t.team, Math.max(0, freeOfTeam.indexOf(t)), Math.max(1, freeOfTeam.length));
       spot.y = this.terrain.heightAt(spot.x, spot.z);
       t.pos.copy(spot);
       t.yaw = t.team === "blue" ? Math.PI : 0;

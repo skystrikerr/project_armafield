@@ -3,6 +3,8 @@ import { Ironfront as Game, type HudSnapshot, type MinimapUnit } from "@/ironfro
 import { PLAYABLE_CLASSES, primaryOptionsFor } from "@/ironfront/eras";
 import { MAP_HALF, ZONES } from "@/ironfront/terrain";
 import { TEAM_COLOR, WEAPONS, type ClassId } from "@/ironfront/units";
+import MatchSetup from "@/MatchSetup";
+import type { MatchSettings } from "@/ironfront/matchConfig";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,19 +20,22 @@ export default function Ironfront() {
   const gameRef = useRef<Game | null>(null);
   const [hud, setHud] = useState<HudSnapshot | null>(null);
   const [showControls, setShowControls] = useState(false);
+  // Null until the player commits a setup; that commit is what boots the game.
+  const [matchSettings, setMatchSettings] = useState<MatchSettings | null>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const game = new Game(canvas);
+    if (!canvas || !matchSettings) return;
+    const game = new Game(canvas, matchSettings);
     gameRef.current = game;
     game.onSnapshot = setHud;
     game.start();
     return () => {
       game.dispose();
       gameRef.current = null;
+      setHud(null);
     };
-  }, []);
+  }, [matchSettings]);
 
   const [selectedClass, setSelectedClass] = useState<ClassId>(PLAYABLE_CLASSES[0].id);
   // Remembers the last weapon picked per class, so switching classes and back
@@ -52,6 +57,8 @@ export default function Ironfront() {
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0d1117] font-[JetBrains_Mono,ui-monospace,monospace] text-[#e6e3da] select-none">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
+
+      {!matchSettings && <MatchSetup onStart={setMatchSettings} />}
 
       {hud && hud.phase === "playing" && <Reticle hud={hud} />}
       {hud && hud.phase === "playing" && <DamageArcs dirs={hud.damageDirs} />}
