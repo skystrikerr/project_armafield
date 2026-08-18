@@ -459,6 +459,13 @@ export type MapDef = {
   blurb: string;
   /** Rough feel, shown as a tag in the map picker. */
   tags: string[];
+  /**
+   * The loadout this map starts out configured with. Bocage is hedgerow
+   * country, so it opens on infantry; the steppe opens on armour. The player
+   * can change any of it — this is only what they find when they first
+   * select the map.
+   */
+  defaultPreset: PresetId;
 };
 
 export const MAPS: MapDef[] = [
@@ -468,6 +475,7 @@ export const MAPS: MapDef[] = [
     seed: 1337,
     blurb: "Three villages along a road through a shallow valley. Mixed arms.",
     tags: ["Balanced", "3 Points"],
+    defaultPreset: "all_out",
   },
   {
     id: "bocage",
@@ -475,6 +483,7 @@ export const MAPS: MapDef[] = [
     seed: 90210,
     blurb: "Tight hedgerows and sunken lanes. Infantry country — armour gets ambushed.",
     tags: ["Close", "Infantry"],
+    defaultPreset: "infantry_only",
   },
   {
     id: "steppe",
@@ -482,6 +491,7 @@ export const MAPS: MapDef[] = [
     seed: 4242,
     blurb: "Long sightlines and almost no cover. Tank and aircraft ground.",
     tags: ["Open", "Armor"],
+    defaultPreset: "armor_clash",
   },
   {
     id: "coast",
@@ -489,6 +499,7 @@ export const MAPS: MapDef[] = [
     seed: 7777,
     blurb: "Airstrips, water crossings and a beach. Favours aircraft and amphibians.",
     tags: ["Air", "Water"],
+    defaultPreset: "air_superiority",
   },
 ];
 
@@ -532,8 +543,13 @@ export type Preset = {
   id: PresetId;
   name: string;
   blurb: string;
-  /** Returns a complete settings object. Called fresh so presets never share state. */
-  build: () => MatchSettings;
+  /**
+   * Builds this preset's two team loadouts. A preset is a template applied to
+   * whichever map is being configured — it never changes the map itself, so
+   * you can put Armor Clash on the bocage if you want to watch tanks struggle.
+   * Called fresh each time so presets never share mutable state.
+   */
+  build: () => { team1: TeamLoadout; team2: TeamLoadout };
 };
 
 /** Every vehicle a side can field, by category filter. */
@@ -568,59 +584,47 @@ export const PRESETS: Preset[] = [
     id: "all_out",
     name: "All-Out Warfare",
     blurb: "Everything unlocked. Tanks, trucks, aircraft, the lot.",
-    build: () => ({ mapId: "valley", seed: mapById("valley").seed, teams: bothTeams(() => {}) }),
+    build: () => bothTeams(() => {}),
   },
   {
     id: "ww2_historical",
     name: "WW2 Historical",
     blurb: "Each side fields only what it historically operated. No shared kit.",
-    build: () => ({
-      mapId: "valley",
-      seed: mapById("valley").seed,
-      teams: bothTeams((t) => {
+    build: () =>
+      bothTeams((t) => {
         // Drop anything marked as shared — historical mode is strict.
         t.enabledVehicles = vehiclesWhere(t.faction, (v) => v.faction === t.faction);
       }),
-    }),
   },
   {
     id: "infantry_only",
     name: "Infantry Only",
     blurb: "No vehicles at all. Rifles, SMGs and the ground between you.",
-    build: () => ({
-      mapId: "bocage",
-      seed: mapById("bocage").seed,
-      teams: bothTeams((t) => {
+    build: () =>
+      bothTeams((t) => {
         t.enabledVehicles = [];
         t.botCount = 18;
       }),
-    }),
   },
   {
     id: "armor_clash",
     name: "Armor Clash",
-    blurb: "Tanks and tank destroyers only, on open ground. Bring AT weapons.",
-    build: () => ({
-      mapId: "steppe",
-      seed: mapById("steppe").seed,
-      teams: bothTeams((t) => {
+    blurb: "Tanks and tank destroyers only. Bring AT weapons.",
+    build: () =>
+      bothTeams((t) => {
         t.enabledVehicles = vehiclesWhere(t.faction, (v) => v.category === "armor");
         t.botCount = 10;
       }),
-    }),
   },
   {
     id: "air_superiority",
     name: "Air Superiority",
     blurb: "Aircraft and light ground transport. The fight is overhead.",
-    build: () => ({
-      mapId: "coast",
-      seed: mapById("coast").seed,
-      teams: bothTeams((t) => {
+    build: () =>
+      bothTeams((t) => {
         t.enabledVehicles = vehiclesWhere(t.faction, (v) => v.category === "air" || v.category === "light");
         t.botCount = 10;
       }),
-    }),
   },
 ];
 
@@ -635,18 +639,100 @@ export function presetById(id: PresetId): Preset {
 /* ================================================================== */
 
 /**
+ * One map's saved configuration. Every map keeps its own, the way Ravenfield
+ * remembers what you set up on each battlefield: switch to the bocage, change
+ * its roster, switch back to the valley, and the valley is how you left it.
+ */
+export type MapLoadout = {
+  seed: number;
+  /** Which preset this was last built from, or null once hand-edited. */
+  presetId: PresetId | null;
+  teams: { team1: TeamLoadout; team2: TeamLoadout };
+};
+
+/** Bumped whenever the saved shape changes, so old saves are discarded. */
+const STORAGE_KEY = "claudefield.matchConfig.v1";
+
+function cloneTeam(t: TeamLoadout): TeamLoadout {
+  return { ...t, enabledWeapons: [...t.enabledWeapons], enabledVehicles: [...t.enabledVehicles] };
+}
+
+function defaultLoadout(map: MapDef): MapLoadout {
+  return { seed: map.seed, presetId: map.defaultPreset, teams: presetById(map.defaultPreset).build() };
+}
+
+/**
+ * Rebuilds one saved map entry, keeping only what the current catalog still
+ * recognises. A save written before a weapon or vehicle was renamed must not
+ * be able to put an unknown id into the spawner, so anything unrecognised is
+ * dropped rather than trusted.
+ */
+function sanitizeLoadout(map: MapDef, raw: unknown): MapLoadout {
+  const base = defaultLoadout(map);
+  if (typeof raw !== "object" || raw === null) return base;
+  const r = raw as Partial<MapLoadout>;
+  if (typeof r.seed === "number" && Number.isFinite(r.seed)) base.seed = Math.floor(r.seed);
+  base.presetId = PRESETS.some((p) => p.id === r.presetId) ? (r.presetId as PresetId) : null;
+  for (const slot of ["team1", "team2"] as const) {
+    const saved = r.teams?.[slot];
+    if (!saved) continue;
+    const team = base.teams[slot];
+    const allowedVehicles = new Set(vehiclesForFaction(team.faction).map((v) => v.id));
+    if (Array.isArray(saved.enabledWeapons)) {
+      team.enabledWeapons = saved.enabledWeapons.filter((w) => ALL_WEAPON_IDS.includes(w));
+    }
+    if (Array.isArray(saved.enabledVehicles)) {
+      team.enabledVehicles = saved.enabledVehicles.filter((v) => allowedVehicles.has(v));
+    }
+    if (typeof saved.botCount === "number") team.botCount = clampInt(saved.botCount, 0, 40);
+    if (typeof saved.tickets === "number") team.tickets = clampInt(saved.tickets, 50, 1000);
+    if (typeof saved.skill === "number") team.skill = Math.max(0, Math.min(1, saved.skill));
+  }
+  return base;
+}
+
+function clampInt(n: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, Math.round(n)));
+}
+
+/**
  * Holds the live setup-screen state and notifies subscribers on every change.
  * The UI binds to this; nothing else mutates it. `getMatchSettings()` returns
  * a deep copy, so the running match can never be altered by someone reopening
  * the menu mid-game.
+ *
+ * Loadouts are stored per map and persisted to localStorage, so the roster you
+ * build for a battlefield is still there next time you pick it — including
+ * after a page reload.
  */
 export class MatchConfig {
-  private settings: MatchSettings;
+  private mapId: string;
+  private byMap = new Map<string, MapLoadout>();
   private listeners = new Set<(s: MatchSettings) => void>();
 
-  constructor(preset: PresetId = "all_out") {
-    this.settings = presetById(preset).build();
+  constructor(startMapId: string = MAPS[0].id) {
+    for (const m of MAPS) this.byMap.set(m.id, defaultLoadout(m));
+    this.mapId = MAPS.some((m) => m.id === startMapId) ? startMapId : MAPS[0].id;
+    this.load();
   }
+
+  /* ---------------- persistence ---------------- */
+
+  private load() {
+    const raw = readStorage();
+    if (!raw) return;
+    if (typeof raw.mapId === "string" && MAPS.some((m) => m.id === raw.mapId)) this.mapId = raw.mapId;
+    for (const m of MAPS) {
+      const saved = (raw.byMap as Record<string, unknown> | undefined)?.[m.id];
+      if (saved !== undefined) this.byMap.set(m.id, sanitizeLoadout(m, saved));
+    }
+  }
+
+  private save() {
+    writeStorage({ mapId: this.mapId, byMap: Object.fromEntries(this.byMap) });
+  }
+
+  /* ---------------- subscriptions ---------------- */
 
   subscribe(fn: (s: MatchSettings) => void) {
     this.listeners.add(fn);
@@ -654,42 +740,90 @@ export class MatchConfig {
   }
 
   private emit() {
+    this.save();
     const snapshot = this.getMatchSettings();
     for (const fn of this.listeners) fn(snapshot);
   }
 
+  /* ---------------- reading ---------------- */
+
+  /** The loadout being edited: whichever map is currently selected. */
+  private current(): MapLoadout {
+    const l = this.byMap.get(this.mapId);
+    if (!l) throw new Error(`matchConfig: no loadout for map "${this.mapId}"`);
+    return l;
+  }
+
   /** Deep copy, so callers can hold it without aliasing live state. */
   getMatchSettings(): MatchSettings {
+    const l = this.current();
     return {
-      mapId: this.settings.mapId,
-      seed: this.settings.seed,
-      teams: {
-        team1: { ...this.settings.teams.team1, enabledWeapons: [...this.settings.teams.team1.enabledWeapons], enabledVehicles: [...this.settings.teams.team1.enabledVehicles] },
-        team2: { ...this.settings.teams.team2, enabledWeapons: [...this.settings.teams.team2.enabledWeapons], enabledVehicles: [...this.settings.teams.team2.enabledVehicles] },
-      },
+      mapId: this.mapId,
+      seed: l.seed,
+      teams: { team1: cloneTeam(l.teams.team1), team2: cloneTeam(l.teams.team2) },
     };
   }
 
-  applyPreset(id: PresetId) {
-    this.settings = presetById(id).build();
+  /** Which preset the current map is showing, or null if it has been edited. */
+  activePreset(): PresetId | null {
+    return this.current().presetId;
+  }
+
+  /** A one-line summary of a map's saved roster, for the map picker. */
+  summaryFor(mapId: string): { vehicles: number; weapons: number; bots: number } {
+    const l = this.byMap.get(mapId) ?? defaultLoadout(mapById(mapId));
+    const t = l.teams.team1;
+    return { vehicles: t.enabledVehicles.length, weapons: t.enabledWeapons.length, bots: t.botCount };
+  }
+
+  /* ---------------- editing ---------------- */
+
+  /** Switches which map is selected. The previous map keeps its own loadout. */
+  setMap(mapId: string) {
+    this.mapId = mapById(mapId).id;
     this.emit();
   }
 
-  setMap(mapId: string) {
-    const m = mapById(mapId);
-    this.settings.mapId = m.id;
-    this.settings.seed = m.seed;
+  /** Applies a preset's rosters to the map currently being configured. */
+  applyPreset(id: PresetId) {
+    const l = this.current();
+    l.teams = presetById(id).build();
+    l.presetId = id;
+    this.emit();
+  }
+
+  /** Puts this map back to the roster it shipped with. */
+  resetMap() {
+    this.byMap.set(this.mapId, defaultLoadout(mapById(this.mapId)));
+    this.emit();
+  }
+
+  /** Copies this map's roster onto every other map, seeds left alone. */
+  copyToAllMaps() {
+    const source = this.current();
+    for (const m of MAPS) {
+      if (m.id === this.mapId) continue;
+      const target = this.byMap.get(m.id);
+      if (!target) continue;
+      target.presetId = source.presetId;
+      target.teams = { team1: cloneTeam(source.teams.team1), team2: cloneTeam(source.teams.team2) };
+    }
     this.emit();
   }
 
   /** Re-rolls terrain without changing which map is selected. */
   randomizeSeed() {
-    this.settings.seed = Math.floor(Math.random() * 1e9);
+    this.current().seed = Math.floor(Math.random() * 1e9);
     this.emit();
   }
 
   private teamOf(slot: "team1" | "team2") {
-    return this.settings.teams[slot];
+    return this.current().teams[slot];
+  }
+
+  /** Any hand edit means the roster no longer matches the preset it came from. */
+  private markCustom() {
+    this.current().presetId = null;
   }
 
   toggleWeapon(slot: "team1" | "team2", weaponId: string) {
@@ -697,6 +831,7 @@ export class MatchConfig {
     const i = t.enabledWeapons.indexOf(weaponId);
     if (i >= 0) t.enabledWeapons.splice(i, 1);
     else t.enabledWeapons.push(weaponId);
+    this.markCustom();
     this.emit();
   }
 
@@ -705,6 +840,7 @@ export class MatchConfig {
     const i = t.enabledVehicles.indexOf(vehicleId);
     if (i >= 0) t.enabledVehicles.splice(i, 1);
     else t.enabledVehicles.push(vehicleId);
+    this.markCustom();
     this.emit();
   }
 
@@ -715,6 +851,7 @@ export class MatchConfig {
     t.enabledWeapons = enabled
       ? Array.from(new Set([...t.enabledWeapons, ...ids]))
       : t.enabledWeapons.filter((w) => !ids.includes(w));
+    this.markCustom();
     this.emit();
   }
 
@@ -725,21 +862,25 @@ export class MatchConfig {
     t.enabledVehicles = enabled
       ? Array.from(new Set([...t.enabledVehicles, ...ids]))
       : t.enabledVehicles.filter((v) => !ids.includes(v));
+    this.markCustom();
     this.emit();
   }
 
   setBotCount(slot: "team1" | "team2", n: number) {
-    this.teamOf(slot).botCount = Math.max(0, Math.min(40, Math.round(n)));
+    this.teamOf(slot).botCount = clampInt(n, 0, 40);
+    this.markCustom();
     this.emit();
   }
 
   setTickets(slot: "team1" | "team2", n: number) {
-    this.teamOf(slot).tickets = Math.max(50, Math.min(1000, Math.round(n)));
+    this.teamOf(slot).tickets = clampInt(n, 50, 1000);
+    this.markCustom();
     this.emit();
   }
 
   setSkill(slot: "team1" | "team2", v: number) {
     this.teamOf(slot).skill = Math.max(0, Math.min(1, v));
+    this.markCustom();
     this.emit();
   }
 
@@ -761,5 +902,31 @@ export class MatchConfig {
       }
     }
     return problems;
+  }
+}
+
+/* ---------------- storage helpers ---------------- */
+
+/**
+ * localStorage is absent in some embeddings and throws outright in private
+ * browsing, so both directions are best-effort: a failure to persist costs the
+ * player their saved rosters, it must never stop the menu from opening.
+ */
+function readStorage(): { mapId?: string; byMap?: unknown } | null {
+  try {
+    const text = window.localStorage.getItem(STORAGE_KEY);
+    if (!text) return null;
+    const parsed: unknown = JSON.parse(text);
+    return typeof parsed === "object" && parsed !== null ? (parsed as { mapId?: string; byMap?: unknown }) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStorage(value: { mapId: string; byMap: Record<string, MapLoadout> }) {
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  } catch {
+    /* full, disabled or unavailable — the menu still works, it just forgets. */
   }
 }

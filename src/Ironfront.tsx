@@ -4,7 +4,7 @@ import { PLAYABLE_CLASSES, primaryOptionsFor } from "@/ironfront/eras";
 import { MAP_HALF, ZONES } from "@/ironfront/terrain";
 import { TEAM_COLOR, WEAPONS, type ClassId } from "@/ironfront/units";
 import MatchSetup from "@/MatchSetup";
-import type { MatchSettings } from "@/ironfront/matchConfig";
+import { mapById, type MatchSettings } from "@/ironfront/matchConfig";
 import { cn } from "@/lib/utils";
 
 /**
@@ -54,6 +54,18 @@ export default function Ironfront() {
     [selectedClass, selectedPrimary],
   );
 
+  // Dropping matchSettings tears the running game down (it is the effect's
+  // dependency) and puts the setup menu back up. MatchConfig reloads the saved
+  // per-map rosters from storage, so the menu reopens exactly as it was left.
+  const activeMap = matchSettings ? mapById(matchSettings.mapId) : null;
+  const mapName = activeMap?.name ?? "";
+  const mapBlurb = activeMap?.blurb ?? "";
+
+  const reopenSetup = useCallback(() => {
+    document.exitPointerLock?.();
+    setMatchSettings(null);
+  }, []);
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-[#0d1117] font-[JetBrains_Mono,ui-monospace,monospace] text-[#e6e3da] select-none">
       <canvas ref={canvasRef} className="absolute inset-0 h-full w-full" />
@@ -74,6 +86,9 @@ export default function Ironfront() {
 
       {hud?.phase === "briefing" && (
         <Briefing
+          mapName={mapName}
+          mapBlurb={mapBlurb}
+          onSetup={reopenSetup}
           onDeploy={deploy}
           selectedClass={selectedClass}
           onSelectClass={setSelectedClass}
@@ -91,9 +106,14 @@ export default function Ironfront() {
           onSelectPrimary={setSelectedPrimary}
         />
       )}
-      {hud?.phase === "over" && <Result hud={hud} />}
+      {hud?.phase === "over" && <Result hud={hud} onSetup={reopenSetup} mapName={mapName} />}
       {hud?.paused && hud.phase === "playing" && (
-        <Pause hud={hud} onResume={() => gameRef.current?.setPaused(false)} onControls={() => setShowControls(true)} />
+        <Pause
+          hud={hud}
+          onResume={() => gameRef.current?.setPaused(false)}
+          onControls={() => setShowControls(true)}
+          onSetup={reopenSetup}
+        />
       )}
       {showControls && <Controls onClose={() => setShowControls(false)} />}
 
@@ -506,15 +526,24 @@ type DeployProps = {
   onSelectPrimary: (id: string) => void;
 };
 
-function Briefing({ onDeploy, selectedClass, onSelectClass, selectedPrimary, onSelectPrimary }: DeployProps) {
+function Briefing({
+  onDeploy,
+  onSetup,
+  mapName,
+  mapBlurb,
+  selectedClass,
+  onSelectClass,
+  selectedPrimary,
+  onSelectPrimary,
+}: DeployProps & { onSetup: () => void; mapName: string; mapBlurb: string }) {
   return (
     <Shell>
-      <div className="text-[10px] uppercase tracking-[0.4em] text-white/35">Combined arms · Valley sector</div>
+      <div className="text-[10px] uppercase tracking-[0.4em] text-white/35">Combined arms · {mapName}</div>
       <h1 className="mt-2 text-4xl font-semibold tracking-tight">CLAUDEFIELD</h1>
       <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/60">
-        Two companies, three villages and a road between them. Take the capture points and hold them: whoever
-        owns more ground bleeds the other side's reinforcements away. Fight it on foot, crew a tank, or take
-        one of the aircraft off the strip behind your lines.
+        {mapBlurb} Take the capture points and hold them: whoever owns more ground bleeds the other side's
+        reinforcements away. Fight it on foot, crew a vehicle, or take one of the aircraft off the strip
+        behind your lines.
       </p>
       <ClassPicker
         selected={selectedClass}
@@ -527,6 +556,13 @@ function Briefing({ onDeploy, selectedClass, onSelectClass, selectedPrimary, onS
         <DeployButton title="Tank" note="75 mm, AP and HE, real armour" onClick={() => onDeploy("tank")} />
         <DeployButton title="Aircraft" note="20 mm cannon and two bombs" onClick={() => onDeploy("plane")} />
       </div>
+      <button
+        type="button"
+        onClick={onSetup}
+        className="mt-3 self-start rounded border border-white/12 px-4 py-1.5 text-[11px] uppercase tracking-[0.16em] text-white/50 hover:border-white/35 hover:text-white/80"
+      >
+        Match setup — map, vehicles and weapons
+      </button>
       <ControlsGrid />
     </Shell>
   );
@@ -670,7 +706,17 @@ function DeployButton({
   );
 }
 
-function Pause({ hud, onResume, onControls }: { hud: HudSnapshot; onResume: () => void; onControls: () => void }) {
+function Pause({
+  hud,
+  onResume,
+  onControls,
+  onSetup,
+}: {
+  hud: HudSnapshot;
+  onResume: () => void;
+  onControls: () => void;
+  onSetup: () => void;
+}) {
   return (
     <Shell>
       <h2 className="text-2xl font-semibold tracking-tight">Paused</h2>
@@ -692,30 +738,46 @@ function Pause({ hud, onResume, onControls }: { hud: HudSnapshot; onResume: () =
         >
           Controls
         </button>
+        <button
+          type="button"
+          onClick={onSetup}
+          className="rounded border border-white/12 px-5 py-2 text-sm text-white/70 hover:bg-white/10"
+        >
+          Match setup
+        </button>
       </div>
     </Shell>
   );
 }
 
-function Result({ hud }: { hud: HudSnapshot }) {
+function Result({ hud, onSetup, mapName }: { hud: HudSnapshot; onSetup: () => void; mapName: string }) {
   const won = hud.winner === "blue";
   return (
     <Shell>
       <div className="text-[10px] uppercase tracking-[0.4em] text-white/35">Sector resolved</div>
       <h2 className="mt-2 text-4xl font-semibold tracking-tight" style={{ color: won ? BLUE : RED }}>
-        {won ? "Blue holds the valley" : "Red holds the valley"}
+        {won ? `Blue holds ${mapName}` : `Red holds ${mapName}`}
       </h2>
       <div className="mt-3 text-sm text-white/55">
         Final reinforcements — Blue {hud.tickets.blue}, Red {hud.tickets.red}. You finished with {hud.kills} kills
         and {hud.deaths} deaths.
       </div>
-      <button
-        type="button"
-        onClick={() => window.location.reload()}
-        className="mt-6 rounded border border-white/20 bg-white/10 px-5 py-2 text-sm hover:bg-white/20"
-      >
-        Fight it again
-      </button>
+      <div className="mt-6 flex gap-3">
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded border border-white/20 bg-white/10 px-5 py-2 text-sm hover:bg-white/20"
+        >
+          Fight it again
+        </button>
+        <button
+          type="button"
+          onClick={onSetup}
+          className="rounded border border-white/12 px-5 py-2 text-sm text-white/70 hover:bg-white/10"
+        >
+          Change map and loadout
+        </button>
+      </div>
     </Shell>
   );
 }

@@ -4,11 +4,11 @@ import {
   MAPS,
   MatchConfig,
   PRESETS,
+  mapById,
   WEAPON_GROUPS,
   WEAPON_GROUP_LABEL,
   vehiclesInCategory,
   type MatchSettings,
-  type PresetId,
   type TeamLoadout,
   type VehicleCategory,
   type WeaponGroup,
@@ -36,7 +36,9 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
 
   const [settings, setSettings] = useState<MatchSettings>(() => config.getMatchSettings());
   const [activeTab, setActiveTab] = useState<"team1" | "team2">("team1");
-  const [activePreset, setActivePreset] = useState<PresetId>("all_out");
+  // Which preset the *current map* is showing. Held by MatchConfig rather than
+  // here, because it changes when you switch maps.
+  const activePreset = config.activePreset();
 
   useEffect(() => {
     const unsubscribe = config.subscribe(setSettings);
@@ -46,6 +48,7 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
   }, [config]);
 
   const problems = useMemo(() => config.validate(), [config, settings]);
+  const activeMap = mapById(settings.mapId);
   const canStart = problems.length === 0;
 
   const start = useCallback(() => {
@@ -78,6 +81,70 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
           </div>
         </header>
 
+        {/* ---- map ---- */}
+        <section>
+          <SectionLabel>Map</SectionLabel>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {MAPS.map((m) => {
+              const summary = config.summaryFor(m.id);
+              const selected = settings.mapId === m.id;
+              return (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => config.setMap(m.id)}
+                  aria-pressed={selected}
+                  className={cn(
+                    "rounded border p-3 text-left transition",
+                    selected
+                      ? "border-[#6ea8dc]/70 bg-[#6ea8dc]/10"
+                      : "border-white/12 bg-white/[0.03] hover:border-white/30 hover:bg-white/[0.07]",
+                  )}
+                >
+                  <div className="text-sm font-semibold">{m.name}</div>
+                  <div className="mt-1 text-[11px] leading-snug text-white/45">{m.blurb}</div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {m.tags.map((t) => (
+                      <span key={t} className="rounded-full border border-white/12 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-white/40">
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                  {/* Each map remembers its own roster — show it without opening it. */}
+                  <div className="mt-2 text-[10px] tabular-nums text-white/35">
+                    {summary.vehicles} vehicles · {summary.weapons} weapons · {summary.bots} bots
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* ---- everything below this line belongs to the selected map ---- */}
+        <div className="flex items-center gap-3 rounded border border-[#6ea8dc]/25 bg-[#6ea8dc]/[0.06] px-4 py-2.5">
+          <span className="text-[10px] uppercase tracking-[0.22em] text-white/40">Configuring</span>
+          <span className="text-sm font-semibold text-[#6ea8dc]">{activeMap.name}</span>
+          <span className="text-[11px] text-white/35">
+            {activePreset ? PRESETS.find((p) => p.id === activePreset)?.name : "Custom roster"}
+          </span>
+          <div className="ml-auto flex gap-2">
+            <button
+              type="button"
+              onClick={() => config.copyToAllMaps()}
+              className="rounded border border-white/15 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/55 hover:border-white/40 hover:text-white/85"
+            >
+              Copy to all maps
+            </button>
+            <button
+              type="button"
+              onClick={() => config.resetMap()}
+              className="rounded border border-white/15 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/55 hover:border-white/40 hover:text-white/85"
+            >
+              Reset map
+            </button>
+          </div>
+        </div>
+
         {/* ---- presets ---- */}
         <section>
           <SectionLabel>Preset</SectionLabel>
@@ -86,10 +153,7 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
               <button
                 key={p.id}
                 type="button"
-                onClick={() => {
-                  config.applyPreset(p.id);
-                  setActivePreset(p.id);
-                }}
+                onClick={() => config.applyPreset(p.id)}
                 aria-pressed={activePreset === p.id}
                 className={cn(
                   "rounded border p-3 text-left transition",
@@ -100,37 +164,6 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
               >
                 <div className="text-sm font-semibold">{p.name}</div>
                 <div className="mt-1 text-[11px] leading-snug text-white/45">{p.blurb}</div>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {/* ---- map ---- */}
-        <section>
-          <SectionLabel>Map</SectionLabel>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {MAPS.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => config.setMap(m.id)}
-                aria-pressed={settings.mapId === m.id}
-                className={cn(
-                  "rounded border p-3 text-left transition",
-                  settings.mapId === m.id
-                    ? "border-[#6ea8dc]/70 bg-[#6ea8dc]/10"
-                    : "border-white/12 bg-white/[0.03] hover:border-white/30 hover:bg-white/[0.07]",
-                )}
-              >
-                <div className="text-sm font-semibold">{m.name}</div>
-                <div className="mt-1 text-[11px] leading-snug text-white/45">{m.blurb}</div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {m.tags.map((t) => (
-                    <span key={t} className="rounded-full border border-white/12 px-1.5 py-0.5 text-[9px] uppercase tracking-wider text-white/40">
-                      {t}
-                    </span>
-                  ))}
-                </div>
               </button>
             ))}
           </div>
