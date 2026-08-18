@@ -777,15 +777,15 @@ export class Ironfront {
     this.audio.setMuted(muted);
   }
 
-  /** Called from the deploy screen. `classId` only matters for infantry. */
-  deploy(as: PlayerMode, classId: ClassId = "rifleman") {
+  /** Called from the deploy screen. `classId`/`primaryWeapon` only matter for infantry. */
+  deploy(as: PlayerMode, classId: ClassId = "rifleman", primaryWeapon?: string) {
     if (this.phase !== "deploy" && this.phase !== "briefing") return;
     this.leaveVehicle(false);
     this.player.alive = true;
     this.player.hp = 100;
     this.player.stamina = 100;
     this.player.stance = "stand";
-    equipSoldier(this.player, classId);
+    equipSoldier(this.player, classId, primaryWeapon);
     this.player.reloadUntil = 0;
     this.reloadWeapon = null;
     this.placeAtSpawn(this.player);

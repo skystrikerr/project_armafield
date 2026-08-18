@@ -19,7 +19,7 @@ import {
   type Unit,
 } from "./units";
 import { angleDelta, approachAngle, clamp } from "./random";
-import { heavyWeaponOf, weaponCategory } from "./eras";
+import { heavyWeaponOfSoldier, weaponCategory } from "./eras";
 
 /**
  * Squad and crew behaviour. Everything is a small state machine on a think
@@ -144,7 +144,7 @@ export function updateSoldierAI(s: Soldier, ctx: AiContext, dt: number) {
       ai.strafe = 0;
     } else {
       const d = s.pos.distanceTo(target.pos);
-      const heavy = heavyWeaponOf(s.classId);
+      const heavy = heavyWeaponOfSoldier(s);
       const atExhausted = !heavy || (s.mags[heavy] <= 0 && s.ammo[heavy] <= 0);
       const scared = s.hp < 45 || s.suppression > 55 || (target.kind === "tank" && atExhausted);
       if (scared && now > ai.coverUntil) {

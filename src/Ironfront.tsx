@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Ironfront as Game, type HudSnapshot, type MinimapUnit } from "@/ironfront/game";
-import { PLAYABLE_CLASSES } from "@/ironfront/eras";
+import { PLAYABLE_CLASSES, primaryOptionsFor } from "@/ironfront/eras";
 import { MAP_HALF, ZONES } from "@/ironfront/terrain";
-import { TEAM_COLOR, type ClassId } from "@/ironfront/units";
+import { TEAM_COLOR, WEAPONS, type ClassId } from "@/ironfront/units";
 import { cn } from "@/lib/utils";
 
 /**
@@ -33,12 +33,20 @@ export default function Ironfront() {
   }, []);
 
   const [selectedClass, setSelectedClass] = useState<ClassId>(PLAYABLE_CLASSES[0].id);
+  // Remembers the last weapon picked per class, so switching classes and back
+  // doesn't forget your choice.
+  const [primaryByClass, setPrimaryByClass] = useState<Partial<Record<ClassId, string>>>({});
+  const selectedPrimary = primaryByClass[selectedClass] ?? primaryOptionsFor(selectedClass)[0];
+  const setSelectedPrimary = useCallback(
+    (weaponId: string) => setPrimaryByClass((prev) => ({ ...prev, [selectedClass]: weaponId })),
+    [selectedClass],
+  );
 
   const deploy = useCallback(
     (as: "infantry" | "tank" | "plane") => {
-      gameRef.current?.deploy(as, selectedClass);
+      gameRef.current?.deploy(as, selectedClass, selectedPrimary);
     },
-    [selectedClass],
+    [selectedClass, selectedPrimary],
   );
 
   return (
@@ -58,10 +66,23 @@ export default function Ironfront() {
       )}
 
       {hud?.phase === "briefing" && (
-        <Briefing onDeploy={deploy} selectedClass={selectedClass} onSelectClass={setSelectedClass} />
+        <Briefing
+          onDeploy={deploy}
+          selectedClass={selectedClass}
+          onSelectClass={setSelectedClass}
+          selectedPrimary={selectedPrimary}
+          onSelectPrimary={setSelectedPrimary}
+        />
       )}
       {hud?.phase === "deploy" && (
-        <Deploy hud={hud} onDeploy={deploy} selectedClass={selectedClass} onSelectClass={setSelectedClass} />
+        <Deploy
+          hud={hud}
+          onDeploy={deploy}
+          selectedClass={selectedClass}
+          onSelectClass={setSelectedClass}
+          selectedPrimary={selectedPrimary}
+          onSelectPrimary={setSelectedPrimary}
+        />
       )}
       {hud?.phase === "over" && <Result hud={hud} />}
       {hud?.paused && hud.phase === "playing" && (
@@ -474,9 +495,11 @@ type DeployProps = {
   onDeploy: (as: "infantry" | "tank" | "plane") => void;
   selectedClass: ClassId;
   onSelectClass: (id: ClassId) => void;
+  selectedPrimary: string;
+  onSelectPrimary: (id: string) => void;
 };
 
-function Briefing({ onDeploy, selectedClass, onSelectClass }: DeployProps) {
+function Briefing({ onDeploy, selectedClass, onSelectClass, selectedPrimary, onSelectPrimary }: DeployProps) {
   return (
     <Shell>
       <div className="text-[10px] uppercase tracking-[0.4em] text-white/35">Combined arms · Valley sector</div>
@@ -486,9 +509,14 @@ function Briefing({ onDeploy, selectedClass, onSelectClass }: DeployProps) {
         owns more ground bleeds the other side's reinforcements away. Fight it on foot, crew a tank, or take
         one of the aircraft off the strip behind your lines.
       </p>
-      <ClassPicker selected={selectedClass} onSelect={onSelectClass} />
+      <ClassPicker
+        selected={selectedClass}
+        onSelect={onSelectClass}
+        selectedPrimary={selectedPrimary}
+        onSelectPrimary={onSelectPrimary}
+      />
       <div className="mt-4 grid grid-cols-3 gap-3">
-        <DeployButton title="Infantry" note="Deploy with the class above" onClick={() => onDeploy("infantry")} />
+        <DeployButton title="Infantry" note="Deploy with the loadout above" onClick={() => onDeploy("infantry")} />
         <DeployButton title="Tank" note="75 mm, AP and HE, real armour" onClick={() => onDeploy("tank")} />
         <DeployButton title="Aircraft" note="20 mm cannon and two bombs" onClick={() => onDeploy("plane")} />
       </div>
@@ -497,7 +525,14 @@ function Briefing({ onDeploy, selectedClass, onSelectClass }: DeployProps) {
   );
 }
 
-function Deploy({ hud, onDeploy, selectedClass, onSelectClass }: DeployProps & { hud: HudSnapshot }) {
+function Deploy({
+  hud,
+  onDeploy,
+  selectedClass,
+  onSelectClass,
+  selectedPrimary,
+  onSelectPrimary,
+}: DeployProps & { hud: HudSnapshot }) {
   const waiting = hud.respawnIn > 0;
   return (
     <Shell>
@@ -507,9 +542,14 @@ function Deploy({ hud, onDeploy, selectedClass, onSelectClass }: DeployProps & {
           {waiting ? `Reinforcements in ${hud.respawnIn.toFixed(1)}s` : "Ready"}
         </div>
       </div>
-      <ClassPicker selected={selectedClass} onSelect={onSelectClass} />
+      <ClassPicker
+        selected={selectedClass}
+        onSelect={onSelectClass}
+        selectedPrimary={selectedPrimary}
+        onSelectPrimary={onSelectPrimary}
+      />
       <div className="mt-4 grid grid-cols-3 gap-3">
-        <DeployButton title="Infantry" note="Deploy with the class above" disabled={waiting} onClick={() => onDeploy("infantry")} />
+        <DeployButton title="Infantry" note="Deploy with the loadout above" disabled={waiting} onClick={() => onDeploy("infantry")} />
         <DeployButton
           title="Tank"
           note={hud.spawnOptions.tanks > 0 ? `${hud.spawnOptions.tanks} in the yard` : "None left in the yard"}
@@ -535,7 +575,18 @@ function Deploy({ hud, onDeploy, selectedClass, onSelectClass }: DeployProps & {
   );
 }
 
-function ClassPicker({ selected, onSelect }: { selected: ClassId; onSelect: (id: ClassId) => void }) {
+function ClassPicker({
+  selected,
+  onSelect,
+  selectedPrimary,
+  onSelectPrimary,
+}: {
+  selected: ClassId;
+  onSelect: (id: ClassId) => void;
+  selectedPrimary: string;
+  onSelectPrimary: (id: string) => void;
+}) {
+  const primaries = primaryOptionsFor(selected);
   return (
     <div className="mt-6">
       <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-white/35">Class</div>
@@ -558,6 +609,29 @@ function ClassPicker({ selected, onSelect }: { selected: ClassId; onSelect: (id:
           </button>
         ))}
       </div>
+      {primaries.length > 1 && (
+        <div className="mt-3">
+          <div className="mb-1.5 text-[10px] uppercase tracking-[0.22em] text-white/35">Primary weapon</div>
+          <div className="flex flex-wrap gap-2">
+            {primaries.map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => onSelectPrimary(id)}
+                aria-pressed={selectedPrimary === id}
+                className={cn(
+                  "rounded-full border px-3 py-1 text-xs transition",
+                  selectedPrimary === id
+                    ? "border-[#ffd479]/70 bg-[#ffd479]/10 text-[#ffd479]"
+                    : "border-white/15 text-white/60 hover:border-white/35 hover:text-white/85",
+                )}
+              >
+                {WEAPONS[id].name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
