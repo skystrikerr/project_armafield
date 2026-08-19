@@ -122,6 +122,68 @@ export const WEAPONS: Record<WeaponId, WeaponSpec> = {
     auto: true,
     tracer: 0xfff2a0,
   },
+  /* ---------------- Imperial Japanese Army armament ---------------- */
+  /** Type 94 37 mm. Fine against a Stuart, useless against a Sherman. */
+  type94_37: {
+    name: "37 mm",
+    rpm: 20,
+    speed: 700,
+    damage: 62,
+    penetration: 38,
+    blast: 1.4,
+    blastDamage: 34,
+    spread: 0.0018,
+    magazine: 1,
+    reloadTime: 3.0,
+    auto: false,
+    tracer: 0xffe8b0,
+  },
+  /** Type 97 57 mm — a short low-velocity gun meant for bunkers, not tanks. */
+  type97_57: {
+    name: "57 mm",
+    rpm: 14,
+    speed: 350,
+    damage: 78,
+    penetration: 26,
+    blast: 4.2,
+    blastDamage: 95,
+    spread: 0.0028,
+    magazine: 1,
+    reloadTime: 4.2,
+    auto: false,
+    tracer: 0xffe8b0,
+  },
+  /** Type 1 47 mm. Long, fast, and the first Japanese gun that could fight armour. */
+  type1_47: {
+    name: "47 mm",
+    rpm: 18,
+    speed: 810,
+    damage: 70,
+    penetration: 62,
+    blast: 1.8,
+    blastDamage: 42,
+    spread: 0.0016,
+    magazine: 1,
+    reloadTime: 3.4,
+    auto: false,
+    tracer: 0xffe8b0,
+  },
+  /** Type 3 75 mm, off the Type 90 field gun. The best barrel Japan fielded. */
+  type3_75: {
+    name: "75 mm",
+    rpm: 12,
+    speed: 683,
+    damage: 96,
+    penetration: 90,
+    blast: 4.6,
+    blastDamage: 105,
+    spread: 0.0018,
+    magazine: 1,
+    reloadTime: 4.8,
+    auto: false,
+    tracer: 0xfff0c0,
+  },
+
   /* ---------------- Great War vehicle armament ---------------- */
   sixpdr: {
     name: "6-pdr",

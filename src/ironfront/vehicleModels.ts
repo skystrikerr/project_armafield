@@ -354,6 +354,14 @@ function armoredCarTurretGeometry(tint: number): THREE.BufferGeometry {
   ]);
 }
 
+/** IJA barrels, scaled: a stubby 57 at 0.55, a long 75 at 1.0. */
+function japaneseBarrelGeometry(k: number): THREE.BufferGeometry {
+  return build([
+    { g: "cyl", r: 0.09 + 0.03 * k, h: 3.0 * k, seg: 8, pos: [0, 0, 1.5 * k], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "cyl", r: 0.16, h: 0.4, seg: 8, pos: [0, 0, 0.2], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+  ]);
+}
+
 /** The Greyhound's 37 mm — much slimmer and shorter than a medium's gun. */
 function armoredCarBarrelGeometry(): THREE.BufferGeometry {
   return build([
@@ -877,8 +885,8 @@ function spokedWheels(parts: Part[], halfWidth: number, radius: number, position
  * builds the Schneider 155 rather than the 75, which is the same arrangement
  * scaled up with a heavier shield.
  */
-function gunCarriageGeometry(tint: number, big: boolean): THREE.BufferGeometry {
-  const k = big ? 1.28 : 1.0;
+function gunCarriageGeometry(tint: number, scale: number): THREE.BufferGeometry {
+  const k = scale;
   const body = tint;
   const dark = shade(tint, 0.74);
   const parts: Part[] = [
@@ -898,8 +906,8 @@ function gunCarriageGeometry(tint: number, big: boolean): THREE.BufferGeometry {
 }
 
 /** The gun itself pivots on the carriage, so it lives on the turret node. */
-function gunBarrelMountGeometry(tint: number, big: boolean): THREE.BufferGeometry {
-  const k = big ? 1.3 : 1.0;
+function gunBarrelMountGeometry(tint: number, scale: number): THREE.BufferGeometry {
+  const k = scale;
   return build([
     { g: "box", size: [0.5 * k, 0.4 * k, 0.9 * k], pos: [0, 0.1, 0], color: shade(tint, 1.18) },
     { g: "cyl", r: 0.2 * k, h: 0.5 * k, seg: 10, pos: [0, 0.1, 0.4 * k], rot: [Math.PI / 2, 0, 0], color: STEEL },
@@ -907,16 +915,20 @@ function gunBarrelMountGeometry(tint: number, big: boolean): THREE.BufferGeometr
 }
 
 /** Long thin 75 mm tube, or the 155's shorter, fatter one. */
-function towedGunBarrelGeometry(big: boolean): THREE.BufferGeometry {
-  return big
-    ? build([
-        { g: "cyl", r: 0.19, h: 3.0, seg: 10, pos: [0, 0, 1.5], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
-        { g: "cyl", r: 0.26, h: 0.7, seg: 10, pos: [0, 0, 0.35], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
-      ])
-    : build([
-        { g: "cyl", r: 0.11, h: 3.4, seg: 10, pos: [0, 0, 1.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
-        { g: "cyl", r: 0.17, h: 0.55, seg: 10, pos: [0, 0, 0.3], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
-      ]);
+function towedGunBarrelGeometry(scale: number): THREE.BufferGeometry {
+  return build([
+    { g: "cyl", r: 0.08 * scale + 0.03, h: 3.4 * scale, seg: 10, pos: [0, 0, 1.7 * scale], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "cyl", r: 0.13 * scale + 0.04, h: 0.55 * scale, seg: 10, pos: [0, 0, 0.3 * scale], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+  ]);
+}
+
+/**
+ * How big a towed piece is, relative to the French 75. The Japanese Type 94
+ * is a 37 mm anti-tank gun two men could shift; a 155 howitzer is not.
+ */
+function gunScale(def: VehicleDef): number {
+  if (def.id === "type94_37mm") return 0.62;
+  return def.chassis === "howitzer" ? 1.28 : 1.0;
 }
 
 function wagonGeometry(tint: number): THREE.BufferGeometry {
@@ -1327,6 +1339,247 @@ function profileFor(id: string): FighterProfile {
 }
 
 /* ================================================================== */
+/*  Imperial Japanese Army                                              */
+/* ================================================================== */
+
+/**
+ * Type 95 Ha-Go. Small, tall for its length, and riding on the bell-crank
+ * suspension the IJA used on nearly everything — paired road wheels on
+ * scissor arms, which is what makes a Japanese track run recognisable.
+ */
+function lightTankHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.18);
+  const parts: Part[] = [
+    { g: "box", size: [2.0, 0.85, 4.2], pos: [0, 1.0, 0], color: body },
+    { g: "box", size: [2.0, 0.3, 1.0], pos: [0, 1.32, 1.9], rot: [-0.55, 0, 0], color: light },
+    { g: "box", size: [1.9, 0.4, 1.6], pos: [0, 1.5, 0.3], color: body },
+    // Riveted strakes down the flanks.
+    { g: "box", size: [0.1, 0.5, 3.8], pos: [1.02, 1.1, 0], color: light },
+    { g: "box", size: [0.1, 0.5, 3.8], pos: [-1.02, 1.1, 0], color: light },
+    { g: "box", size: [1.85, 0.1, 3.6], pos: [0, 1.72, 0], color: dark },
+    // Bow machine gun and the driver's visor block.
+    { g: "box", size: [0.7, 0.35, 0.3], pos: [-0.5, 1.28, 2.2], color: light },
+    { g: "cyl", r: 0.07, h: 0.7, seg: 6, pos: [0.55, 1.2, 2.3], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "box", size: [2.3, 0.1, 3.4], pos: [0, 1.5, -0.2], color: dark },
+  ];
+  headlights(parts, 0.7, 1.35, 2.32);
+  for (const side of [-1, 1]) {
+    japaneseTrack(parts, side * 1.12, { length: 4.4, wheelY: 0.5, wheelR: 0.36, pairs: 2, endZ: 1.95 });
+  }
+  return build(parts);
+}
+
+/** Small drum turret with a stubby gun and the offset cupola the Ha-Go carried. */
+function lightTankTurretGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  return build([
+    { g: "cyl", r: 0.62, r2: 0.55, h: 0.72, seg: 8, pos: [0, 0.36, 0], color: body },
+    { g: "box", size: [0.8, 0.55, 0.5], pos: [0, 0.36, 0.55], color: light },
+    { g: "cyl", r: 0.24, h: 0.4, seg: 8, pos: [0, 0.36, 0.75], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    { g: "cyl", r: 0.6, h: 0.1, seg: 8, pos: [0, 0.76, 0], color: dark },
+    { g: "cyl", r: 0.22, h: 0.18, seg: 8, pos: [-0.2, 0.86, -0.2], color: dark },
+    // Rear-facing machine gun, which the Ha-Go really did have.
+    { g: "cyl", r: 0.06, h: 0.5, seg: 6, pos: [0, 0.36, -0.75], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+  ]);
+}
+
+/**
+ * Chi-Ha family. Riveted, slab-sided, with a stepped hull front and a tall
+ * narrow turret set well forward. All three mediums share it — the gun and
+ * the turret size are what tell a Chi-Ha from a Chi-Nu.
+ */
+function rivetedMediumHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.18);
+  const parts: Part[] = [
+    { g: "box", size: [2.4, 0.9, 5.4], pos: [0, 1.0, 0], color: body },
+    // Stepped nose: two plates rather than one glacis.
+    { g: "box", size: [2.4, 0.32, 1.1], pos: [0, 1.35, 2.45], rot: [-0.6, 0, 0], color: light },
+    { g: "box", size: [2.4, 0.5, 0.6], pos: [0, 0.85, 2.75], rot: [0.4, 0, 0], color: light },
+    { g: "box", size: [2.3, 0.5, 2.6], pos: [0, 1.62, 0.3], color: body },
+    // Rivet strakes and fenders.
+    { g: "box", size: [0.1, 0.6, 5.0], pos: [1.22, 1.1, 0], color: light },
+    { g: "box", size: [0.1, 0.6, 5.0], pos: [-1.22, 1.1, 0], color: light },
+    { g: "box", size: [2.9, 0.1, 4.6], pos: [0, 1.55, 0], color: dark },
+    { g: "box", size: [2.2, 0.12, 3.4], pos: [0, 1.86, 0.3], color: dark },
+    // Bow gun and the driver's box, offset the way the real thing was.
+    { g: "box", size: [0.8, 0.4, 0.4], pos: [-0.6, 1.42, 2.55], color: light },
+    { g: "cyl", r: 0.07, h: 0.8, seg: 6, pos: [0.6, 1.35, 2.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    // Rear engine deck with its big exhaust down the flank.
+    { g: "box", size: [2.1, 0.14, 1.5], pos: [0, 1.92, -1.9], color: dark },
+    { g: "cyl", r: 0.16, h: 2.4, seg: 6, pos: [1.28, 1.65, -1.0], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+  ];
+  headlights(parts, 0.85, 1.5, 2.85);
+  for (const side of [-1, 1]) {
+    japaneseTrack(parts, side * 1.32, { length: 5.6, wheelY: 0.58, wheelR: 0.42, pairs: 3, endZ: 2.5 });
+  }
+  return build(parts);
+}
+
+/** Tall narrow turret with the big rear overhang and a domed cupola. */
+function rivetedMediumTurretGeometry(tint: number, big: boolean): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  const k = big ? 1.28 : 1.0;
+  return build([
+    { g: "cyl", r: 0.78 * k, r2: 0.66 * k, h: 0.9 * k, seg: 8, pos: [0, 0.45 * k, 0], color: body },
+    { g: "box", size: [0.9 * k, 0.7 * k, 0.7], pos: [0, 0.45 * k, 0.72 * k], color: light },
+    { g: "cyl", r: 0.28 * k, h: 0.45, seg: 8, pos: [0, 0.45 * k, 0.95 * k], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    // Rear bustle — the Chi-Ha turret's most distinctive feature from the side.
+    { g: "box", size: [1.0 * k, 0.6 * k, 0.6], pos: [0, 0.45 * k, -0.8 * k], color: light },
+    { g: "cyl", r: 0.76 * k, h: 0.1, seg: 8, pos: [0, 0.94 * k, 0], color: dark },
+    // Domed commander's cupola.
+    { g: "cyl", r: 0.3, r2: 0.26, h: 0.28, seg: 8, pos: [0, 1.06 * k, -0.15], color: body },
+    { g: "sphere", r: 0.26, seg: 8, pos: [0, 1.24 * k, -0.15], color: dark },
+    { g: "cyl", r: 0.06, h: 0.5, seg: 6, pos: [0, 0.45 * k, -1.15 * k], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+  ]);
+}
+
+/** Type 92 / So-Ki: a tracked box barely bigger than a car. */
+function tanketteGeometry(tint: number, long: boolean): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.18);
+  const len = long ? 3.9 : 3.1;
+  const parts: Part[] = [
+    { g: "box", size: [1.5, 0.7, len], pos: [0, 0.85, 0], color: body },
+    { g: "box", size: [1.5, 0.28, 0.8], pos: [0, 1.1, len * 0.44], rot: [-0.6, 0, 0], color: light },
+    { g: "box", size: [1.4, 0.42, len * 0.5], pos: [0, 1.3, -0.1], color: body },
+    { g: "box", size: [1.35, 0.1, len * 0.55], pos: [0, 1.52, -0.1], color: dark },
+    { g: "box", size: [0.08, 0.45, len * 0.85], pos: [0.78, 0.9, 0], color: light },
+    { g: "box", size: [0.08, 0.45, len * 0.85], pos: [-0.78, 0.9, 0], color: light },
+    { g: "box", size: [0.6, 0.1, 0.08], pos: [0, 1.16, len * 0.5], color: 0x141414 },
+  ];
+  headlights(parts, 0.5, 1.05, len * 0.52);
+  for (const side of [-1, 1]) {
+    japaneseTrack(parts, side * 0.86, {
+      length: len + 0.3, wheelY: 0.42, wheelR: 0.3, pairs: long ? 3 : 2, endZ: len * 0.42,
+    });
+  }
+  return build(parts);
+}
+
+/** Small MG turret, shared by the tankettes and the Sumida. */
+function smallMgTurretGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  return build([
+    { g: "cyl", r: 0.42, r2: 0.36, h: 0.5, seg: 8, pos: [0, 0.26, 0], color: body },
+    { g: "cyl", r: 0.4, h: 0.08, seg: 8, pos: [0, 0.54, 0], color: shade(tint, 0.72) },
+    { g: "cyl", r: 0.16, h: 0.28, seg: 8, pos: [0, 0.26, 0.4], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    { g: "cyl", r: 0.055, h: 0.7, seg: 6, pos: [0, 0.26, 0.75], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+  ]);
+}
+
+/** Type 93 Sumida: tall, slab-sided, built to run on road or rail. */
+function boxyCarHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    { g: "box", size: [2.1, 0.5, 5.0], pos: [0, 1.0, 0], color: dark },
+    // The body is one tall box with slightly canted sides — very upright.
+    { g: "box", size: [2.0, 1.5, 3.4], pos: [0, 1.95, -0.5], color: body },
+    { g: "box", size: [0.14, 1.4, 3.4], pos: [1.04, 1.95, -0.5], rot: [0, 0, 0.06], color: light },
+    { g: "box", size: [0.14, 1.4, 3.4], pos: [-1.04, 1.95, -0.5], rot: [0, 0, -0.06], color: light },
+    // Sloped bonnet and radiator.
+    { g: "box", size: [1.8, 0.9, 1.6], pos: [0, 1.6, 1.9], color: body },
+    { g: "box", size: [1.7, 0.28, 0.9], pos: [0, 2.06, 1.55], rot: [-0.5, 0, 0], color: light },
+    { g: "box", size: [1.55, 0.9, 0.14], pos: [0, 1.6, 2.72], color: light },
+    // Vision slits and a roof hatch.
+    { g: "box", size: [1.2, 0.1, 0.08], pos: [0, 2.2, 1.2], color: 0x141414 },
+    { g: "box", size: [2.05, 0.12, 3.4], pos: [0, 2.72, -0.5], color: dark },
+    // Rail guide rollers under the nose — how it ran on a railway.
+    { g: "cyl", r: 0.24, h: 0.16, seg: 8, pos: [0, 0.62, 2.5], rot: [0, 0, Math.PI / 2], color: STEEL_DARK },
+    { g: "box", size: [2.5, 0.1, 4.4], pos: [0, 1.14, 0], color: dark },
+  ];
+  headlights(parts, 0.72, 1.95, 2.76);
+  wheels(parts, 1.06, 0.5, [1.9, -0.7, -1.9]);
+  return build(parts);
+}
+
+/** Type 94 ammunition trailer: two wheels, a drawbar and a stack of crates. */
+function trailerGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const parts: Part[] = [
+    { g: "box", size: [1.5, 0.16, 2.0], pos: [0, 0.72, 0], color: dark },
+    { g: "box", size: [0.12, 0.45, 2.0], pos: [0.76, 0.98, 0], color: body },
+    { g: "box", size: [0.12, 0.45, 2.0], pos: [-0.76, 0.98, 0], color: body },
+    { g: "box", size: [1.5, 0.45, 0.12], pos: [0, 0.98, -1.0], color: body },
+    // Crated ammunition, stacked and lashed down.
+    { g: "box", size: [1.2, 0.5, 0.7], pos: [0, 1.05, 0.5], color: CANVAS },
+    { g: "box", size: [1.2, 0.5, 0.7], pos: [0, 1.05, -0.35], color: shade(CANVAS, 0.85) },
+    { g: "box", size: [1.1, 0.4, 0.6], pos: [0, 1.5, 0.1], color: CANVAS },
+    // Drawbar and its prop stand.
+    { g: "box", size: [0.14, 0.14, 1.9], pos: [0, 0.66, 1.9], rot: [-0.08, 0, 0], color: dark },
+    { g: "box", size: [0.5, 0.1, 0.12], pos: [0, 0.6, 2.75], color: dark },
+    { g: "box", size: [0.1, 0.5, 0.1], pos: [0, 0.38, 2.4], color: STEEL_DARK },
+  ];
+  for (const side of [-1, 1]) {
+    parts.push(
+      { g: "cyl", r: 0.42, h: 0.22, seg: 10, pos: [side * 0.84, 0.42, 0], rot: [0, 0, Math.PI / 2], color: RUBBER },
+      { g: "cyl", r: 0.16, h: 0.26, seg: 8, pos: [side * 0.84, 0.42, 0], rot: [0, 0, Math.PI / 2], color: STEEL },
+    );
+  }
+  return build(parts);
+}
+
+/**
+ * IJA running gear: paired road wheels on bell-crank arms, with the pairs
+ * clearly separated rather than the even row a Sherman has. Reuses the same
+ * two-run belt as everything else so the wheels stay visible.
+ */
+function japaneseTrack(
+  parts: Part[],
+  x: number,
+  o: { length: number; wheelY: number; wheelR: number; pairs: number; endZ: number },
+) {
+  const { length, wheelY, wheelR, pairs, endZ } = o;
+  const runT = wheelR * 0.34;
+  parts.push({ g: "box", size: [wheelR * 1.5, runT, length], pos: [x, wheelY - wheelR, 0], color: TRACK });
+  parts.push({ g: "box", size: [wheelR * 1.5, runT, length * 0.94], pos: [x, wheelY + wheelR + runT * 0.2, 0], color: TRACK });
+  const span = length - wheelR * 3.2;
+  for (let i = 0; i < pairs; i++) {
+    const centre = pairs === 1 ? 0 : -span / 2 + (i / (pairs - 1)) * span;
+    for (const off of [-wheelR * 0.9, wheelR * 0.9]) {
+      parts.push({
+        g: "cyl", r: wheelR, h: wheelR * 0.9, seg: 8,
+        pos: [x, wheelY, centre + off], rot: [0, 0, Math.PI / 2], color: RUBBER,
+      });
+      parts.push({
+        g: "cyl", r: wheelR * 0.4, h: wheelR * 1.0, seg: 6,
+        pos: [x, wheelY, centre + off], rot: [0, 0, Math.PI / 2], color: STEEL,
+      });
+    }
+    // The bell crank itself: an arm between each pair and the hull.
+    parts.push({
+      g: "box", size: [wheelR * 0.5, wheelR * 0.4, wheelR * 2.4],
+      pos: [x, wheelY + wheelR * 0.7, centre], color: STEEL_DARK,
+    });
+  }
+  for (const z of [endZ, -endZ]) {
+    parts.push({
+      g: "cyl", r: wheelR * 0.95, h: wheelR * 1.0, seg: 8,
+      pos: [x, wheelY + wheelR * 0.3, z], rot: [0, 0, Math.PI / 2], color: STEEL,
+    });
+  }
+  // Return rollers along the top run.
+  for (let i = 0; i < 2; i++) {
+    parts.push({
+      g: "cyl", r: wheelR * 0.3, h: wheelR * 0.8, seg: 6,
+      pos: [x, wheelY + wheelR * 0.95, -length * 0.2 + i * length * 0.4],
+      rot: [0, 0, Math.PI / 2], color: STEEL_DARK,
+    });
+  }
+}
+
+/* ================================================================== */
 /*  Public builders                                                     */
 /* ================================================================== */
 
@@ -1380,13 +1633,22 @@ export function hullGeometryFor(def: VehicleDef): THREE.BufferGeometry | null {
     case "vintage_armored_car":
       return vintageCarHullGeometry(def.tint);
     case "field_gun":
-      return gunCarriageGeometry(def.tint, false);
     case "howitzer":
-      return gunCarriageGeometry(def.tint, true);
+      return gunCarriageGeometry(def.tint, gunScale(def));
     case "wagon":
       return wagonGeometry(def.tint);
     case "biplane":
       return biplaneGeometry(def.tint, def.id === "fokker_dr1");
+    case "light_tank":
+      return lightTankHullGeometry(def.tint);
+    case "riveted_medium":
+      return rivetedMediumHullGeometry(def.tint);
+    case "tankette":
+      return tanketteGeometry(def.tint, def.id === "type95_soki");
+    case "boxy_armored_car":
+      return boxyCarHullGeometry(def.tint);
+    case "trailer":
+      return trailerGeometry(def.tint);
   }
 }
 
@@ -1407,12 +1669,19 @@ export function turretGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
       return slopedTankTurretGeometry(def.tint);
     case "vintage_armored_car":
       return vintageCarTurretGeometry(def.tint);
+    case "light_tank":
+      return lightTankTurretGeometry(def.tint);
+    case "riveted_medium":
+      // The Chi-Nu's 75 needed a much bigger turret than the Chi-Ha's 57.
+      return rivetedMediumTurretGeometry(def.tint, def.id === "type3_chinu");
+    case "tankette":
+    case "boxy_armored_car":
+      return smallMgTurretGeometry(def.tint);
     case "box_tank":
       return boxTankMantletGeometry(def.tint);
     case "field_gun":
-      return gunBarrelMountGeometry(def.tint, false);
     case "howitzer":
-      return gunBarrelMountGeometry(def.tint, true);
+      return gunBarrelMountGeometry(def.tint, gunScale(def) * (def.chassis === "howitzer" ? 1.02 : 1.0));
     // Rhomboids carry their guns in fixed sponsons that are part of the hull,
     // so there is nothing to put on the turret node.
     default:
@@ -1429,12 +1698,16 @@ export function barrelGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
       return armoredCarBarrelGeometry();
     case "heavy_armored_car":
       return pumaBarrelGeometry();
+    case "light_tank":
+      return japaneseBarrelGeometry(0.62);
+    case "riveted_medium":
+      // A short 57 is a stub; the 47 and the 75 are long guns.
+      return japaneseBarrelGeometry(def.id === "type97_chiha" ? 0.55 : 1.0);
     case "box_tank":
       return shortCannonGeometry();
     case "field_gun":
-      return towedGunBarrelGeometry(false);
     case "howitzer":
-      return towedGunBarrelGeometry(true);
+      return towedGunBarrelGeometry(gunScale(def));
     default:
       return null; // medium/TD reuse tankBarrelGeometry
   }
@@ -1452,6 +1725,10 @@ export function barrelMount(chassis: Chassis): [number, number, number] {
       return [0, 0.34, 0.72];
     case "heavy_armored_car":
       return [0, 0.34, 1.05];
+    case "light_tank":
+      return [0, 0.36, 0.7];
+    case "riveted_medium":
+      return [0, 0.45, 0.9];
     case "sloped_medium":
       return [0, 0.42, 1.2];
     case "box_tank":
@@ -1499,6 +1776,14 @@ export function turretRingHeight(chassis: Chassis): number {
       return 2.05;
     case "heavy_armored_car":
       return 1.72;
+    case "light_tank":
+      return 1.72;
+    case "riveted_medium":
+      return 1.9;
+    case "tankette":
+      return 1.5;
+    case "boxy_armored_car":
+      return 2.7;
     case "sloped_medium":
       return 1.48;
     case "box_tank":

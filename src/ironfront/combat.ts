@@ -166,6 +166,10 @@ export class Battle {
       case "maxim57":
       case "field_75":
       case "howitzer_155":
+      case "type94_37":
+      case "type97_57":
+      case "type1_47":
+      case "type3_75":
         this.world.effects.muzzleFlash(from, dir, 1.5);
         this.world.audio.cannon(dist);
         break;

@@ -46,7 +46,13 @@ export type Chassis =
   | "field_gun" // towed gun, emplaced: it aims but does not drive
   | "howitzer" // heavier towed piece, lobbed fire, punishing reload
   | "wagon" // horse-drawn supply cart, unarmed
-  | "biplane"; // two-wing scout — Camel, Dr.I, SPAD
+  | "biplane" // two-wing scout — Camel, Dr.I, SPAD
+  /* ---- Imperial Japanese Army ---- */
+  | "light_tank" // small turret, bell-crank suspension — Type 95 Ha-Go
+  | "riveted_medium" // riveted hull, tall narrow turret — Chi-Ha, Chi-He, Chi-Nu
+  | "tankette" // two-man tracked scout, MG only — Type 92, Type 95 So-Ki
+  | "boxy_armored_car" // tall slab-sided 6x6 with a small turret — Type 93 Sumida
+  | "trailer"; // towed two-wheel ammunition cart
 
 /** Broad grouping used by the setup UI's category rows and Select-All buttons. */
 export type VehicleCategory = "light" | "transport" | "armor" | "artillery" | "air";
@@ -250,6 +256,31 @@ const SLOPED_MEDIUM_ARMOR: ArmorScheme = {
 const PUMA_ARMOR: ArmorScheme = {
   hullFront: 30, hullSide: 8, hullRear: 10, hullTop: 6,
   turretFront: 30, turretSide: 14, turretRear: 14, turretTop: 6,
+};
+
+/**
+ * Imperial Japanese Army plate. Thin by 1944 standards across the board — the
+ * IJA built for the Pacific and China, where the opposition rarely had tanks.
+ */
+const JAPANESE_LIGHT: ArmorScheme = {
+  hullFront: 12, hullSide: 12, hullRear: 12, hullTop: 9,
+  turretFront: 12, turretSide: 12, turretRear: 12, turretTop: 9,
+};
+
+const JAPANESE_MEDIUM: ArmorScheme = {
+  hullFront: 27, hullSide: 25, hullRear: 20, hullTop: 12,
+  turretFront: 26, turretSide: 25, turretRear: 25, turretTop: 12,
+};
+
+const JAPANESE_MEDIUM_LATE: ArmorScheme = {
+  hullFront: 50, hullSide: 25, hullRear: 20, hullTop: 12,
+  turretFront: 50, turretSide: 25, turretRear: 25, turretTop: 12,
+};
+
+/** Tankettes and armoured cars: rifle-proof, and only just. */
+const TANKETTE_ARMOR: ArmorScheme = {
+  hullFront: 8, hullSide: 6, hullRear: 6, hullTop: 5,
+  turretFront: 8, turretSide: 6, turretRear: 6, turretTop: 5,
 };
 
 const HEAVY_ARMOR: ArmorScheme = {
@@ -488,6 +519,270 @@ export const VEHICLES: VehicleDef[] = [
     tint: 0x4a4d4a,
     triangles: 520,
     blurb: "Turretless ambusher. Low, well protected, but must point its whole hull to aim.",
+  },
+
+  /* ---------- Imperial Japanese Army ---------- */
+  {
+    id: "type95_hago",
+    era: "ww2",
+    name: "Ha-Go",
+    displayName: "Type 95 Ha-Go",
+    chassis: "light_tank",
+    category: "armor",
+    nations: ["japan"],
+    hp: 85,
+    armor: JAPANESE_LIGHT,
+    mobility: { maxSpeed: 12.5, reverseSpeed: 5, accel: 6.5, turnRate: 0.95, turretTraverse: 0.5, turretArc: Math.PI },
+    weapons: ["type94_37", "coax"],
+    ammo: { ap: 30, he: 22 },
+    passengerSeats: 1,
+    tint: 0x7b7550,
+    triangles: 700,
+    blurb: "Fast, thin-skinned light tank. Fine against infantry, hopeless against armour.",
+  },
+  {
+    id: "type97_chiha",
+    era: "ww2",
+    name: "Chi-Ha",
+    displayName: "Type 97 Chi-Ha",
+    chassis: "riveted_medium",
+    category: "armor",
+    nations: ["japan"],
+    hp: 115,
+    armor: JAPANESE_MEDIUM,
+    mobility: { maxSpeed: 11.5, reverseSpeed: 5, accel: 5.6, turnRate: 0.78, turretTraverse: 0.45, turretArc: Math.PI },
+    weapons: ["type97_57", "coax"],
+    ammo: { ap: 26, he: 30 },
+    passengerSeats: 2,
+    tint: 0x7d7752,
+    triangles: 950,
+    blurb: "The IJA's standard medium. A short 57 mm meant for bunkers, not tanks.",
+  },
+  {
+    id: "type1_chihe",
+    era: "ww2",
+    name: "Chi-He",
+    displayName: "Type 1 Chi-He",
+    chassis: "riveted_medium",
+    category: "armor",
+    nations: ["japan"],
+    hp: 130,
+    armor: JAPANESE_MEDIUM_LATE,
+    mobility: { maxSpeed: 12.8, reverseSpeed: 5.5, accel: 5.9, turnRate: 0.8, turretTraverse: 0.48, turretArc: Math.PI },
+    weapons: ["type1_47", "coax"],
+    ammo: { ap: 30, he: 26 },
+    passengerSeats: 2,
+    tint: 0x6f7a52,
+    triangles: 980,
+    blurb: "Welded rather than riveted, with a 47 mm that can actually hurt a Stuart.",
+  },
+  {
+    id: "type3_chinu",
+    era: "ww2",
+    name: "Chi-Nu",
+    displayName: "Type 3 Chi-Nu",
+    chassis: "riveted_medium",
+    category: "armor",
+    nations: ["japan"],
+    hp: 140,
+    armor: JAPANESE_MEDIUM_LATE,
+    mobility: { maxSpeed: 11.8, reverseSpeed: 5, accel: 5.4, turnRate: 0.74, turretTraverse: 0.42, turretArc: Math.PI },
+    weapons: ["type3_75", "coax"],
+    ammo: { ap: 26, he: 28 },
+    passengerSeats: 2,
+    tint: 0x5f6b46,
+    triangles: 1000,
+    blurb: "A 75 mm in a big new turret on an old hull. The best tank Japan fielded, and far too late.",
+  },
+  {
+    id: "type92_jyusokosha",
+    era: "ww2",
+    name: "Type 92",
+    displayName: "Type 92 Jyu-Sokosha",
+    chassis: "tankette",
+    category: "armor",
+    nations: ["japan"],
+    hp: 45,
+    armor: TANKETTE_ARMOR,
+    mobility: { maxSpeed: 16, reverseSpeed: 6, accel: 8.5, turnRate: 1.5, turretTraverse: 0.7, turretArc: Math.PI },
+    weapons: ["coax"],
+    passengerSeats: 0,
+    tint: 0x77714d,
+    triangles: 500,
+    blurb: "A two-man tracked scout the size of a car. Machine gun only — do not pick a fight.",
+  },
+  {
+    id: "type93_sumida",
+    era: "ww2",
+    name: "Sumida",
+    displayName: "Type 93 Sumida",
+    chassis: "boxy_armored_car",
+    category: "armor",
+    nations: ["japan"],
+    hp: 70,
+    armor: TANKETTE_ARMOR,
+    mobility: { maxSpeed: 19, reverseSpeed: 8, accel: 8.5, turnRate: 1.25, turretTraverse: 0.6, turretArc: Math.PI },
+    weapons: ["coax"],
+    passengerSeats: 4,
+    tint: 0x8a8158,
+    triangles: 620,
+    blurb: "Tall slab-sided armoured car built to run on roads or rails. Roomy, and a large target.",
+  },
+  {
+    id: "type95_soki",
+    era: "ww2",
+    name: "So-Ki",
+    displayName: "Type 95 So-Ki",
+    chassis: "tankette",
+    category: "armor",
+    nations: ["japan"],
+    hp: 60,
+    armor: TANKETTE_ARMOR,
+    mobility: { maxSpeed: 15, reverseSpeed: 6, accel: 7.5, turnRate: 1.3, turretTraverse: 0.65, turretArc: Math.PI },
+    weapons: ["coax"],
+    passengerSeats: 2,
+    tint: 0x5c6b45,
+    triangles: 560,
+    blurb: "Armoured rail tractor turned recon vehicle. Longer than the Type 92 and just as thin.",
+  },
+  {
+    id: "type94_truck",
+    era: "ww2",
+    name: "Type 94",
+    displayName: "Type 94 6-Wheeled Truck",
+    chassis: "truck",
+    category: "transport",
+    nations: ["japan"],
+    hp: 78,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 16.5, reverseSpeed: 6, accel: 6.8, turnRate: 1.0, turretTraverse: 0, turretArc: 0 },
+    weapons: [],
+    passengerSeats: 8,
+    tint: 0x847a55,
+    triangles: 820,
+    blurb: "The army's workhorse 6x6. Open bed, no cover, carries a section and their kit.",
+  },
+  {
+    id: "isuzu_tu10",
+    era: "ww2",
+    name: "Isuzu",
+    displayName: "Isuzu TU-10 Truck",
+    chassis: "truck",
+    category: "transport",
+    nations: ["japan"],
+    hp: 80,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 17.5, reverseSpeed: 6, accel: 7.2, turnRate: 1.02, turretTraverse: 0, turretArc: 0 },
+    weapons: [],
+    passengerSeats: 9,
+    tint: 0x5f6b46,
+    triangles: 800,
+    blurb: "Canvas-tilted cargo truck. Keeps the rain off a squad and nothing else.",
+  },
+  {
+    id: "kurogane_type95",
+    era: "ww2",
+    name: "Kurogane",
+    displayName: "Kurogane Type 95",
+    chassis: "light_car",
+    category: "light",
+    nations: ["japan"],
+    hp: 42,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 22, reverseSpeed: 8, accel: 13, turnRate: 1.9, turretTraverse: 0, turretArc: 0 },
+    weapons: [],
+    passengerSeats: 2,
+    tint: 0x8a8158,
+    triangles: 420,
+    blurb: "Japan's scout car — the first purpose-built 4x4 of its kind. Light, quick, unprotected.",
+  },
+  {
+    id: "type1_toku",
+    era: "ww2",
+    name: "To-Ku",
+    displayName: "Type 1 To-Ku Transport",
+    chassis: "halftrack",
+    category: "transport",
+    nations: ["japan"],
+    hp: 92,
+    armor: LIGHT_ARMOR,
+    mobility: { maxSpeed: 15.5, reverseSpeed: 5.5, accel: 6.6, turnRate: 1.0, turretTraverse: 0.6, turretArc: Math.PI },
+    weapons: ["coax"],
+    passengerSeats: 9,
+    tint: 0x6b7349,
+    triangles: 880,
+    blurb: "Half-tracked troop carrier. Thin armour, but it goes where the trucks bog down.",
+  },
+  {
+    id: "type94_37mm",
+    era: "ww2",
+    name: "Type 94 37",
+    displayName: "Type 94 37mm Gun",
+    chassis: "field_gun",
+    category: "artillery",
+    nations: ["japan"],
+    hp: 40,
+    armor: GUN_SHIELD,
+    mobility: { maxSpeed: 0, reverseSpeed: 0, accel: 0, turnRate: 0, turretTraverse: 0.55, turretArc: 0.7 },
+    weapons: ["type94_37"],
+    ammo: { ap: 40, he: 20 },
+    passengerSeats: 0,
+    tint: 0x7d7752,
+    triangles: 280,
+    blurb: "Light anti-tank gun on a split trail. Small enough to manhandle, big enough to kill a light tank.",
+  },
+  {
+    id: "type90_75mm",
+    era: "ww2",
+    name: "Type 90 75",
+    displayName: "Type 90 75mm Field Gun",
+    chassis: "field_gun",
+    category: "artillery",
+    nations: ["japan"],
+    hp: 55,
+    armor: GUN_SHIELD,
+    mobility: { maxSpeed: 0, reverseSpeed: 0, accel: 0, turnRate: 0, turretTraverse: 0.42, turretArc: 0.55 },
+    weapons: ["type3_75"],
+    ammo: { ap: 14, he: 38 },
+    passengerSeats: 0,
+    tint: 0x6f7a52,
+    triangles: 320,
+    blurb: "The IJA's divisional 75. Long-barrelled, accurate, and the best gun on this list.",
+  },
+  {
+    id: "type95_150mm",
+    era: "ww2",
+    name: "Type 95 150",
+    displayName: "Type 95 150mm Howitzer",
+    chassis: "howitzer",
+    category: "artillery",
+    nations: ["japan"],
+    hp: 68,
+    armor: GUN_SHIELD,
+    mobility: { maxSpeed: 0, reverseSpeed: 0, accel: 0, turnRate: 0, turretTraverse: 0.26, turretArc: 0.38 },
+    weapons: ["howitzer_155"],
+    ammo: { ap: 6, he: 30 },
+    passengerSeats: 0,
+    tint: 0x5c6b45,
+    triangles: 380,
+    blurb: "Heavy howitzer on a big-wheeled carriage. Slow to load, and it flattens whatever it lands on.",
+  },
+  {
+    id: "type94_trailer",
+    era: "ww2",
+    name: "Ammo Cart",
+    displayName: "Type 94 Ammo Trailer",
+    chassis: "trailer",
+    category: "artillery",
+    nations: ["japan"],
+    hp: 30,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 6, reverseSpeed: 3, accel: 4, turnRate: 1.3, turretTraverse: 0, turretArc: 0 },
+    weapons: [],
+    passengerSeats: 2,
+    tint: 0x7d7752,
+    triangles: 240,
+    blurb: "Two wheels, a drawbar and a stack of crates. Unarmed, and it is what keeps the guns firing.",
   },
 
   /* ---------- Aircraft ---------- */
@@ -1038,7 +1333,10 @@ export function vehicleById(id: string): VehicleDef {
  * Listed explicitly rather than inferred from the spec so adding a weapon
  * cannot silently reclassify an existing vehicle's armament.
  */
-const CANNON_WEAPONS = new Set(["cannon", "sixpdr", "maxim57", "field_75", "howitzer_155"]);
+const CANNON_WEAPONS = new Set([
+  "cannon", "sixpdr", "maxim57", "field_75", "howitzer_155",
+  "type94_37", "type97_57", "type1_47", "type3_75",
+]);
 
 /** The main gun a vehicle fires, or null if it only has machine guns. */
 export function mainGunOf(defId: string): string | null {
