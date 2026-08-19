@@ -13,10 +13,11 @@ import {
   wreckGeometry,
 } from "./models";
 import { weaponCategory } from "./eras";
-import { mainGunOf, vehicleById, type VehicleDef } from "./matchConfig";
+import { vehicleById, type VehicleDef } from "./matchConfig";
 import {
   barrelGeometryFor,
   barrelMount,
+  hasBarrel,
   hullGeometryFor,
   propellerMount,
   turretGeometryFor,
@@ -255,7 +256,7 @@ export class TankRig {
     // the update path stays uniform — it just carries no mesh and never moves.
     this.turret.position.set(0, turretRingHeight(def.chassis), def.chassis === "medium_tank" ? -0.25 : 0);
     if (geo.turret) this.turret.add(mesh(geo.turret, mat));
-    if (mainGunOf(def.id)) {
+    if (hasBarrel(def)) {
       this.barrel.position.set(...barrelMount(def.chassis));
       this.barrel.add(mesh(geo.barrel, mat));
       this.turret.add(this.barrel);

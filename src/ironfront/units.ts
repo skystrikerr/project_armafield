@@ -122,6 +122,132 @@ export const WEAPONS: Record<WeaponId, WeaponSpec> = {
     auto: true,
     tracer: 0xfff2a0,
   },
+  /* ---------------- Red Army armament ---------------- */
+  /** F-34 76 mm. General purpose, and what most of the war was fought with. */
+  f34_76: {
+    name: "76 mm",
+    rpm: 12,
+    speed: 655,
+    damage: 94,
+    penetration: 86,
+    blast: 4.6,
+    blastDamage: 100,
+    spread: 0.0018,
+    magazine: 1,
+    reloadTime: 5.0,
+    auto: false,
+    tracer: 0xfff0c0,
+  },
+  /** ZiS-S-53 85 mm. What turned a T-34 into something a Panther respected. */
+  zis_85: {
+    name: "85 mm",
+    rpm: 9,
+    speed: 792,
+    damage: 108,
+    penetration: 126,
+    blast: 5.0,
+    blastDamage: 115,
+    spread: 0.0015,
+    magazine: 1,
+    reloadTime: 6.2,
+    auto: false,
+    tracer: 0xfff0c0,
+  },
+  /** D-10S 100 mm. The SU-100's gun, and the best anti-tank barrel here. */
+  d10_100: {
+    name: "100 mm",
+    rpm: 6,
+    speed: 895,
+    damage: 128,
+    penetration: 172,
+    blast: 6.0,
+    blastDamage: 140,
+    spread: 0.0013,
+    magazine: 1,
+    reloadTime: 8.0,
+    auto: false,
+    tracer: 0xfff0c0,
+  },
+  /** D-25T 122 mm. Separate-loading, so it is slow — and it does not matter. */
+  d25t_122: {
+    name: "122 mm",
+    rpm: 3,
+    speed: 781,
+    damage: 150,
+    penetration: 165,
+    blast: 8.5,
+    blastDamage: 195,
+    spread: 0.0022,
+    magazine: 1,
+    reloadTime: 12.0,
+    auto: false,
+    tracer: 0xffe0a0,
+  },
+  /** ML-20S 152 mm. Whether it penetrates is academic at that shell weight. */
+  ml20_152: {
+    name: "152 mm",
+    rpm: 2,
+    speed: 600,
+    damage: 190,
+    penetration: 130,
+    blast: 14,
+    blastDamage: 280,
+    spread: 0.004,
+    magazine: 1,
+    reloadTime: 16.0,
+    auto: false,
+    tracer: 0xffe0a0,
+  },
+  /** 45 mm 20-K. Adequate in 1941, a liability by 1943. */
+  zis_45: {
+    name: "45 mm",
+    rpm: 15,
+    speed: 760,
+    damage: 66,
+    penetration: 56,
+    blast: 1.6,
+    blastDamage: 38,
+    spread: 0.0018,
+    magazine: 1,
+    reloadTime: 3.6,
+    auto: false,
+    tracer: 0xffe8b0,
+  },
+  /** TNSh 20 mm autocannon — the T-60's gun. Fast, and it kills almost nothing. */
+  tnsh_20: {
+    name: "20 mm",
+    rpm: 750,
+    speed: 815,
+    damage: 40,
+    penetration: 28,
+    blast: 0.9,
+    blastDamage: 18,
+    spread: 0.008,
+    magazine: 58,
+    reloadTime: 4.5,
+    auto: true,
+    tracer: 0xfff2a0,
+  },
+  /**
+   * BM-13 rocket. The launcher carries sixteen and empties them in seconds —
+   * modelled as one rocket per trigger pull with a very short cycle, so the
+   * whole rack goes downrange as a stream and then the vehicle is done.
+   */
+  katyusha_rocket: {
+    name: "M-13 Rocket",
+    rpm: 130,
+    speed: 145,
+    damage: 110,
+    penetration: 30,
+    blast: 13,
+    blastDamage: 235,
+    spread: 0.02,
+    magazine: 1,
+    reloadTime: 0.55,
+    auto: false,
+    tracer: 0xffb060,
+  },
+
   /* ---------------- Imperial Japanese Army armament ---------------- */
   /** Type 94 37 mm. Fine against a Stuart, useless against a Sherman. */
   type94_37: {

@@ -52,7 +52,15 @@ export type Chassis =
   | "riveted_medium" // riveted hull, tall narrow turret — Chi-Ha, Chi-He, Chi-Nu
   | "tankette" // two-man tracked scout, MG only — Type 92, Type 95 So-Ki
   | "boxy_armored_car" // tall slab-sided 6x6 with a small turret — Type 93 Sumida
-  | "trailer"; // towed two-wheel ammunition cart
+  | "trailer" // towed two-wheel ammunition cart
+  /* ---- Red Army ---- */
+  | "soviet_heavy" // torsion-bar heavy — KV-1, KV-2, IS-2
+  | "soviet_assault_gun" // heavy casemate on a heavy hull — ISU-152
+  | "soviet_td" // casemate on a T-34 hull — SU-85, SU-100
+  | "fast_tank" // big Christie road wheels, thin plate — BT-7
+  | "soviet_light" // small tracked light tank or tractor — T-60, T-70, T-20
+  | "soviet_armored_car" // riveted 4x4 or 6x6 with a small turret — BA-64, BA-10
+  | "rocket_truck"; // truck carrying a rail rack — Katyusha BM-13
 
 /** Broad grouping used by the setup UI's category rows and Select-All buttons. */
 export type VehicleCategory = "light" | "transport" | "armor" | "artillery" | "air";
@@ -256,6 +264,41 @@ const SLOPED_MEDIUM_ARMOR: ArmorScheme = {
 const PUMA_ARMOR: ArmorScheme = {
   hullFront: 30, hullSide: 8, hullRear: 10, hullTop: 6,
   turretFront: 30, turretSide: 14, turretRear: 14, turretTop: 6,
+};
+
+/**
+ * Red Army plate. Soviet design put weight into the front and sloped it hard;
+ * the sides are conventional, which is where they were killed.
+ */
+const T34_85_ARMOR: ArmorScheme = {
+  hullFront: 45, hullSide: 45, hullRear: 40, hullTop: 20,
+  turretFront: 90, turretSide: 75, turretRear: 52, turretTop: 20,
+};
+
+const KV_ARMOR: ArmorScheme = {
+  hullFront: 75, hullSide: 75, hullRear: 70, hullTop: 30,
+  turretFront: 90, turretSide: 75, turretRear: 75, turretTop: 30,
+};
+
+const IS2_ARMOR: ArmorScheme = {
+  hullFront: 120, hullSide: 90, hullRear: 60, hullTop: 30,
+  turretFront: 100, turretSide: 90, turretRear: 90, turretTop: 30,
+};
+
+const ISU_ARMOR: ArmorScheme = {
+  hullFront: 90, hullSide: 75, hullRear: 60, hullTop: 30,
+  turretFront: 90, turretSide: 75, turretRear: 60, turretTop: 30,
+};
+
+const SU_ARMOR: ArmorScheme = {
+  hullFront: 45, hullSide: 45, hullRear: 40, hullTop: 20,
+  turretFront: 45, turretSide: 45, turretRear: 40, turretTop: 20,
+};
+
+/** BT-7, T-60, T-70, BA-64: proof against small arms and nothing heavier. */
+const BT_ARMOR: ArmorScheme = {
+  hullFront: 22, hullSide: 13, hullRear: 13, hullTop: 10,
+  turretFront: 22, turretSide: 15, turretRear: 15, turretTop: 10,
 };
 
 /**
@@ -519,6 +562,277 @@ export const VEHICLES: VehicleDef[] = [
     tint: 0x4a4d4a,
     triangles: 520,
     blurb: "Turretless ambusher. Low, well protected, but must point its whole hull to aim.",
+  },
+
+  /* ---------- Red Army ---------- */
+  {
+    id: "t34_85",
+    era: "ww2",
+    name: "T-34/85",
+    displayName: "T-34/85",
+    chassis: "sloped_medium",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 170,
+    armor: T34_85_ARMOR,
+    mobility: { maxSpeed: 14, reverseSpeed: 5, accel: 6.0, turnRate: 0.78, turretTraverse: 0.46, turretArc: Math.PI },
+    weapons: ["zis_85", "coax"],
+    ammo: { ap: 32, he: 24 },
+    passengerSeats: 4,
+    tint: 0x4c5742,
+    triangles: 1200,
+    blurb: "The 1944 answer: a three-man turret and an 85 mm on the hull that already worked.",
+  },
+  {
+    id: "kv1",
+    era: "ww2",
+    name: "KV-1",
+    displayName: "KV-1",
+    chassis: "soviet_heavy",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 210,
+    armor: KV_ARMOR,
+    mobility: { maxSpeed: 8.5, reverseSpeed: 3.6, accel: 3.4, turnRate: 0.48, turretTraverse: 0.34, turretArc: Math.PI },
+    weapons: ["f34_76", "coax"],
+    ammo: { ap: 34, he: 32 },
+    passengerSeats: 3,
+    tint: 0x4a5340,
+    triangles: 1250,
+    blurb: "Armour German guns bounced off in 1941, on a gearbox nobody could change gear in.",
+  },
+  {
+    id: "kv2",
+    era: "ww2",
+    name: "KV-2",
+    displayName: "KV-2",
+    chassis: "soviet_heavy",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 225,
+    armor: KV_ARMOR,
+    // The turret weighs as much as a light tank. It traverses accordingly.
+    mobility: { maxSpeed: 7.5, reverseSpeed: 3.2, accel: 2.8, turnRate: 0.42, turretTraverse: 0.18, turretArc: Math.PI },
+    weapons: ["ml20_152", "coax"],
+    ammo: { ap: 8, he: 28 },
+    passengerSeats: 3,
+    tint: 0x4a5340,
+    triangles: 1300,
+    blurb: "A 152 mm howitzer in a turret the size of a shed. Sixteen seconds a shot, and worth it.",
+  },
+  {
+    id: "is2",
+    era: "ww2",
+    name: "IS-2",
+    displayName: "IS-2 Stalin",
+    chassis: "soviet_heavy",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 240,
+    armor: IS2_ARMOR,
+    mobility: { maxSpeed: 10.5, reverseSpeed: 4.2, accel: 3.8, turnRate: 0.55, turretTraverse: 0.3, turretArc: Math.PI },
+    weapons: ["d25t_122", "coax"],
+    ammo: { ap: 14, he: 14 },
+    passengerSeats: 3,
+    tint: 0x4f5a44,
+    triangles: 1350,
+    blurb: "Sloped cast front and a 122 mm. Twenty-eight rounds total — every one has to count.",
+  },
+  {
+    id: "isu152",
+    era: "ww2",
+    name: "ISU-152",
+    displayName: "ISU-152 Assault Gun",
+    chassis: "soviet_assault_gun",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 215,
+    armor: ISU_ARMOR,
+    mobility: { maxSpeed: 10, reverseSpeed: 4, accel: 3.6, turnRate: 0.5, turretTraverse: 0.16, turretArc: 0.2 },
+    weapons: ["ml20_152", "coax"],
+    ammo: { ap: 8, he: 24 },
+    passengerSeats: 2,
+    tint: 0x4a5340,
+    triangles: 1250,
+    blurb: "Zveroboy — beast killer. No turret at all: point the whole vehicle, then remove a building.",
+  },
+  {
+    id: "su85",
+    era: "ww2",
+    name: "SU-85",
+    displayName: "SU-85 Tank Destroyer",
+    chassis: "soviet_td",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 150,
+    armor: SU_ARMOR,
+    mobility: { maxSpeed: 13.5, reverseSpeed: 5, accel: 5.8, turnRate: 0.76, turretTraverse: 0.3, turretArc: 0.18 },
+    weapons: ["zis_85", "coax"],
+    ammo: { ap: 34, he: 14 },
+    passengerSeats: 1,
+    tint: 0x4c5742,
+    triangles: 1050,
+    blurb: "A T-34 hull with the turret replaced by a fixed 85. Low, cheap and it hits hard.",
+  },
+  {
+    id: "su100",
+    era: "ww2",
+    name: "SU-100",
+    displayName: "SU-100 Tank Destroyer",
+    chassis: "soviet_td",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 160,
+    armor: SU_ARMOR,
+    mobility: { maxSpeed: 13, reverseSpeed: 5, accel: 5.5, turnRate: 0.74, turretTraverse: 0.26, turretArc: 0.16 },
+    weapons: ["d10_100", "coax"],
+    ammo: { ap: 28, he: 10 },
+    passengerSeats: 1,
+    tint: 0x4c5742,
+    triangles: 1100,
+    blurb: "The same idea with a 100 mm. Nothing German on this list survives a frontal hit.",
+  },
+  {
+    id: "bt7",
+    era: "ww2",
+    name: "BT-7",
+    displayName: "BT-7 Fast Tank",
+    chassis: "fast_tank",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 90,
+    armor: BT_ARMOR,
+    // The fastest tracked thing in the game, and made of tissue paper.
+    mobility: { maxSpeed: 19, reverseSpeed: 7, accel: 8.5, turnRate: 1.1, turretTraverse: 0.5, turretArc: Math.PI },
+    weapons: ["zis_45", "coax"],
+    ammo: { ap: 40, he: 20 },
+    passengerSeats: 1,
+    tint: 0x53603f,
+    triangles: 880,
+    blurb: "Christie suspension and a 45 mm. Outruns everything, stops nothing.",
+  },
+  {
+    id: "t60",
+    era: "ww2",
+    name: "T-60",
+    displayName: "T-60 Light Tank",
+    chassis: "soviet_light",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 65,
+    armor: BT_ARMOR,
+    mobility: { maxSpeed: 15, reverseSpeed: 6, accel: 8, turnRate: 1.35, turretTraverse: 0.6, turretArc: Math.PI },
+    weapons: ["tnsh_20", "coax"],
+    passengerSeats: 0,
+    tint: 0x53603f,
+    triangles: 620,
+    blurb: "A 20 mm autocannon on a tractor chassis. Built because tanks were needed and there were none.",
+  },
+  {
+    id: "t70",
+    era: "ww2",
+    name: "T-70",
+    displayName: "T-70 Light Tank",
+    chassis: "soviet_light",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 82,
+    armor: BT_ARMOR,
+    mobility: { maxSpeed: 14.5, reverseSpeed: 6, accel: 7.5, turnRate: 1.25, turretTraverse: 0.5, turretArc: Math.PI },
+    weapons: ["zis_45", "coax"],
+    ammo: { ap: 34, he: 16 },
+    passengerSeats: 0,
+    tint: 0x53603f,
+    triangles: 700,
+    blurb: "The T-60 with a 45 mm and thicker plate. One man to command, aim, load and fire.",
+  },
+  {
+    id: "t20_komsomolets",
+    era: "ww2",
+    name: "T-20",
+    displayName: "T-20 Komsomolets Tractor",
+    chassis: "soviet_light",
+    category: "transport",
+    nations: ["ussr"],
+    hp: 55,
+    armor: BT_ARMOR,
+    mobility: { maxSpeed: 13, reverseSpeed: 5, accel: 7, turnRate: 1.3, turretTraverse: 0.7, turretArc: Math.PI },
+    weapons: ["coax"],
+    passengerSeats: 6,
+    tint: 0x4f5a3d,
+    triangles: 600,
+    blurb: "Armoured artillery tractor with bench seats on the back. Tows the guns and carries their crew.",
+  },
+  {
+    id: "ba64",
+    era: "ww2",
+    name: "BA-64",
+    displayName: "BA-64 Light Armored Car",
+    chassis: "soviet_armored_car",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 50,
+    armor: BT_ARMOR,
+    mobility: { maxSpeed: 22, reverseSpeed: 9, accel: 11, turnRate: 1.7, turretTraverse: 0.7, turretArc: Math.PI },
+    weapons: ["coax"],
+    passengerSeats: 1,
+    tint: 0x53603f,
+    triangles: 480,
+    blurb: "A jeep in faceted armour with an open-topped MG turret. Scouting, and nothing braver.",
+  },
+  {
+    id: "ba10",
+    era: "ww2",
+    name: "BA-10",
+    displayName: "BA-10 Armored Car",
+    chassis: "soviet_armored_car",
+    category: "armor",
+    nations: ["ussr"],
+    hp: 78,
+    armor: TANKETTE_ARMOR,
+    mobility: { maxSpeed: 18, reverseSpeed: 8, accel: 8, turnRate: 1.2, turretTraverse: 0.5, turretArc: Math.PI },
+    weapons: ["zis_45", "coax"],
+    ammo: { ap: 26, he: 14 },
+    passengerSeats: 2,
+    tint: 0x4f5a3d,
+    triangles: 720,
+    blurb: "Six wheels and a real 45 mm turret. An armoured car that can genuinely fight a light tank.",
+  },
+  {
+    id: "gaz_aaa",
+    era: "ww2",
+    name: "GAZ-AAA",
+    displayName: "GAZ-AAA Utility Truck",
+    chassis: "truck",
+    category: "transport",
+    nations: ["ussr"],
+    hp: 74,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 16, reverseSpeed: 6, accel: 6.6, turnRate: 1.0, turretTraverse: 0, turretArc: 0 },
+    weapons: [],
+    passengerSeats: 8,
+    tint: 0x4f5a3d,
+    triangles: 780,
+    blurb: "The Red Army's 6x6 workhorse. Everything that is not tracked rides on one of these.",
+  },
+  {
+    id: "katyusha_bm13",
+    era: "ww2",
+    name: "Katyusha",
+    displayName: "Katyusha BM-13",
+    chassis: "rocket_truck",
+    category: "artillery",
+    nations: ["ussr"],
+    hp: 70,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 14, reverseSpeed: 5, accel: 5.5, turnRate: 0.95, turretTraverse: 0.35, turretArc: 0.5 },
+    weapons: ["katyusha_rocket"],
+    // Sixteen on the rails and nothing in reserve — fire them and drive away.
+    ammo: { ap: 0, he: 16 },
+    passengerSeats: 2,
+    tint: 0x4f5a3d,
+    triangles: 900,
+    blurb: "Sixteen rockets on a truck. Empties the rack in seconds, then it is an unarmed lorry.",
   },
 
   /* ---------- Imperial Japanese Army ---------- */
@@ -852,7 +1166,7 @@ export const VEHICLES: VehicleDef[] = [
     hp: 155,
     armor: SLOPED_MEDIUM_ARMOR,
     mobility: { maxSpeed: 14.5, reverseSpeed: 5, accel: 6.2, turnRate: 0.8, turretTraverse: 0.42, turretArc: Math.PI },
-    weapons: ["cannon", "coax"],
+    weapons: ["f34_76", "coax"],
     ammo: { ap: 30, he: 26 },
     passengerSeats: 4,
     tint: 0x4a5540,
@@ -1336,6 +1650,7 @@ export function vehicleById(id: string): VehicleDef {
 const CANNON_WEAPONS = new Set([
   "cannon", "sixpdr", "maxim57", "field_75", "howitzer_155",
   "type94_37", "type97_57", "type1_47", "type3_75",
+  "f34_76", "zis_85", "d10_100", "d25t_122", "ml20_152", "zis_45", "katyusha_rocket",
 ]);
 
 /** The main gun a vehicle fires, or null if it only has machine guns. */

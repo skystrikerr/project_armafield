@@ -579,12 +579,13 @@ export class Ironfront {
       const guns = this.enabledVehicles(team, (v) => v.category === "artillery");
       const pits = Math.max(1, guns.length * 2);
       guns.forEach((def, i) => {
-        const emplaced = mobilityOf(def.id).maxSpeed === 0;
         const armed = def.weapons.length > 0;
-        const copies = emplaced && armed ? 2 : 1;
+        // Anything with a gun gets a crew, emplaced or not — a self-propelled
+        // rocket launcher nobody ever mans is just scenery.
+        const copies = armed ? 2 : 1;
         for (let c = 0; c < copies; c++) {
           const slot = i * 2 + c;
-          const pos = emplaced
+          const pos = armed
             ? this.gunPit(team, slot, pits)
             : this.parkingSpot(team, ground.length + i, Math.max(1, ground.length + guns.length));
           const t = makeTank(this.nextId++, team, pos, team === "blue" ? Math.PI : 0, {

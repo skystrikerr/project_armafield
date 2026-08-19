@@ -634,19 +634,19 @@ function slopedTankHullGeometry(tint: number): THREE.BufferGeometry {
 }
 
 /** Rounded cast turret, cramped and two-man. */
-function slopedTankTurretGeometry(tint: number): THREE.BufferGeometry {
+function slopedTankTurretGeometry(tint: number, k = 1): THREE.BufferGeometry {
   const body = tint;
   const dark = shade(tint, 0.74);
   const light = shade(tint, 1.2);
   return build([
     // Truncated cone reads as a cast turret in a way no box ever will.
-    { g: "cyl", r: 1.15, r2: 0.95, h: 0.8, seg: 10, pos: [0, 0.42, 0], color: body },
-    { g: "box", size: [1.5, 0.7, 0.7], pos: [0, 0.42, 1.0], rot: [0.22, 0, 0], color: light },
-    { g: "cyl", r: 0.34, h: 0.6, seg: 10, pos: [0, 0.42, 1.25], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    { g: "cyl", r: 1.15 * k, r2: 0.95 * k, h: 0.8 * k, seg: 10, pos: [0, 0.42 * k, 0], color: body },
+    { g: "box", size: [1.5 * k, 0.7 * k, 0.7], pos: [0, 0.42 * k, 1.0 * k], rot: [0.22, 0, 0], color: light },
+    { g: "cyl", r: 0.34 * k, h: 0.6, seg: 10, pos: [0, 0.42 * k, 1.25 * k], rot: [Math.PI / 2, 0, 0], color: STEEL },
     // Rear overhang and the big split roof hatch.
-    { g: "box", size: [1.5, 0.6, 0.7], pos: [0, 0.42, -1.0], rot: [-0.2, 0, 0], color: light },
-    { g: "box", size: [1.6, 0.1, 1.0], pos: [0, 0.86, -0.15], color: dark },
-    { g: "cyl", r: 0.06, h: 0.9, seg: 6, pos: [-0.8, 1.2, -0.5], rot: [Math.PI / 2 - 0.2, 0, 0], color: GUNMETAL },
+    { g: "box", size: [1.5 * k, 0.6 * k, 0.7 * k], pos: [0, 0.42 * k, -1.0 * k], rot: [-0.2, 0, 0], color: light },
+    { g: "box", size: [1.6 * k, 0.1, 1.0 * k], pos: [0, 0.86 * k, -0.15], color: dark },
+    { g: "cyl", r: 0.06, h: 0.9, seg: 6, pos: [-0.8 * k, 1.2 * k, -0.5], rot: [Math.PI / 2 - 0.2, 0, 0], color: GUNMETAL },
   ]);
 }
 
@@ -1580,6 +1580,362 @@ function japaneseTrack(
 }
 
 /* ================================================================== */
+/*  Red Army                                                            */
+/* ================================================================== */
+
+/**
+ * KV and IS hull: a long flat box on six evenly spaced torsion-bar wheels.
+ * Where the T-34 slopes everything, the KV is mostly upright and simply
+ * thick — the difference is visible from any angle.
+ */
+function sovietHeavyHullGeometry(tint: number, sloped: boolean): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.18);
+  const parts: Part[] = [
+    { g: "box", size: [3.1, 1.0, 6.6], pos: [0, 1.15, 0], color: body },
+    sloped
+      ? // IS-2: a single sharply raked cast nose.
+        { g: "box", size: [3.1, 0.34, 2.2], pos: [0, 1.5, 2.8], rot: [-0.9, 0, 0], color: light }
+      : // KV: a stepped front with a near-vertical upper plate.
+        { g: "box", size: [3.1, 0.34, 1.3], pos: [0, 1.55, 3.0], rot: [-0.45, 0, 0], color: light },
+    { g: "box", size: [3.1, 0.5, 0.8], pos: [0, 0.95, 3.35], rot: [0.5, 0, 0], color: light },
+    { g: "box", size: [3.0, 0.5, 3.4], pos: [0, 1.75, -0.2], color: body },
+    // Deck, engine louvres and the exhausts on the tail plate.
+    { g: "box", size: [2.9, 0.12, 6.0], pos: [0, 1.98, 0], color: dark },
+    { g: "box", size: [2.2, 0.16, 1.6], pos: [0, 2.06, -2.2], color: STEEL_DARK },
+    { g: "cyl", r: 0.22, h: 0.5, seg: 8, pos: [0.8, 1.6, -3.4], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+    { g: "cyl", r: 0.22, h: 0.5, seg: 8, pos: [-0.8, 1.6, -3.4], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+    // Bow machine gun, driver's hatch and spare track on the glacis.
+    { g: "cyl", r: 0.09, h: 0.8, seg: 6, pos: [0.85, 1.5, 3.3], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "box", size: [1.0, 0.12, 0.8], pos: [-0.6, 1.72, 2.7], rot: [-0.45, 0, 0], color: dark },
+    { g: "box", size: [1.4, 0.14, 0.5], pos: [0, 1.9, 3.1], color: TRACK },
+    // Wide fenders with stowage boxes, as every Soviet heavy carried.
+    { g: "box", size: [4.0, 0.12, 6.2], pos: [0, 1.72, 0], color: dark },
+    { g: "box", size: [0.5, 0.35, 1.4], pos: [1.7, 1.95, -1.4], color: dark },
+    { g: "box", size: [0.5, 0.35, 1.4], pos: [-1.7, 1.95, -1.4], color: dark },
+    // External fuel drums on the tail.
+    { g: "cyl", r: 0.32, h: 1.1, seg: 10, pos: [1.6, 2.1, -2.9], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "cyl", r: 0.32, h: 1.1, seg: 10, pos: [-1.6, 2.1, -2.9], rot: [Math.PI / 2, 0, 0], color: dark },
+  ];
+  headlights(parts, 1.1, 1.85, 3.5);
+  for (const side of [-1, 1]) {
+    trackBelt(parts, side * 1.72, {
+      width: 0.82, length: 6.8, wheelY: 0.7, wheelR: 0.5, wheelCount: 6, endR: 0.56, endZ: 3.0,
+    });
+    // Return rollers, which the KV had and the T-34 did not.
+    for (let i = 0; i < 3; i++) {
+      parts.push({
+        g: "cyl", r: 0.16, h: 0.4, seg: 6,
+        pos: [side * 1.66, 1.3, -1.8 + i * 1.8], rot: [0, 0, Math.PI / 2], color: STEEL_DARK,
+      });
+    }
+  }
+  return build(parts);
+}
+
+/** KV-1: a modest welded turret with a rear overhang. */
+function kv1TurretGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  return build([
+    { g: "cyl", r: 1.1, r2: 1.0, h: 0.9, seg: 10, pos: [0, 0.5, 0], color: body },
+    { g: "box", size: [1.5, 0.8, 0.8], pos: [0, 0.5, 1.0], rot: [0.14, 0, 0], color: light },
+    { g: "cyl", r: 0.36, h: 0.55, seg: 10, pos: [0, 0.5, 1.3], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    { g: "box", size: [1.5, 0.7, 0.7], pos: [0, 0.5, -1.05], color: light },
+    { g: "cyl", r: 0.09, h: 0.6, seg: 6, pos: [0, 0.5, -1.4], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "cyl", r: 1.05, h: 0.12, seg: 10, pos: [0, 0.98, 0], color: dark },
+    { g: "cyl", r: 0.3, h: 0.22, seg: 8, pos: [-0.4, 1.1, -0.4], color: dark },
+  ]);
+}
+
+/** KV-2: the slab-sided box turret, and the whole reason the vehicle is famous. */
+function kv2TurretGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  return build([
+    { g: "box", size: [2.5, 2.0, 3.0], pos: [0, 1.05, -0.1], color: body },
+    { g: "box", size: [2.5, 0.4, 0.7], pos: [0, 2.0, 1.15], rot: [-0.5, 0, 0], color: light },
+    { g: "box", size: [1.4, 1.0, 0.5], pos: [0, 0.95, 1.5], color: light },
+    { g: "cyl", r: 0.42, h: 0.6, seg: 10, pos: [0, 0.95, 1.75], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    { g: "box", size: [2.55, 0.12, 3.05], pos: [0, 2.08, -0.1], color: dark },
+    { g: "cyl", r: 0.32, h: 0.24, seg: 8, pos: [-0.6, 2.2, -0.9], color: dark },
+    { g: "cyl", r: 0.09, h: 0.6, seg: 6, pos: [0, 1.05, -1.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+  ]);
+}
+
+/** IS-2: a low rounded cast turret, wider than it is tall. */
+function is2TurretGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.2);
+  return build([
+    { g: "cyl", r: 1.35, r2: 1.05, h: 0.85, seg: 10, pos: [0, 0.48, -0.1], color: body },
+    { g: "box", size: [1.6, 0.8, 0.9], pos: [0, 0.48, 1.1], rot: [0.2, 0, 0], color: light },
+    { g: "cyl", r: 0.42, h: 0.7, seg: 10, pos: [0, 0.48, 1.4], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    { g: "cyl", r: 1.2, h: 0.12, seg: 10, pos: [0, 0.92, -0.1], color: dark },
+    { g: "cyl", r: 0.34, h: 0.26, seg: 8, pos: [-0.55, 1.06, -0.6], color: dark },
+    { g: "cyl", r: 0.1, h: 0.7, seg: 6, pos: [0.5, 1.12, -0.9], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+  ]);
+}
+
+/** Long heavy barrels: the 122 and the 152, with a big muzzle brake. */
+function sovietHeavyBarrelGeometry(bore: number): THREE.BufferGeometry {
+  return build([
+    { g: "cyl", r: bore, h: 5.4, seg: 10, pos: [0, 0, 2.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "cyl", r: bore * 1.4, h: 0.7, seg: 10, pos: [0, 0, 0.4], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+    { g: "cyl", r: bore * 1.7, h: 0.75, seg: 10, pos: [0, 0, 5.2], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+  ]);
+}
+
+/** ISU-152: the whole superstructure is one big sloped casemate. */
+function sovietAssaultGunHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.18);
+  const parts: Part[] = [
+    { g: "box", size: [3.1, 0.9, 6.6], pos: [0, 0.95, 0], color: body },
+    // Casemate: a big box with a hard-raked front plate.
+    { g: "box", size: [3.0, 1.3, 4.2], pos: [0, 1.95, 0.6], color: body },
+    { g: "box", size: [3.0, 0.4, 2.0], pos: [0, 2.1, 2.6], rot: [-0.72, 0, 0], color: light },
+    { g: "box", size: [0.26, 1.1, 4.2], pos: [1.44, 1.95, 0.6], rot: [0, 0, 0.16], color: light },
+    { g: "box", size: [0.26, 1.1, 4.2], pos: [-1.44, 1.95, 0.6], rot: [0, 0, -0.16], color: light },
+    { g: "box", size: [2.9, 0.12, 4.0], pos: [0, 2.62, 0.6], color: dark },
+    { g: "cyl", r: 0.34, h: 0.24, seg: 8, pos: [-0.7, 2.74, -0.6], color: dark },
+    { g: "cyl", r: 0.34, h: 0.24, seg: 8, pos: [0.7, 2.74, -0.6], color: dark },
+    // Rear engine deck and drums.
+    { g: "box", size: [2.8, 0.14, 2.0], pos: [0, 1.5, -2.6], color: dark },
+    { g: "cyl", r: 0.32, h: 1.1, seg: 10, pos: [1.6, 1.75, -2.9], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "cyl", r: 0.32, h: 1.1, seg: 10, pos: [-1.6, 1.75, -2.9], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "box", size: [4.0, 0.12, 6.2], pos: [0, 1.5, 0], color: dark },
+  ];
+  headlights(parts, 1.1, 1.55, 3.35);
+  for (const side of [-1, 1]) {
+    trackBelt(parts, side * 1.72, {
+      width: 0.82, length: 6.8, wheelY: 0.7, wheelR: 0.5, wheelCount: 6, endR: 0.56, endZ: 3.0,
+    });
+    for (let i = 0; i < 3; i++) {
+      parts.push({
+        g: "cyl", r: 0.16, h: 0.4, seg: 6,
+        pos: [side * 1.66, 1.3, -1.8 + i * 1.8], rot: [0, 0, Math.PI / 2], color: STEEL_DARK,
+      });
+    }
+  }
+  return build(parts);
+}
+
+/** SU-85 / SU-100: a low casemate welded onto a T-34 hull. */
+function sovietTdHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    { g: "box", size: [2.9, 0.7, 6.0], pos: [0, 1.05, 0], color: body },
+    { g: "box", size: [2.9, 0.3, 1.6], pos: [0, 1.42, -2.7], rot: [0.85, 0, 0], color: light },
+    // The casemate is a continuation of the glacis — one unbroken slope.
+    { g: "box", size: [2.7, 1.1, 3.4], pos: [0, 1.75, 0.4], color: body },
+    { g: "box", size: [2.9, 0.42, 2.6], pos: [0, 1.72, 2.2], rot: [-1.05, 0, 0], color: light },
+    { g: "box", size: [0.26, 1.0, 3.4], pos: [1.32, 1.75, 0.4], rot: [0, 0, 0.3], color: light },
+    { g: "box", size: [0.26, 1.0, 3.4], pos: [-1.32, 1.75, 0.4], rot: [0, 0, -0.3], color: light },
+    { g: "box", size: [2.5, 0.12, 3.2], pos: [0, 2.28, 0.4], color: dark },
+    { g: "cyl", r: 0.34, h: 0.24, seg: 8, pos: [0.6, 2.4, -0.5], color: dark },
+    { g: "box", size: [1.9, 0.14, 1.3], pos: [0, 1.5, -2.1], color: STEEL_DARK },
+    { g: "cyl", r: 0.3, h: 1.1, seg: 10, pos: [1.6, 1.6, -2.0], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "cyl", r: 0.3, h: 1.1, seg: 10, pos: [-1.6, 1.6, -2.0], rot: [Math.PI / 2, 0, 0], color: dark },
+  ];
+  headlights(parts, 0.95, 1.5, 3.05);
+  for (const side of [-1, 1]) {
+    trackBelt(parts, side * 1.62, {
+      width: 0.8, length: 6.2, wheelY: 0.66, wheelR: 0.62, wheelCount: 5, endR: 0.5, endZ: 2.75,
+    });
+  }
+  return build(parts);
+}
+
+/** The mantlet the SU casemate guns pivot in. */
+function casemateMantletGeometry(tint: number, r: number): THREE.BufferGeometry {
+  return build([
+    { g: "cyl", r, h: 0.7, seg: 10, pos: [0, 0.25, 0.35], rot: [Math.PI / 2, 0, 0], color: STEEL },
+    { g: "box", size: [r * 2.4, r * 1.9, 0.5], pos: [0, 0.25, 0.05], color: shade(tint, 1.2) },
+  ]);
+}
+
+/**
+ * BT-7. Christie suspension meant four enormous road wheels per side and no
+ * return rollers at all — the top run rides on the wheels, which is the one
+ * thing that makes a BT unmistakable.
+ */
+function fastTankHullGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    { g: "box", size: [2.2, 0.6, 5.2], pos: [0, 1.15, 0], color: body },
+    { g: "box", size: [2.2, 0.3, 1.4], pos: [0, 1.42, 2.4], rot: [-0.8, 0, 0], color: light },
+    { g: "box", size: [2.2, 0.42, 1.0], pos: [0, 0.95, 2.8], rot: [0.6, 0, 0], color: light },
+    { g: "box", size: [2.0, 0.42, 2.2], pos: [0, 1.55, 0.2], color: body },
+    { g: "box", size: [0.14, 0.55, 4.8], pos: [1.14, 1.2, 0], rot: [0, 0, 0.22], color: light },
+    { g: "box", size: [0.14, 0.55, 4.8], pos: [-1.14, 1.2, 0], rot: [0, 0, -0.22], color: light },
+    { g: "box", size: [1.95, 0.12, 4.4], pos: [0, 1.78, 0], color: dark },
+    { g: "box", size: [2.7, 0.1, 4.6], pos: [0, 1.5, 0], color: dark },
+    { g: "cyl", r: 0.09, h: 0.7, seg: 6, pos: [0.6, 1.35, 2.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "box", size: [1.7, 0.14, 1.2], pos: [0, 1.6, -2.1], color: STEEL_DARK },
+  ];
+  headlights(parts, 0.7, 1.5, 2.95);
+  for (const side of [-1, 1]) {
+    christieTrack(parts, side * 1.32, 5.4, 0.7, 0.68, 4);
+  }
+  return build(parts);
+}
+
+/**
+ * Christie running gear: very large road wheels with the belt wrapped tight
+ * over them and no return rollers, so the top run sits directly on the wheels.
+ */
+function christieTrack(parts: Part[], x: number, length: number, wheelY: number, wheelR: number, count: number) {
+  const runT = wheelR * 0.28;
+  parts.push({ g: "box", size: [wheelR * 1.15, runT, length], pos: [x, wheelY - wheelR, 0], color: TRACK });
+  parts.push({ g: "box", size: [wheelR * 1.15, runT, length * 0.9], pos: [x, wheelY + wheelR, 0], color: TRACK });
+  const span = length - wheelR * 2.4;
+  for (let i = 0; i < count; i++) {
+    const z = -span / 2 + (i / (count - 1)) * span;
+    parts.push({
+      g: "cyl", r: wheelR, h: wheelR * 0.75, seg: 10,
+      pos: [x, wheelY, z], rot: [0, 0, Math.PI / 2], color: RUBBER,
+    });
+    parts.push({
+      g: "cyl", r: wheelR * 0.55, h: wheelR * 0.85, seg: 8,
+      pos: [x, wheelY, z], rot: [0, 0, Math.PI / 2], color: STEEL,
+    });
+  }
+  for (const z of [length / 2 - wheelR * 0.5, -length / 2 + wheelR * 0.5]) {
+    parts.push({
+      g: "cyl", r: wheelR * 0.62, h: wheelR * 0.8, seg: 8,
+      pos: [x, wheelY + wheelR * 0.25, z], rot: [0, 0, Math.PI / 2], color: STEEL,
+    });
+  }
+}
+
+/** T-60 / T-70 / T-20: a small welded hull on four little road wheels. */
+function sovietLightHullGeometry(tint: number, open: boolean): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.2);
+  const parts: Part[] = [
+    { g: "box", size: [1.9, 0.6, 4.0], pos: [0, 0.9, 0], color: body },
+    { g: "box", size: [1.9, 0.28, 1.1], pos: [0, 1.14, 1.85], rot: [-0.75, 0, 0], color: light },
+    { g: "box", size: [1.9, 0.4, 0.8], pos: [0, 0.72, 2.15], rot: [0.55, 0, 0], color: light },
+    { g: "box", size: [0.12, 0.5, 3.6], pos: [0.98, 0.95, 0], rot: [0, 0, 0.24], color: light },
+    { g: "box", size: [0.12, 0.5, 3.6], pos: [-0.98, 0.95, 0], rot: [0, 0, -0.24], color: light },
+    { g: "box", size: [2.4, 0.1, 3.6], pos: [0, 1.18, 0], color: dark },
+  ];
+  if (open) {
+    // T-20 tractor: an open crew bed with bench seats behind the cab.
+    parts.push(
+      { g: "box", size: [1.8, 0.5, 1.4], pos: [0, 1.4, 1.0], color: body },
+      { g: "box", size: [1.7, 0.12, 2.0], pos: [0, 1.26, -0.9], color: dark },
+      { g: "box", size: [0.5, 0.14, 1.8], pos: [0.55, 1.44, -0.9], color: light },
+      { g: "box", size: [0.5, 0.14, 1.8], pos: [-0.55, 1.44, -0.9], color: light },
+      { g: "box", size: [0.28, 0.28, 0.4], pos: [0, 0.95, -2.1], color: STEEL_DARK },
+    );
+  } else {
+    parts.push(
+      { g: "box", size: [1.8, 0.45, 2.2], pos: [0, 1.42, -0.2], color: body },
+      { g: "box", size: [1.75, 0.1, 2.1], pos: [0, 1.66, -0.2], color: dark },
+    );
+  }
+  headlights(parts, 0.6, 1.15, 2.3);
+  for (const side of [-1, 1]) {
+    trackBelt(parts, side * 1.1, {
+      width: 0.46, length: 4.1, wheelY: 0.42, wheelR: 0.32, wheelCount: 4, endR: 0.36, endZ: 1.8,
+    });
+    for (let i = 0; i < 2; i++) {
+      parts.push({
+        g: "cyl", r: 0.12, h: 0.3, seg: 6,
+        pos: [side * 1.06, 0.85, -0.8 + i * 1.6], rot: [0, 0, Math.PI / 2], color: STEEL_DARK,
+      });
+    }
+  }
+  return build(parts);
+}
+
+/** BA-64 and BA-10: faceted riveted bodies, 4x4 and 6x6 respectively. */
+function sovietCarHullGeometry(tint: number, big: boolean): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const light = shade(tint, 1.22);
+  const k = big ? 1.35 : 1.0;
+  const parts: Part[] = [
+    { g: "box", size: [1.7 * k, 0.5, 3.6 * k], pos: [0, 0.85, 0], color: dark },
+    // Faceted body: sharply canted sides on a narrow floor.
+    { g: "box", size: [1.4 * k, 0.75, 2.2 * k], pos: [0, 1.35, -0.3 * k], color: body },
+    { g: "box", size: [0.2, 0.85, 2.2 * k], pos: [0.72 * k, 1.35, -0.3 * k], rot: [0, 0, 0.36], color: light },
+    { g: "box", size: [0.2, 0.85, 2.2 * k], pos: [-0.72 * k, 1.35, -0.3 * k], rot: [0, 0, -0.36], color: light },
+    // Sloped bonnet and radiator armour.
+    { g: "box", size: [1.35 * k, 0.6, 1.3 * k], pos: [0, 1.15, 1.4 * k], color: body },
+    { g: "box", size: [1.3 * k, 0.3, 0.8], pos: [0, 1.5, 1.1 * k], rot: [-0.6, 0, 0], color: light },
+    { g: "box", size: [1.15 * k, 0.7, 0.14], pos: [0, 1.15, 2.05 * k], color: light },
+    { g: "box", size: [0.9, 0.1, 0.08], pos: [0, 1.6, 0.85 * k], color: 0x141414 },
+    { g: "box", size: [2.0 * k, 0.1, 3.2 * k], pos: [0, 1.0, 0], color: dark },
+  ];
+  headlights(parts, 0.5 * k, 1.35, 2.08 * k);
+  if (big) wheels(parts, 0.95 * k, 0.48, [1.5 * k, -0.55 * k, -1.55 * k]);
+  else wheels(parts, 0.88, 0.44, [1.25, -1.2]);
+  return build(parts);
+}
+
+/** Katyusha BM-13: a GAZ truck carrying a rack of rocket rails. */
+function rocketTruckGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.72);
+  const parts: Part[] = [
+    { g: "box", size: [2.0, 0.3, 6.0], pos: [0, 0.72, 0], color: dark },
+    { g: "box", size: [1.9, 0.8, 1.5], pos: [0, 1.12, 2.0], color: body },
+    { g: "box", size: [1.95, 1.05, 1.4], pos: [0, 1.55, 0.8], color: body },
+    { g: "box", size: [1.75, 0.55, 0.1], pos: [0, 1.78, 1.48], rot: [-0.12, 0, 0], color: GLASS },
+    { g: "box", size: [1.6, 0.65, 0.14], pos: [0, 1.12, 2.78], color: dark },
+    { g: "box", size: [2.4, 0.1, 1.9], pos: [0, 1.0, 1.9], color: dark },
+    // The launcher frame: a raised trestle behind the cab.
+    { g: "box", size: [0.2, 1.1, 0.2], pos: [0.7, 1.5, -0.4], color: STEEL_DARK },
+    { g: "box", size: [0.2, 1.1, 0.2], pos: [-0.7, 1.5, -0.4], color: STEEL_DARK },
+    { g: "box", size: [0.2, 0.5, 0.2], pos: [0.7, 1.2, -2.6], color: STEEL_DARK },
+    { g: "box", size: [0.2, 0.5, 0.2], pos: [-0.7, 1.2, -2.6], color: STEEL_DARK },
+  ];
+  headlights(parts, 0.72, 1.45, 2.8);
+  wheels(parts, 1.06, 0.5, [2.0, -1.5, -2.5]);
+  return build(parts);
+}
+
+/**
+ * The rail rack itself. It elevates and traverses, so it lives on the turret
+ * node — eight parallel rails, loaded above and below the way a BM-13 was.
+ */
+function rocketRackGeometry(tint: number): THREE.BufferGeometry {
+  // The rack sits over the truck's bed, well behind the cab, so the whole
+  // assembly is built around z = -1.6 rather than the turret ring itself.
+  const z0 = -1.6;
+  const parts: Part[] = [
+    // Cross-members the rails are bolted to, fore and aft.
+    { g: "box", size: [2.3, 0.16, 0.34], pos: [0, 0, z0 - 1.7], color: shade(tint, 0.8) },
+    { g: "box", size: [2.3, 0.16, 0.34], pos: [0, 0, z0 + 1.5], color: shade(tint, 0.8) },
+  ];
+  for (let i = 0; i < 8; i++) {
+    const x = -1.05 + i * 0.3;
+    // Rail, plus a rocket sitting on top of it and one slung underneath —
+    // eight rails, sixteen rockets, which is what a BM-13 carried.
+    parts.push({ g: "box", size: [0.07, 0.07, 4.0], pos: [x, 0, z0], color: STEEL_DARK });
+    for (const y of [0.14, -0.14]) {
+      parts.push({ g: "cyl", r: 0.08, h: 1.6, seg: 6, pos: [x, y, z0 + 0.4], rot: [Math.PI / 2, 0, 0], color: 0x59594a });
+      parts.push({ g: "cone", r: 0.08, h: 0.34, seg: 6, pos: [x, y, z0 + 1.37], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK });
+      parts.push({ g: "box", size: [0.18, 0.03, 0.34], pos: [x, y, z0 - 0.55], color: STEEL_DARK });
+    }
+  }
+  return build(parts);
+}
+
+/* ================================================================== */
 /*  Public builders                                                     */
 /* ================================================================== */
 
@@ -1649,6 +2005,20 @@ export function hullGeometryFor(def: VehicleDef): THREE.BufferGeometry | null {
       return boxyCarHullGeometry(def.tint);
     case "trailer":
       return trailerGeometry(def.tint);
+    case "soviet_heavy":
+      return sovietHeavyHullGeometry(def.tint, def.id === "is2");
+    case "soviet_assault_gun":
+      return sovietAssaultGunHullGeometry(def.tint);
+    case "soviet_td":
+      return sovietTdHullGeometry(def.tint);
+    case "fast_tank":
+      return fastTankHullGeometry(def.tint);
+    case "soviet_light":
+      return sovietLightHullGeometry(def.tint, def.id === "t20_komsomolets");
+    case "soviet_armored_car":
+      return sovietCarHullGeometry(def.tint, def.id === "ba10");
+    case "rocket_truck":
+      return rocketTruckGeometry(def.tint);
   }
 }
 
@@ -1666,7 +2036,8 @@ export function turretGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
     case "heavy_armored_car":
       return pumaTurretGeometry(def.tint);
     case "sloped_medium":
-      return slopedTankTurretGeometry(def.tint);
+      // The /85's three-man turret is a great deal larger than the /76's.
+      return slopedTankTurretGeometry(def.tint, def.id === "t34_85" ? 1.24 : 1);
     case "vintage_armored_car":
       return vintageCarTurretGeometry(def.tint);
     case "light_tank":
@@ -1677,6 +2048,24 @@ export function turretGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
     case "tankette":
     case "boxy_armored_car":
       return smallMgTurretGeometry(def.tint);
+    case "soviet_heavy":
+      if (def.id === "kv2") return kv2TurretGeometry(def.tint);
+      return def.id === "is2" ? is2TurretGeometry(def.tint) : kv1TurretGeometry(def.tint);
+    case "soviet_assault_gun":
+      return casemateMantletGeometry(def.tint, 0.46);
+    case "soviet_td":
+      return casemateMantletGeometry(def.tint, 0.4);
+    case "fast_tank":
+      return lightTankTurretGeometry(def.tint);
+    case "soviet_light":
+      // The T-20 tractor has an MG in a small ball mount, not a gun turret.
+      return def.id === "t60" || def.id === "t70"
+        ? lightTankTurretGeometry(def.tint)
+        : smallMgTurretGeometry(def.tint);
+    case "soviet_armored_car":
+      return smallMgTurretGeometry(def.tint);
+    case "rocket_truck":
+      return rocketRackGeometry(def.tint);
     case "box_tank":
       return boxTankMantletGeometry(def.tint);
     case "field_gun":
@@ -1700,6 +2089,22 @@ export function barrelGeometryFor(def: VehicleDef): THREE.BufferGeometry | null 
       return pumaBarrelGeometry();
     case "light_tank":
       return japaneseBarrelGeometry(0.62);
+    case "soviet_heavy":
+      if (def.id === "kv2") return sovietHeavyBarrelGeometry(0.24);
+      return def.id === "is2" ? sovietHeavyBarrelGeometry(0.2) : japaneseBarrelGeometry(1.15);
+    case "soviet_assault_gun":
+      return sovietHeavyBarrelGeometry(0.24);
+    case "soviet_td":
+      return japaneseBarrelGeometry(def.id === "su100" ? 1.5 : 1.25);
+    case "fast_tank":
+      return japaneseBarrelGeometry(0.8);
+    case "soviet_light":
+      return def.id === "t70" ? japaneseBarrelGeometry(0.75) : armoredCarBarrelGeometry();
+    case "soviet_armored_car":
+      return def.id === "ba10" ? japaneseBarrelGeometry(0.6) : null;
+    case "rocket_truck":
+      // The rails are the weapon; there is no barrel to attach.
+      return null;
     case "riveted_medium":
       // A short 57 is a stub; the 47 and the 75 are long guns.
       return japaneseBarrelGeometry(def.id === "type97_chiha" ? 0.55 : 1.0);
@@ -1727,10 +2132,23 @@ export function barrelMount(chassis: Chassis): [number, number, number] {
       return [0, 0.34, 1.05];
     case "light_tank":
       return [0, 0.36, 0.7];
+    case "soviet_heavy":
+      return [0, 0.5, 1.2];
+    case "soviet_assault_gun":
+    case "soviet_td":
+      return [0, 0.25, 0.3];
+    case "fast_tank":
+      return [0, 0.36, 0.7];
+    case "soviet_light":
+      return [0, 0.3, 0.55];
+    case "soviet_armored_car":
+      return [0, 0.26, 0.45];
     case "riveted_medium":
       return [0, 0.45, 0.9];
     case "sloped_medium":
       return [0, 0.42, 1.2];
+    case "rocket_truck":
+      return [0, 0, 0];
     case "box_tank":
       return [0, 0.2, 0.35];
     case "field_gun":
@@ -1778,6 +2196,20 @@ export function turretRingHeight(chassis: Chassis): number {
       return 1.72;
     case "light_tank":
       return 1.72;
+    case "soviet_heavy":
+      return 2.04;
+    case "soviet_assault_gun":
+      return 1.55;
+    case "soviet_td":
+      return 1.6;
+    case "fast_tank":
+      return 1.82;
+    case "soviet_light":
+      return 1.62;
+    case "soviet_armored_car":
+      return 1.72;
+    case "rocket_truck":
+      return 2.15;
     case "riveted_medium":
       return 1.9;
     case "tankette":
@@ -1809,4 +2241,13 @@ export function isArmed(def: VehicleDef): boolean {
 /** Does this vehicle carry a main gun (as opposed to just machine guns)? */
 export function hasCannon(def: VehicleDef): boolean {
   return mainGunOf(def.id) !== null;
+}
+
+/**
+ * Does the gun need a barrel mesh on the elevating node? A Katyusha's weapon
+ * is the rail rack itself, so without this it inherits the shared tank barrel
+ * and drives around with a 75 mm growing out of its rocket frame.
+ */
+export function hasBarrel(def: VehicleDef): boolean {
+  return hasCannon(def) && def.chassis !== "rocket_truck";
 }

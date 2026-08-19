@@ -170,6 +170,13 @@ export class Battle {
       case "type97_57":
       case "type1_47":
       case "type3_75":
+      case "f34_76":
+      case "zis_85":
+      case "d10_100":
+      case "d25t_122":
+      case "ml20_152":
+      case "zis_45":
+      case "katyusha_rocket":
         this.world.effects.muzzleFlash(from, dir, 1.5);
         this.world.audio.cannon(dist);
         break;
@@ -181,6 +188,7 @@ export class Battle {
       case "coax":
       case "vickers_mg":
       case "air_mg":
+      case "tnsh_20":
       case "aircannon":
         this.world.effects.muzzleFlash(from, dir, weapon === "rifle" ? 0.4 : 0.5);
         this.world.audio.rifle(dist);
