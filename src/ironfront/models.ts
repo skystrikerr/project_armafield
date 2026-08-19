@@ -226,6 +226,36 @@ export function treeGeometry(kind: string): THREE.BufferGeometry {
       { g: "sphere", r: 1.1, seg: 6, pos: [0.9, 4.6, 0.5], color: 0x627f3a },
     ]);
   }
+  if (kind === "palm") {
+    // Bare leaning trunk with a crown of fronds — reads as "hot" instantly.
+    const parts: Part[] = [
+      { g: "cyl", r: 0.24, r2: 0.16, h: 6.4, seg: 6, pos: [0.5, 3.2, 0], rot: [0, 0, -0.16], color: 0x7a6144 },
+    ];
+    for (let i = 0; i < 7; i++) {
+      const a = (i / 7) * Math.PI * 2;
+      parts.push({
+        g: "box",
+        size: [0.5, 0.1, 3.2],
+        pos: [1.0 + Math.sin(a) * 1.3, 6.3 - Math.abs(Math.cos(a)) * 0.4, Math.cos(a) * 1.3],
+        rot: [0.32, a, 0],
+        color: i % 2 === 0 ? 0x4f7038 : 0x5c7d3e,
+      });
+    }
+    parts.push({ g: "sphere", r: 0.45, seg: 6, pos: [1.0, 6.5, 0], color: 0x6b5a3a });
+    return build(parts);
+  }
+  if (kind === "dead") {
+    // Bare limbs, no canopy. Winter, desert and shelled ground all use it.
+    const parts: Part[] = [
+      { g: "cyl", r: 0.3, r2: 0.14, h: 4.4, seg: 6, pos: [0, 2.2, 0], color: 0x584f42 },
+    ];
+    for (const [x, y, z, rx, rz] of [
+      [0.8, 3.6, 0.2, 0.2, -0.9], [-0.7, 4.0, -0.3, -0.3, 0.8], [0.2, 4.6, 0.8, 0.9, -0.2],
+    ] as const) {
+      parts.push({ g: "cyl", r: 0.11, r2: 0.05, h: 2.2, seg: 5, pos: [x, y, z], rot: [rx, 0, rz], color: 0x4f4739 });
+    }
+    return build(parts);
+  }
   return build([
     { g: "cyl", r: 0.36, r2: 0.24, h: 3.2, seg: 6, pos: [0, 1.6, 0], color: 0x584028 },
     { g: "sphere", r: 2.1, seg: 7, pos: [0, 4.4, 0], color: 0x4f6f34 },

@@ -125,8 +125,141 @@ function polylineDistance(px: number, pz: number, nodes: { x: number; z: number 
   return best;
 }
 
+
+/* ================================================================== */
+/*  Biomes                                                             */
+/* ================================================================== */
+
+/**
+ * A map's recipe. Everything that makes one place look and fight unlike
+ * another lives here: how the ground is shaped, what colour it is, what grows
+ * on it and how thickly. The generator itself is the same for every map — a
+ * new map is this object plus a seed, not new code.
+ */
+export type Biome = {
+  id: string;
+  /** Landform amplitudes, in metres. */
+  land: {
+    rolling: number;
+    hills: number;
+    /** Exponent on the ridged noise: higher makes peaks sharper and rarer. */
+    hillPower: number;
+    detail: number;
+    /** Depth of the central valley the capture line sits in. 0 for flat ground. */
+    valley: number;
+    /** Horizontal scale multiplier — below 1 makes everything broader. */
+    scale: number;
+  };
+  ground: {
+    lush: number;
+    grass: number;
+    dry: number;
+    dirt: number;
+    rock: number;
+    /** Colour the tops go, and the height it starts. */
+    high: number;
+    highAt: number;
+  };
+  trees: {
+    count: number;
+    kinds: TreeKind[];
+    /** Multiplies the noise that decides where woodland clumps. */
+    density: number;
+    minScale: number;
+    maxScale: number;
+  };
+  rocks: { count: number; minScale: number; maxScale: number };
+  clutter: { count: number; bushChance: number };
+  /** Sky and fog, so a desert does not sit under a temperate haze. */
+  sky: number;
+  fog: number;
+  fogNear: number;
+  fogFar: number;
+};
+
+export type TreeKind = "pine" | "oak" | "birch" | "palm" | "dead";
+
+/** Temperate farmland — the original valley, and the default for any map. */
+const TEMPERATE: Biome = {
+  id: "temperate",
+  land: { rolling: 34, hills: 46, hillPower: 2.2, detail: 3.2, valley: 18, scale: 1 },
+  ground: { lush: 0x556e3a, grass: 0x6a8442, dry: 0x8f9455, dirt: 0x8b7350, rock: 0x6f6a60, high: 0x9aa08c, highAt: 34 },
+  trees: { count: 1900, kinds: ["pine", "pine", "oak", "birch"], density: 1.25, minScale: 0.75, maxScale: 1.45 },
+  rocks: { count: 240, minScale: 1.1, maxScale: 3.4 },
+  clutter: { count: 700, bushChance: 0.75 },
+  sky: 0x9fc4e0, fog: 0xb7cbd8, fogNear: 420, fogFar: 2300,
+};
+
+export const BIOMES: Record<string, Biome> = {
+  temperate: TEMPERATE,
+
+  /** Hedgerow country: broken ground, dense low cover, short sightlines. */
+  bocage: {
+    ...TEMPERATE,
+    id: "bocage",
+    land: { rolling: 26, hills: 22, hillPower: 2.6, detail: 4.6, valley: 10, scale: 1.5 },
+    ground: { lush: 0x47632f, grass: 0x5c7a38, dry: 0x7d8a49, dirt: 0x7d6647, rock: 0x67635a, high: 0x8d9480, highAt: 40 },
+    trees: { count: 3400, kinds: ["oak", "oak", "birch", "pine"], density: 1.7, minScale: 0.8, maxScale: 1.6 },
+    clutter: { count: 1500, bushChance: 0.88 },
+    fog: 0xb0c4cc, fogNear: 300, fogFar: 1500,
+  },
+
+  /** Open steppe: long sightlines, almost nothing to hide behind. */
+  steppe: {
+    ...TEMPERATE,
+    id: "steppe",
+    land: { rolling: 20, hills: 14, hillPower: 3.0, detail: 2.0, valley: 8, scale: 0.65 },
+    ground: { lush: 0x6f7a41, grass: 0x8a8c4e, dry: 0xa39a5c, dirt: 0x9a8558, rock: 0x7d766a, high: 0xa8a894, highAt: 30 },
+    trees: { count: 320, kinds: ["pine", "dead", "birch"], density: 0.5, minScale: 0.7, maxScale: 1.1 },
+    rocks: { count: 380, minScale: 0.9, maxScale: 2.6 },
+    clutter: { count: 900, bushChance: 0.6 },
+    sky: 0xb8cfe2, fog: 0xcbd6dc, fogNear: 700, fogFar: 3000,
+  },
+
+  /** Coastal: low, sandy, palms, and a bright sky over the water. */
+  coast: {
+    ...TEMPERATE,
+    id: "coast",
+    land: { rolling: 18, hills: 26, hillPower: 2.8, detail: 2.4, valley: 22, scale: 0.9 },
+    ground: { lush: 0x5f7a44, grass: 0x7d8a4e, dry: 0xbdae7e, dirt: 0xc2b384, rock: 0x8a8478, high: 0xa9a795, highAt: 44 },
+    trees: { count: 1100, kinds: ["palm", "palm", "pine", "oak"], density: 1.0, minScale: 0.8, maxScale: 1.5 },
+    rocks: { count: 300, minScale: 1.0, maxScale: 3.0 },
+    clutter: { count: 600, bushChance: 0.7 },
+    sky: 0xa8d2ea, fog: 0xc6dde8, fogNear: 600, fogFar: 2800,
+  },
+
+  /** Desert: bare, pale, hot haze, and next to no vegetation. */
+  desert: {
+    ...TEMPERATE,
+    id: "desert",
+    land: { rolling: 30, hills: 34, hillPower: 2.4, detail: 3.6, valley: 12, scale: 0.8 },
+    ground: { lush: 0x9a8a5a, grass: 0xb0a069, dry: 0xc9b884, dirt: 0xd0be8c, rock: 0x9a8f76, high: 0xd8cca6, highAt: 38 },
+    trees: { count: 180, kinds: ["dead", "palm"], density: 0.35, minScale: 0.7, maxScale: 1.2 },
+    rocks: { count: 620, minScale: 1.0, maxScale: 3.8 },
+    clutter: { count: 400, bushChance: 0.45 },
+    sky: 0xd8d0b0, fog: 0xdcd2b4, fogNear: 500, fogFar: 2600,
+  },
+
+  /** Winter: snow over frozen ground, bare trees, flat grey light. */
+  winter: {
+    ...TEMPERATE,
+    id: "winter",
+    land: { rolling: 32, hills: 40, hillPower: 2.2, detail: 3.0, valley: 16, scale: 1 },
+    ground: { lush: 0xc9d2d6, grass: 0xd8dfe2, dry: 0xbfc6c4, dirt: 0x8f8a80, rock: 0x8a8f92, high: 0xeef2f4, highAt: 24 },
+    trees: { count: 1400, kinds: ["pine", "pine", "dead"], density: 1.1, minScale: 0.8, maxScale: 1.5 },
+    rocks: { count: 260, minScale: 1.0, maxScale: 3.0 },
+    clutter: { count: 380, bushChance: 0.5 },
+    sky: 0xc4ccd4, fog: 0xd4dade, fogNear: 260, fogFar: 1600,
+  },
+};
+
+export function biomeById(id: string): Biome {
+  return BIOMES[id] ?? TEMPERATE;
+}
+
 export class Terrain {
   readonly seed: number;
+  readonly biome: Biome;
   /** (GRID + 1)^2 heights, row-major in z. */
   readonly heights: Float32Array;
   readonly obstacles: Obstacle[] = [];
@@ -134,8 +267,9 @@ export class Terrain {
   readonly rocks: Prop[] = [];
   readonly clutter: Prop[] = [];
 
-  constructor(seed: number) {
+  constructor(seed: number, biome: Biome | string = TEMPERATE) {
     this.seed = seed;
+    this.biome = typeof biome === "string" ? biomeById(biome) : biome;
     const n = GRID + 1;
     this.heights = new Float32Array(n * n);
     for (let gz = 0; gz < n; gz++) {
@@ -152,12 +286,16 @@ export class Terrain {
   /** Raw landform before roads and clearings are cut into it. */
   private rawHeight(x: number, z: number) {
     const s = this.seed;
-    const rolling = (fbm(s, x * 0.0045, z * 0.0045, 4) - 0.5) * 34;
-    const hills = Math.pow(ridge(s + 91, x * 0.0021, z * 0.0021, 3), 2.2) * 46;
-    const detail = (fbm(s + 311, x * 0.02, z * 0.02, 3) - 0.5) * 3.2;
+    const L = this.biome.land;
+    // The horizontal scale multiplier stretches or compresses the whole
+    // landform: below 1 gives broad open sweeps, above 1 breaks it up.
+    const k = L.scale;
+    const rolling = (fbm(s, x * 0.0045 * k, z * 0.0045 * k, 4) - 0.5) * L.rolling;
+    const hills = Math.pow(ridge(s + 91, x * 0.0021 * k, z * 0.0021 * k, 3), L.hillPower) * L.hills;
+    const detail = (fbm(s + 311, x * 0.02, z * 0.02, 3) - 0.5) * L.detail;
     // The middle of the map is a shallow valley, so the capture line is
     // overlooked from both flanks rather than being a flat plate.
-    const valley = -18 * Math.exp(-((z + 10) * (z + 10)) / (150 * 150));
+    const valley = -L.valley * Math.exp(-((z + 10) * (z + 10)) / (150 * 150));
     // Ridge the map off at the edges so nothing drives out of the world.
     const edge = Math.max(Math.abs(x), Math.abs(z));
     const wall = smoothstep(MAP_HALF - 70, MAP_HALF - 6, edge) * 60;
@@ -268,8 +406,8 @@ export class Terrain {
     for (const team of ["blue", "red"] as Team[]) this.depot(rand, team);
 
     // Woodland, thickest on the flanks where the capture line is not.
-    const treeKinds = ["pine", "pine", "oak", "birch"] as const;
-    for (let i = 0; i < 1900; i++) {
+    const treeKinds = this.biome.trees.kinds;
+    for (let i = 0; i < this.biome.trees.count; i++) {
       const x = range(rand, -MAP_HALF + 12, MAP_HALF - 12);
       const z = range(rand, -MAP_HALF + 12, MAP_HALF - 12);
       const y = this.heightAt(x, z);
@@ -277,14 +415,14 @@ export class Terrain {
       if (this.roadiness(x, z) > 0.25) continue;
       if (this.nearFeature(x, z, 0.85)) continue;
       const density = fbm(this.seed + 77, x * 0.006, z * 0.006, 3);
-      if (rand() > density * 1.25) continue;
+      if (rand() > density * this.biome.trees.density) continue;
       if (this.obstructed(x, z, 3)) continue;
       this.trees.push({
         x,
         y,
         z,
         rot: rand() * Math.PI * 2,
-        scale: range(rand, 0.75, 1.45),
+        scale: range(rand, this.biome.trees.minScale, this.biome.trees.maxScale),
         kind: pick(rand, treeKinds),
         fall: 0,
         fallDir: rand() * Math.PI * 2,
@@ -292,13 +430,13 @@ export class Terrain {
       });
     }
 
-    for (let i = 0; i < 240; i++) {
+    for (let i = 0; i < this.biome.rocks.count; i++) {
       const x = range(rand, -MAP_HALF + 10, MAP_HALF - 10);
       const z = range(rand, -MAP_HALF + 10, MAP_HALF - 10);
       if (this.roadiness(x, z) > 0.3) continue;
       const steep = this.slopeAt(x, z);
       if (steep < 0.2 && rand() < 0.6) continue;
-      const scale = range(rand, 1.1, 3.4);
+      const scale = range(rand, this.biome.rocks.minScale, this.biome.rocks.maxScale);
       const y = this.heightAt(x, z);
       this.rocks.push({ x, y, z, rot: rand() * Math.PI * 2, scale, kind: "rock" });
       if (scale > 2.1) {
@@ -307,7 +445,7 @@ export class Terrain {
     }
 
     // Bushes and fence posts: cover that reads at a distance.
-    for (let i = 0; i < 700; i++) {
+    for (let i = 0; i < this.biome.clutter.count; i++) {
       const x = range(rand, -MAP_HALF + 10, MAP_HALF - 10);
       const z = range(rand, -MAP_HALF + 10, MAP_HALF - 10);
       if (this.slopeAt(x, z) > 0.55) continue;
@@ -317,7 +455,7 @@ export class Terrain {
         z,
         rot: rand() * Math.PI * 2,
         scale: range(rand, 0.7, 1.5),
-        kind: rand() < 0.75 ? "bush" : "stump",
+        kind: rand() < this.biome.clutter.bushChance ? "bush" : "stump",
       });
     }
   }
@@ -514,22 +652,23 @@ export class Terrain {
 
   private paintGround(out: THREE.Color, x: number, y: number, z: number, slope: number, rand: Rand) {
     const road = this.roadiness(x, z);
+    const g = this.biome.ground;
     const dry = fbm(this.seed + 55, x * 0.008, z * 0.008, 3);
     if (slope > 0.55) {
-      out.setHex(0x6f6a60);
+      out.setHex(g.rock);
     } else if (road > 0.45) {
-      out.setHex(0x8b7350);
+      out.setHex(g.dirt);
     } else if (slope > 0.34) {
-      out.setHex(0x7d7856);
+      out.setHex(g.dry);
     } else if (dry > 0.62) {
-      out.setHex(0x8f9455);
+      out.setHex(g.dry);
     } else if (dry < 0.38) {
-      out.setHex(0x556e3a);
+      out.setHex(g.lush);
     } else {
-      out.setHex(0x6a8442);
+      out.setHex(g.grass);
     }
-    // Snow-free hills, but let the crests go pale so elevation reads.
-    if (y > 34) out.lerp(_tmpColor.setHex(0x9aa08c), smoothstep(34, 62, y) * 0.6);
+    // Let the crests go pale so elevation reads even on flat-lit ground.
+    if (y > g.highAt) out.lerp(_tmpColor.setHex(g.high), smoothstep(g.highAt, g.highAt + 28, y) * 0.6);
     const j = 0.92 + rand() * 0.16;
     out.multiplyScalar(j);
   }

@@ -4,6 +4,7 @@ import {
   BASES,
   MAP_HALF,
   Terrain,
+  biomeById,
   ZONES,
   type Prop,
   type Zone,
@@ -282,18 +283,21 @@ export class Ironfront {
       [this.settings.teams.team2.team]: this.settings.teams.team2.nation,
     } as Record<Team, Nation>);
     this.rand = mulberry32(seed);
+    // The map's biome decides the landform, palette, vegetation and sky, so it
+    // is resolved before the renderer and the terrain are built.
+    const biome = biomeById(mapById(this.settings.mapId).biome);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.setClearColor(0x9fc4e0);
+    this.renderer.setClearColor(biome.sky);
 
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.2, 2600);
 
     // Enough haze for depth, but not so much that the gunner's sight goes blind
     // at 600 m — long shots are the point of having one.
-    this.scene.fog = new THREE.Fog(0xb7cbd8, 420, 2300);
+    this.scene.fog = new THREE.Fog(biome.fog, biome.fogNear, biome.fogFar);
 
-    this.terrain = new Terrain(seed);
+    this.terrain = new Terrain(seed, biome);
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const self = this;
     this.battle = new Battle({

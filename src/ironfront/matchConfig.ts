@@ -1750,6 +1750,8 @@ export type MapDef = {
    * select the map.
    */
   defaultPreset: PresetId;
+  /** Which terrain recipe this map is generated from. See BIOMES in terrain.ts. */
+  biome: string;
 };
 
 export const MAPS: MapDef[] = [
@@ -1760,6 +1762,7 @@ export const MAPS: MapDef[] = [
     blurb: "Three villages along a road through a shallow valley. Mixed arms.",
     tags: ["Balanced", "3 Points"],
     defaultPreset: "all_out",
+    biome: "temperate",
   },
   {
     id: "bocage",
@@ -1768,6 +1771,7 @@ export const MAPS: MapDef[] = [
     blurb: "Tight hedgerows and sunken lanes. Infantry country — armour gets ambushed.",
     tags: ["Close", "Infantry"],
     defaultPreset: "infantry_only",
+    biome: "bocage",
   },
   {
     id: "steppe",
@@ -1776,6 +1780,7 @@ export const MAPS: MapDef[] = [
     blurb: "Long sightlines and almost no cover. Tank and aircraft ground.",
     tags: ["Open", "Armor"],
     defaultPreset: "armor_clash",
+    biome: "steppe",
   },
   {
     id: "coast",
@@ -1784,6 +1789,7 @@ export const MAPS: MapDef[] = [
     blurb: "Airstrips, water crossings and a beach. Favours aircraft and amphibians.",
     tags: ["Air", "Water"],
     defaultPreset: "air_superiority",
+    biome: "coast",
   },
 ];
 
