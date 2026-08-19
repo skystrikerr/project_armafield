@@ -123,6 +123,9 @@ const LATERAL_NODES: { x: number; z: number }[] = [
 /** Craters, generated per map so shelled ground differs between them. */
 export type Crater = { x: number; z: number; r: number; depth: number };
 
+/** One trench run: a zigzag polyline the ground is cut down along. */
+export type Trench = { nodes: { x: number; z: number }[] };
+
 function segmentDistance(
   px: number,
   pz: number,
@@ -206,6 +209,29 @@ export type Biome = {
    * surface and gives it width 0.
    */
   lake: { x: number; z: number; r: number; depth: number } | null;
+  /**
+   * A sea along one edge of the map, with a beach and a bluff behind it. The
+   * assault maps are built round this: everything west of `beachAt` is water,
+   * then sand, then the ground climbs a bluff onto the plateau where the
+   * fighting is.
+   */
+  coast: {
+    /** World X the waterline sits at; everything below it is sea. */
+    shoreX: number;
+    /** How far inland the sand runs before the bluff starts. */
+    beach: number;
+    /** How far again the bluff takes to climb, and by how much. */
+    bluff: number;
+    rise: number;
+    sand: number;
+    surf: number;
+  } | null;
+  /** Zigzag trench lines cut into the ground, with spoil thrown up in front. */
+  trenches: { lines: number; depth: number; width: number };
+  /** Concrete emplacements along the bluff, and obstacles on the sand. */
+  emplacements: { bunkers: number; hedgehogs: number; craft: number };
+  /** Patchwork farmland, as on the Normandy plateau. 0 for none. */
+  fields: number;
   /** Shell holes. `count` 0 leaves the ground unbroken. */
   craters: { count: number; minR: number; maxR: number; depth: number };
   /**
@@ -232,6 +258,10 @@ const TEMPERATE: Biome = {
   clutter: { count: 700, bushChance: 0.75 },
   river: null,
   lake: null,
+  coast: null,
+  trenches: { lines: 0, depth: 2.6, width: 4 },
+  emplacements: { bunkers: 0, hedgehogs: 0, craft: 0 },
+  fields: 0,
   craters: { count: 0, minR: 6, maxR: 14, depth: 2.2 },
   sky: 0x5f9bd4, horizon: 0xdde6dd, fog: 0xb7cbd8, fogNear: 420, fogFar: 2300,
 };
@@ -391,6 +421,52 @@ export const BIOMES: Record<string, Biome> = {
     craters: { count: 30, minR: 7, maxR: 14, depth: 2.0 },
     sky: 0x6ea6d6, horizon: 0xe4eef4, fog: 0xd2e2ec, fogNear: 340, fogFar: 2100,
   },
+
+  /**
+   * Atlantic Wall: a Normandy shore. Sand and beach obstacles under the guns,
+   * a bluff to climb, then hedgerowed farmland and a village on the plateau.
+   */
+  atlantic: {
+    ...TEMPERATE,
+    id: "atlantic",
+    land: { rolling: 16, hills: 18, hillPower: 2.6, detail: 2.6, valley: 6, scale: 1.15 },
+    ground: { lush: 0x4f7034, grass: 0x66883c, dry: 0xa89a58, dirt: 0x9b8358, rock: 0x8a8378, high: 0x9fa08c, highAt: 52 },
+    trees: { count: 1500, kinds: ["oak", "oak", "pine", "birch"], density: 1.35, minScale: 0.8, maxScale: 1.5 },
+    rocks: { count: 220, minScale: 0.9, maxScale: 2.6 },
+    clutter: { count: 950, bushChance: 0.82 },
+    // Width 0: the shore profile shapes the sea bed, so no channel is cut —
+    // the plane is only here to give the water a surface.
+    river: { width: 0, depth: 0, level: -1.0, colour: 0x2f86b4 },
+    coast: { shoreX: -196, beach: 62, bluff: 46, rise: 30, sand: 0xd8c894, surf: 0x2f86b4 },
+    trenches: { lines: 5, depth: 2.8, width: 4.2 },
+    emplacements: { bunkers: 9, hedgehogs: 90, craft: 7 },
+    fields: 1,
+    craters: { count: 70, minR: 6, maxR: 14, depth: 2.2 },
+    sky: 0x4f93d4, horizon: 0xdce8ea, fog: 0xc2d6de, fogNear: 520, fogFar: 2700,
+  },
+
+  /**
+   * Fortress Island: the same shore harder. A gun battery on the headland, a
+   * ruined town inland, and a shelled trench belt behind it.
+   */
+  island: {
+    ...TEMPERATE,
+    id: "island",
+    land: { rolling: 22, hills: 40, hillPower: 2.2, detail: 3.2, valley: 8, scale: 0.95 },
+    ground: { lush: 0x557437, grass: 0x6c8b40, dry: 0x9d9455, dirt: 0x94805a, rock: 0x86807a, high: 0x9a9a8a, highAt: 48 },
+    trees: { count: 1300, kinds: ["pine", "pine", "oak", "dead"], density: 1.2, minScale: 0.85, maxScale: 1.7 },
+    rocks: { count: 420, minScale: 1.2, maxScale: 4.4 },
+    clutter: { count: 700, bushChance: 0.6 },
+    // Width 0: the shore profile shapes the sea bed, so no channel is cut —
+    // the plane is only here to give the water a surface.
+    river: { width: 0, depth: 0, level: -1.0, colour: 0x2b7fae },
+    coast: { shoreX: -190, beach: 54, bluff: 54, rise: 40, sand: 0xd4c48e, surf: 0x2b7fae },
+    trenches: { lines: 6, depth: 3.0, width: 4.4 },
+    emplacements: { bunkers: 11, hedgehogs: 74, craft: 6 },
+    fields: 0,
+    craters: { count: 130, minR: 6, maxR: 17, depth: 2.8 },
+    sky: 0x4a8cc8, horizon: 0xd6e2e4, fog: 0xbdd0da, fogNear: 460, fogFar: 2500,
+  },
 };
 
 export function biomeById(id: string): Biome {
@@ -401,6 +477,7 @@ export class Terrain {
   readonly seed: number;
   readonly biome: Biome;
   readonly craters: Crater[];
+  readonly trenchLines: Trench[];
   /** Bridge decks, for rendering and for AI that needs to find a crossing. */
   readonly bridges: { x: number; z: number; yaw: number; span: number; deckY: number }[] = [];
   /** Structural props the renderer instances — currently just bridge decks. */
@@ -418,6 +495,7 @@ export class Terrain {
     // Shell holes are cut into the landform, so they have to exist before a
     // single height is sampled.
     this.craters = this.placeCraters(mulberry32(seed ^ 0xc7a7e5));
+    this.trenchLines = this.placeTrenches(mulberry32(seed ^ 0x3b19d1));
     const n = GRID + 1;
     this.heights = new Float32Array(n * n);
     for (let gz = 0; gz < n; gz++) {
@@ -458,6 +536,75 @@ export class Terrain {
     return out;
   }
 
+  /**
+   * Trench belts, run roughly parallel to the shore on a coastal map or across
+   * the middle of the map otherwise. Each is a zigzag, because a straight
+   * trench gives enfilade fire down its whole length and nobody dug them that
+   * way.
+   */
+  private placeTrenches(rand: Rand): Trench[] {
+    const spec = this.biome.trenches;
+    if (spec.lines === 0) return [];
+    const out: Trench[] = [];
+    const coast = this.biome.coast;
+    for (let i = 0; i < spec.lines; i++) {
+      const nodes: { x: number; z: number }[] = [];
+      // Coastal belts sit just inland of the bluff top and run north-south.
+      const baseX = coast
+        ? coast.shoreX + coast.beach + coast.bluff + range(rand, 30, 210)
+        : range(rand, -MAP_HALF * 0.6, MAP_HALF * 0.6);
+      const z0 = range(rand, -MAP_HALF * 0.8, -MAP_HALF * 0.1);
+      const length = range(rand, 180, 400);
+      const steps = Math.max(6, Math.round(length / 26));
+      for (let k = 0; k <= steps; k++) {
+        const t = k / steps;
+        // The zigzag: alternate the traverse either side of the run.
+        const zig = (k % 2 === 0 ? 1 : -1) * range(rand, 9, 17);
+        nodes.push({
+          x: baseX + zig + Math.sin(t * 2.4) * range(rand, 6, 22),
+          z: z0 + t * length,
+        });
+      }
+      out.push({ nodes });
+    }
+    return out;
+  }
+
+  /** How far a point is from the nearest trench, or Infinity if there are none. */
+  trenchDistance(x: number, z: number) {
+    let best = Infinity;
+    for (const t of this.trenchLines) {
+      const d = polylineDistance(x, z, t.nodes);
+      if (d < best) best = d;
+    }
+    return best;
+  }
+
+  /**
+   * The coastal profile at a point: sea, beach, or the bluff climbing inland.
+   * Returns the height the shore imposes, and how strongly it applies.
+   */
+  private shoreProfile(x: number): { h: number; w: number } | null {
+    const c = this.biome.coast;
+    if (!c) return null;
+    const inland = x - c.shoreX;
+    if (inland > c.beach + c.bluff + 40) return null;
+    if (inland < 0) {
+      // Sea bed, shelving away from the beach.
+      return { h: -6 - Math.min(26, -inland * 0.14), w: 1 };
+    }
+    if (inland < c.beach) {
+      // Sand, rising very gently to the foot of the bluff.
+      return { h: -1.5 + (inland / c.beach) * 4.5, w: 1 };
+    }
+    // The bluff, then blending into the landform on the plateau.
+    const t = Math.min(1, (inland - c.beach) / c.bluff);
+    const eased = t * t * (3 - 2 * t);
+    const top = 3 + c.rise;
+    const past = Math.max(0, inland - c.beach - c.bluff);
+    return { h: 3 + eased * c.rise, w: 1 - smoothstep(0, 40, past) * 0.55, ...(top ? {} : {}) };
+  }
+
   /** How far a point is from the middle of the river, or Infinity on dry maps. */
   riverDistance(x: number, z: number) {
     if (!this.biome.river) return Infinity;
@@ -466,6 +613,9 @@ export class Terrain {
 
   /** True where the ground is below the waterline — vehicles should avoid it. */
   inWater(x: number, z: number) {
+    const c = this.biome.coast;
+    // Everything seaward of the waterline is water, whatever else is going on.
+    if (c && x < c.shoreX + 2) return true;
     const r = this.biome.river;
     if (!r) return false;
     const lk = this.biome.lake;
@@ -513,6 +663,11 @@ export class Terrain {
       }
     }
 
+    // The shore overrides the landform entirely at the water's edge, and
+    // releases its grip as the ground climbs onto the plateau.
+    const shore = this.shoreProfile(x);
+    if (shore) h = lerp(h, shore.h, shore.w);
+
     // A lake is the same idea as the river channel: a bowl down to the bed,
     // easing back up to the landform around the shoreline.
     const lake = this.biome.lake;
@@ -521,6 +676,21 @@ export class Terrain {
       if (d < lake.r * 1.35) {
         const bed = river.level - lake.depth;
         h = lerp(Math.min(h, bed), h, smoothstep(lake.r * 0.72, lake.r * 1.35, d));
+      }
+    }
+
+    // Trenches: cut a flat-bottomed channel, with the spoil heaped on the
+    // seaward lip so it reads as a parapet rather than a ditch.
+    if (this.trenchLines.length > 0) {
+      const d = this.trenchDistance(x, z);
+      const spec = this.biome.trenches;
+      if (d < spec.width * 2.6) {
+        if (d < spec.width) {
+          h -= spec.depth * (1 - smoothstep(spec.width * 0.55, spec.width, d));
+        } else {
+          const t = (d - spec.width) / (spec.width * 1.6);
+          h += spec.depth * 0.42 * (1 - t) * (1 - t);
+        }
       }
     }
 
@@ -577,6 +747,19 @@ export class Terrain {
       const wa = 1 - smoothstep(24, 70, da);
       if (wa > 0) h = lerp(h, this.rawHeight(a.x, a.z), wa * 0.98);
     }
+
+    // Inland ground is held above the waterline. The sea plane spans the whole
+    // map, so anything below sea level anywhere shows as water — without this
+    // a levelled village sitting in a dip appears flooded to the rooftops.
+    const shoreline = this.biome.coast;
+    if (shoreline && this.biome.river) {
+      const inland = x - shoreline.shoreX;
+      if (inland > 4) {
+        const floor = this.biome.river.level + 0.6;
+        h = Math.max(h, lerp(this.biome.river.level - 1, floor, smoothstep(4, 16, inland)));
+      }
+    }
+
     return h;
   }
 
@@ -650,7 +833,11 @@ export class Terrain {
   private scatter(rand: Rand) {
     for (const zone of ZONES) this.village(rand, zone);
     for (const team of ["blue", "red"] as Team[]) this.depot(rand, team);
-    if (this.biome.river) for (const b of BRIDGES) this.bridge(b);
+    // Only where a channel was actually cut. A coastal map declares a river
+    // purely to get a water surface for the sea, and bridging that would put
+    // two spans across dry farmland.
+    if (this.biome.river && this.biome.river.width > 0) for (const b of BRIDGES) this.bridge(b);
+    this.defences(rand);
 
     // Woodland, thickest on the flanks where the capture line is not.
     const treeKinds = this.biome.trees.kinds;
@@ -786,6 +973,44 @@ export class Terrain {
       this.obstacles.push(box(px + ox, deckY + 0.6, b.z + oz, halfSpan, 0.6, 0.5, b.yaw, true));
     }
     this.bridges.push({ x: b.x, z: b.z, yaw: b.yaw, span: b.span, deckY });
+  }
+
+  /**
+   * Beach defences: casemates spaced along the top of the bluff looking down
+   * the sand, hedgehogs strewn across the tideline, and landing craft run
+   * aground in the shallows.
+   */
+  private defences(rand: Rand) {
+    const c = this.biome.coast;
+    const spec = this.biome.emplacements;
+    if (!c) return;
+
+    // Casemates, set back on the bluff shoulder so they command the beach.
+    for (let i = 0; i < spec.bunkers; i++) {
+      const z = range(rand, -MAP_HALF + 50, MAP_HALF - 50);
+      const x = c.shoreX + c.beach + range(rand, -6, c.bluff * 0.8);
+      const y = this.heightAt(x, z);
+      if (this.obstructed(x, z, 16)) continue;
+      // Facing the water, which is -X.
+      this.props.push({ x, y, z, rot: -Math.PI / 2, scale: 1, kind: "bunker" });
+      this.obstacles.push(box(x, y + 2.2, z, 5.6, 2.4, 4.6, -Math.PI / 2, true));
+    }
+
+    // Hedgehogs, thickest right on the waterline.
+    for (let i = 0; i < spec.hedgehogs; i++) {
+      const z = range(rand, -MAP_HALF + 20, MAP_HALF - 20);
+      const x = c.shoreX + range(rand, -16, c.beach * 0.75);
+      const y = this.heightAt(x, z);
+      this.clutter.push({ x, y, z, rot: rand() * Math.PI * 2, scale: range(rand, 0.9, 1.3), kind: "hedgehog" });
+    }
+
+    // Landing craft, bows to the beach.
+    for (let i = 0; i < spec.craft; i++) {
+      const z = range(rand, -MAP_HALF + 60, MAP_HALF - 60);
+      const x = c.shoreX - range(rand, 6, 58);
+      const y = (this.biome.river?.level ?? 0) - 0.6;
+      this.props.push({ x, y, z, rot: Math.PI / 2 + range(rand, -0.35, 0.35), scale: 1, kind: "craft" });
+    }
   }
 
   private depot(rand: Rand, team: Team) {
@@ -928,6 +1153,35 @@ export class Terrain {
     const road = this.roadiness(x, z);
     const g = this.biome.ground;
     const dry = fbm(this.seed + 55, x * 0.008, z * 0.008, 3);
+
+    // Sand runs from the waterline to the foot of the bluff, and a little way
+    // up it, so the transition is not a hard line.
+    const c = this.biome.coast;
+    if (c) {
+      const inland = x - c.shoreX;
+      if (inland < c.beach + 14) {
+        out.setHex(c.sand);
+        const j0 = 0.94 + rand() * 0.12;
+        out.multiplyScalar(j0);
+        return;
+      }
+    }
+
+    // Patchwork farmland: big low-frequency cells, each taking either pasture
+    // or standing crop, which is what makes the plateau read as fields.
+    if (this.biome.fields > 0 && slope < 0.3 && road < 0.4) {
+      const cell = fbm(this.seed + 909, x * 0.0042, z * 0.0042, 2);
+      if (cell > 0.58) {
+        out.setHex(g.dry);
+        out.multiplyScalar(0.92 + rand() * 0.16);
+        return;
+      }
+      if (cell < 0.42) {
+        out.setHex(g.lush);
+        out.multiplyScalar(0.92 + rand() * 0.16);
+        return;
+      }
+    }
     if (slope > 0.55) {
       out.setHex(g.rock);
     } else if (road > 0.45) {

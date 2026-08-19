@@ -17,6 +17,9 @@ import {
   houseGeometry,
   lowPolyMaterial,
   bridgeGeometry,
+  bunkerGeometry,
+  hedgehogGeometry,
+  landingCraftGeometry,
   rockGeometry,
   sandbagGeometry,
   stumpGeometry,
@@ -430,9 +433,21 @@ export class Ironfront {
 
     this.instanceProps(rockGeometry(), mat, this.terrain.rocks, (p) => p.scale);
 
-    // Bridge decks, and the water they cross.
-    if (this.terrain.props.length > 0) {
-      this.instanceProps(bridgeGeometry(), mat, this.terrain.props, () => 1);
+    // Structural props, grouped by kind so each is one instanced draw.
+    const propGeo: Record<string, () => THREE.BufferGeometry> = {
+      bridge: bridgeGeometry,
+      bunker: bunkerGeometry,
+      craft: landingCraftGeometry,
+    };
+    const propsByKind = new Map<string, typeof this.terrain.props>();
+    for (const p of this.terrain.props) {
+      const list = propsByKind.get(p.kind) ?? [];
+      list.push(p);
+      propsByKind.set(p.kind, list);
+    }
+    for (const [kind, list] of propsByKind) {
+      const make = propGeo[kind];
+      if (make) this.instanceProps(make(), mat, list, () => 1);
     }
     const river = this.terrain.biome.river;
     if (river) {
@@ -457,6 +472,12 @@ export class Ironfront {
       bushGeometry(),
       mat,
       this.terrain.clutter.filter((c) => c.kind === "bush"),
+      (p) => p.scale,
+    );
+    this.instanceProps(
+      hedgehogGeometry(),
+      mat,
+      this.terrain.clutter.filter((c) => c.kind === "hedgehog"),
       (p) => p.scale,
     );
     this.instanceProps(

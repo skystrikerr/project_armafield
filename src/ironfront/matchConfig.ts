@@ -1836,6 +1836,24 @@ export const MAPS: MapDef[] = [
     defaultPreset: "all_out",
     biome: "alpine_snow",
   },
+  {
+    id: "atlantic_wall",
+    name: "Atlantic Wall",
+    seed: 6644,
+    blurb: "Landing beach under the guns. Cross the sand, climb the bluff, take the hedgerows behind it.",
+    tags: ["Beach", "Bunkers", "Trenches"],
+    defaultPreset: "all_out",
+    biome: "atlantic",
+  },
+  {
+    id: "fortress_island",
+    name: "Fortress Island",
+    seed: 7391,
+    blurb: "The same shore, harder. A battery on the headland and a shelled trench belt inland.",
+    tags: ["Beach", "Bunkers", "Craters"],
+    defaultPreset: "all_out",
+    biome: "island",
+  },
 ];
 
 export function mapById(id: string): MapDef {

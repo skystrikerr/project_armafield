@@ -283,6 +283,60 @@ export function bridgeGeometry(): THREE.BufferGeometry {
   return build(parts);
 }
 
+/**
+ * A concrete casemate: a squat sloped block with a firing slit, the shape that
+ * defines every Atlantic Wall photograph.
+ */
+export function bunkerGeometry(): THREE.BufferGeometry {
+  const CONCRETE = 0x9a9890;
+  const DARK = 0x6f6d67;
+  return build([
+    { g: "box", size: [11, 4.4, 9], pos: [0, 2.2, 0], color: CONCRETE },
+    // Sloped front face, angled so shot glances up and off.
+    { g: "box", size: [11.2, 1.9, 3.2], pos: [0, 3.5, 4.2], rot: [-0.5, 0, 0], color: 0x8e8c84 },
+    // The embrasure.
+    { g: "box", size: [6.2, 1.0, 0.7], pos: [0, 2.5, 4.6], color: 0x14150f },
+    { g: "box", size: [6.6, 0.55, 1.0], pos: [0, 3.2, 4.7], color: DARK },
+    // Roof slab and a blast wall round the rear door.
+    { g: "box", size: [11.6, 0.7, 9.6], pos: [0, 4.6, 0], color: DARK },
+    { g: "box", size: [4.4, 3.2, 0.8], pos: [0, 1.6, -5.2], color: DARK },
+    { g: "cyl", r: 0.16, h: 2.6, seg: 6, pos: [3.6, 5.8, -1.2], color: 0x4a4a44 },
+  ]);
+}
+
+/**
+ * A Czech hedgehog. Three crossed girders, and the thing scattered in
+ * thousands across every landing beach.
+ */
+export function hedgehogGeometry(): THREE.BufferGeometry {
+  const IRON = 0x4b4a44;
+  const parts: Part[] = [];
+  for (const [rx, ry, rz] of [
+    [0.62, 0, 0.62], [-0.62, 0, 0.62], [0, 0.7, 0],
+  ] as const) {
+    parts.push({ g: "box", size: [0.22, 0.22, 3.4], pos: [0, 0.9, 0], rot: [rx, ry, rz], color: IRON });
+  }
+  parts.push({ g: "box", size: [0.34, 0.34, 0.34], pos: [0, 0.9, 0], color: 0x3a3934 });
+  return build(parts);
+}
+
+/** A beached landing craft: an open box hull with the bow ramp down. */
+export function landingCraftGeometry(): THREE.BufferGeometry {
+  const HULL = 0x5b5f58;
+  const DARK = 0x44473f;
+  return build([
+    { g: "box", size: [5.4, 2.4, 15 ], pos: [0, 1.2, 0], color: HULL },
+    { g: "box", size: [5.6, 0.5, 15.2], pos: [0, 2.5, 0], color: DARK },
+    // Open troop well.
+    { g: "box", size: [4.2, 1.2, 11], pos: [0, 2.1, -1], color: 0x33362f },
+    // Bow ramp, dropped forward onto the sand.
+    { g: "box", size: [4.6, 0.35, 5.4], pos: [0, 0.5, 9.4], rot: [0.34, 0, 0], color: DARK },
+    // Wheelhouse and stern.
+    { g: "box", size: [2.0, 1.6, 2.0], pos: [1.4, 3.1, -6.2], color: HULL },
+    { g: "box", size: [1.4, 0.9, 1.4], pos: [-1.5, 2.9, -6.4], color: DARK },
+  ]);
+}
+
 export function rockGeometry(): THREE.BufferGeometry {
   const geo = new THREE.DodecahedronGeometry(1, 0);
   geo.scale(1, 0.72, 0.88);
