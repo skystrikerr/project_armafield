@@ -60,7 +60,16 @@ import {
   type Team,
   type Unit,
 } from "./units";
-import { classById, equipSoldier, setActiveEra, squadClassFor, weaponCategory } from "./eras";
+import {
+  classById,
+  equipSoldier,
+  grenadeOfNation,
+  nationOfTeam,
+  setActiveEra,
+  setTeamNations,
+  squadClassFor,
+  weaponCategory,
+} from "./eras";
 import {
   MatchConfig,
   airGunOf,
@@ -68,6 +77,7 @@ import {
   mainGunOf,
   mapById,
   mobilityOf,
+  type Nation,
   planeSpecOf,
   vehicleById,
   type MatchSettings,
@@ -264,9 +274,13 @@ export class Ironfront {
     this.settings = settings ?? new MatchConfig("all_out").getMatchSettings();
     const seed = this.settings.seed;
     this.canvas = canvas;
-    // Every class and weapon lookup below resolves against the active era, so
-    // it has to be set before a single soldier is equipped.
+    // Every class, weapon and grenade lookup resolves against the active era
+    // and the two nations, so both have to be set before a soldier is equipped.
     setActiveEra(this.settings.eraId);
+    setTeamNations({
+      [this.settings.teams.team1.team]: this.settings.teams.team1.nation,
+      [this.settings.teams.team2.team]: this.settings.teams.team2.nation,
+    } as Record<Team, Nation>);
     this.rand = mulberry32(seed);
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.shadowMap.enabled = true;
@@ -730,7 +744,7 @@ export class Ironfront {
   private addSoldier(s: Soldier) {
     this.soldiers.push(s);
     this.units.push(s);
-    const rig = new SoldierRig(this.assets, s.team);
+    const rig = new SoldierRig(this.assets, s.team, nationOfTeam(s.team));
     this.soldierRigs.set(s.id, rig);
     this.scene.add(rig.root);
   }
@@ -1344,7 +1358,7 @@ export class Ironfront {
     this.tmpVec2.set(Math.sin(s.aimYaw) * cp, Math.sin(s.aimPitch) + 0.32, Math.cos(s.aimYaw) * cp).normalize();
     this.battle.fire({
       kind: "grenade",
-      weapon: "grenade",
+      weapon: grenadeOfNation(nationOfTeam(s.team)),
       from: this.tmpVec,
       dir: this.tmpVec2,
       ownerId: s.id,
@@ -2382,7 +2396,7 @@ export class Ironfront {
       hp: Math.max(0, Math.round(t ? t.hp : p ? p.hp : s.hp)),
       stance: s.stance,
       stamina: Math.round(s.stamina),
-      className: classById(s.classId).name,
+      className: classById(s.classId, nationOfTeam(s.team)).name,
       loadout: s.loadout.map((id, slot) => ({ slot, name: WEAPONS[id].name, equipped: id === s.weapon })),
       weapon: t ? SHELLS[t.shell].name : p ? WEAPONS[airGunOf(p.defId)].name : spec.name,
       ammo: s.ammo[s.weapon],

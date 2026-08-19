@@ -285,7 +285,7 @@ function TeamPanel({
         <SectionLabel>Weapons</SectionLabel>
         <div className="space-y-3">
           {GROUPS.map((group) => {
-            const ids = weaponGroups(era)[group];
+            const ids = weaponGroups(team.nation)[group];
             const allOn = ids.every((id) => team.enabledWeapons.includes(id));
             return (
               <div key={group}>

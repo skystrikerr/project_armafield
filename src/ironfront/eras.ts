@@ -1,4 +1,5 @@
-import { WEAPONS, type ClassId, type Soldier, type WeaponSpec } from "./units";
+import { WEAPONS, type ClassId, type Soldier, type Team, type WeaponSpec } from "./units";
+import { WW2_ARSENALS } from "./arsenals";
 
 /**
  * Era and class data. `units.ts` and `combat.ts` only ever look up weapons by
@@ -16,6 +17,66 @@ export const ERA_LABEL: Record<EraId, string> = {
   coldwar: "Cold War",
   modern: "Modern",
 };
+
+/* ================================================================== */
+/*  Nations                                                             */
+/* ================================================================== */
+
+/**
+ * The combatant a team represents. This is what picks the roster: a UK team
+ * flies Spitfires and Lancasters, a Japanese team flies Zeros. Which side of
+ * the war a nation is on only decides team colour and who shoots at whom.
+ */
+export type Nation = "usa" | "uk" | "ussr" | "germany" | "japan" | "britain_ww1" | "germany_ww1";
+
+export type Side = "allies" | "axis";
+
+export const NATION_LABEL: Record<Nation, string> = {
+  usa: "United States",
+  uk: "United Kingdom",
+  ussr: "Soviet Union",
+  germany: "Germany",
+  japan: "Japan",
+  britain_ww1: "British Empire",
+  germany_ww1: "Central Powers",
+};
+
+/** Short form for the HUD and team tabs, where the full name will not fit. */
+export const NATION_SHORT: Record<Nation, string> = {
+  usa: "USA",
+  uk: "UK",
+  ussr: "USSR",
+  germany: "Germany",
+  japan: "Japan",
+  britain_ww1: "Britain",
+  germany_ww1: "Central",
+};
+
+export const SIDE_OF: Record<Nation, Side> = {
+  usa: "allies",
+  uk: "allies",
+  ussr: "allies",
+  germany: "axis",
+  japan: "axis",
+  britain_ww1: "allies",
+  germany_ww1: "axis",
+};
+
+/** Which nations a given era fields, in the order the picker lists them. */
+export const NATIONS_OF_ERA: Record<EraId, Nation[]> = {
+  ww1: ["britain_ww1", "germany_ww1"],
+  ww2: ["usa", "uk", "ussr", "germany", "japan"],
+  coldwar: [],
+  modern: [],
+};
+
+/** Default matchup a fresh era opens on. */
+export function defaultNations(era: EraId): { team1: Nation; team2: Nation } {
+  const list = NATIONS_OF_ERA[era];
+  const allies = list.find((n) => SIDE_OF[n] === "allies") ?? list[0];
+  const axis = list.find((n) => SIDE_OF[n] === "axis") ?? list[list.length - 1];
+  return { team1: allies, team2: axis };
+}
 
 export type ClassDef = {
   id: ClassId;
@@ -666,6 +727,14 @@ const WW1_CLASSES: ClassDef[] = [
  */
 let activeEra: EraId = "ww2";
 
+/**
+ * Which nation each side is fighting as. Set once from the match settings
+ * before anything spawns, then read by every class, weapon and grenade lookup
+ * below — a British rifleman has to end up with a Lee-Enfield and a German one
+ * with a Kar98k, and the only thing a `Soldier` carries is its team colour.
+ */
+let teamNations: Record<Team, Nation> = { blue: "usa", red: "germany" };
+
 export function setActiveEra(era: EraId) {
   if (ERAS[era].classes.length === 0) {
     throw new Error(`ironfront: era "${era}" has no classes registered`);
@@ -673,8 +742,47 @@ export function setActiveEra(era: EraId) {
   activeEra = era;
 }
 
+export function setTeamNations(nations: Record<Team, Nation>) {
+  teamNations = { ...nations };
+}
+
 export function getActiveEra(): EraId {
   return activeEra;
+}
+
+export function nationOfTeam(team: Team): Nation {
+  return teamNations[team];
+}
+
+/** The nation the player is fighting as. The player is always on blue. */
+export function playerNation(): Nation {
+  return teamNations.blue;
+}
+
+/**
+ * A nation's own arsenal, or null for one that has not been given one — the
+ * two Great War sides still draw from their era's shared roster.
+ */
+export function arsenalFor(nation: Nation) {
+  return WW2_ARSENALS[nation] ?? null;
+}
+
+/** Which era a nation belongs to. */
+export function eraOfNation(nation: Nation): EraId {
+  for (const era of Object.keys(NATIONS_OF_ERA) as EraId[]) {
+    if (NATIONS_OF_ERA[era].includes(nation)) return era;
+  }
+  return "ww2";
+}
+
+/** Every class this nation fields, player-facing and AI-only alike. */
+export function classesForNation(nation: Nation): ClassDef[] {
+  return arsenalFor(nation)?.classes ?? ERAS[eraOfNation(nation)].classes;
+}
+
+/** The grenade this nation throws. */
+export function grenadeOfNation(nation: Nation): string {
+  return arsenalFor(nation)?.grenade ?? "grenade";
 }
 
 /** Every class in the era currently selected, player-facing and AI-only alike. */
@@ -682,9 +790,9 @@ export function classesOfEra(era: EraId = activeEra): ClassDef[] {
   return ERAS[era].classes;
 }
 
-/** Player-selectable classes for the deploy screen, in the active era. */
-export function playableClasses(era: EraId = activeEra): ClassDef[] {
-  return classesOfEra(era).filter((c) => !c.aiOnly);
+/** Player-selectable classes for the deploy screen, for the player's nation. */
+export function playableClasses(nation: Nation = playerNation()): ClassDef[] {
+  return classesForNation(nation).filter((c) => !c.aiOnly);
 }
 
 
@@ -712,10 +820,13 @@ export const CURRENT_ERA: EraId = "ww2";
 for (const era of Object.values(ERAS)) {
   Object.assign(WEAPONS, era.weapons);
 }
+for (const arsenal of Object.values(WW2_ARSENALS)) {
+  Object.assign(WEAPONS, arsenal.weapons);
+}
 
-export function classById(id: ClassId, era: EraId = activeEra): ClassDef {
-  const found = classesOfEra(era).find((c) => c.id === id);
-  if (!found) throw new Error(`ironfront: unknown class "${id}" in era "${era}"`);
+export function classById(id: ClassId, nation: Nation = playerNation()): ClassDef {
+  const found = classesForNation(nation).find((c) => c.id === id);
+  if (!found) throw new Error(`ironfront: unknown class "${id}" for ${nation}`);
   return found;
 }
 
@@ -737,8 +848,8 @@ export function weaponCategory(weaponId: string): WeaponCategory {
 }
 
 /** Primary-weapon choices offered on the deploy screen for a given class. */
-export function primaryOptionsFor(classId: ClassId, era: EraId = activeEra): string[] {
-  const cls = classById(classId, era);
+export function primaryOptionsFor(classId: ClassId, nation: Nation = playerNation()): string[] {
+  const cls = classById(classId, nation);
   return cls.slotOptions[0] ?? [cls.loadout[0]];
 }
 
@@ -751,9 +862,14 @@ export function primaryOptionsFor(classId: ClassId, era: EraId = activeEra): str
  * no state in between.
  */
 export function equipSoldier(s: Soldier, classId: ClassId, primaryOverride?: string) {
-  const cls = classById(classId);
+  // The soldier's own side decides which army's kit it draws — this is what
+  // stops a Japanese squad spawning with Thompsons.
+  const nation = nationOfTeam(s.team);
+  const cls = classById(classId, nation);
+  const options0 = cls.slotOptions[0] ?? [cls.loadout[0]];
   const loadout = cls.loadout.map((defaultId, slot) => {
-    if (slot === 0 && primaryOverride) return primaryOverride;
+    // Only honour an override this army actually issues.
+    if (slot === 0 && primaryOverride && options0.includes(primaryOverride)) return primaryOverride;
     const options = cls.slotOptions[slot];
     if (options && options.length > 1) return options[Math.floor(Math.random() * options.length)];
     return defaultId;

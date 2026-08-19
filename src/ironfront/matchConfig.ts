@@ -1,5 +1,18 @@
 import type { Team } from "./units";
-import { AVAILABLE_ERAS as PLAYABLE_ERAS, ERA_LABEL, type EraId } from "./eras";
+import {
+  AVAILABLE_ERAS as PLAYABLE_ERAS,
+  ERA_LABEL,
+  NATIONS_OF_ERA,
+  NATION_LABEL,
+  NATION_SHORT,
+  SIDE_OF,
+  arsenalFor,
+  defaultNations,
+  eraOfNation,
+  type EraId,
+  type Nation,
+  type Side,
+} from "./eras";
 
 /**
  * Match configuration: the vehicle/weapon catalog, per-team loadouts, map list
@@ -72,66 +85,6 @@ export const CATEGORY_LABEL: Record<VehicleCategory, string> = {
   artillery: "Artillery & Support",
   air: "Aircraft",
 };
-
-/* ================================================================== */
-/*  Nations                                                             */
-/* ================================================================== */
-
-/**
- * The combatant a team represents. This is what picks the roster: a UK team
- * flies Spitfires and Lancasters, a Japanese team flies Zeros. Which side of
- * the war a nation is on only decides team colour and who shoots at whom.
- */
-export type Nation = "usa" | "uk" | "ussr" | "germany" | "japan" | "britain_ww1" | "germany_ww1";
-
-export type Side = "allies" | "axis";
-
-export const NATION_LABEL: Record<Nation, string> = {
-  usa: "United States",
-  uk: "United Kingdom",
-  ussr: "Soviet Union",
-  germany: "Germany",
-  japan: "Japan",
-  britain_ww1: "British Empire",
-  germany_ww1: "Central Powers",
-};
-
-/** Short form for the HUD and team tabs, where the full name will not fit. */
-export const NATION_SHORT: Record<Nation, string> = {
-  usa: "USA",
-  uk: "UK",
-  ussr: "USSR",
-  germany: "Germany",
-  japan: "Japan",
-  britain_ww1: "Britain",
-  germany_ww1: "Central",
-};
-
-export const SIDE_OF: Record<Nation, Side> = {
-  usa: "allies",
-  uk: "allies",
-  ussr: "allies",
-  germany: "axis",
-  japan: "axis",
-  britain_ww1: "allies",
-  germany_ww1: "axis",
-};
-
-/** Which nations a given era fields, in the order the picker lists them. */
-export const NATIONS_OF_ERA: Record<EraId, Nation[]> = {
-  ww1: ["britain_ww1", "germany_ww1"],
-  ww2: ["usa", "uk", "ussr", "germany", "japan"],
-  coldwar: [],
-  modern: [],
-};
-
-/** Default matchup a fresh era opens on. */
-export function defaultNations(era: EraId): { team1: Nation; team2: Nation } {
-  const list = NATIONS_OF_ERA[era];
-  const allies = list.find((n) => SIDE_OF[n] === "allies") ?? list[0];
-  const axis = list.find((n) => SIDE_OF[n] === "axis") ?? list[list.length - 1];
-  return { team1: allies, team2: axis };
-}
 
 /**
  * Armour thickness per plate, in millimetres, before impact angle is applied.
@@ -1755,18 +1708,25 @@ const WEAPON_GROUPS_BY_ERA: Record<EraId, Record<WeaponGroup, string[]>> = {
   modern: { rifles: [], smgs: [], machine_guns: [], anti_tank: [], sidearms: [] },
 };
 
-export function weaponGroups(era: EraId): Record<WeaponGroup, string[]> {
-  return WEAPON_GROUPS_BY_ERA[era];
+/**
+ * A nation's small arms, grouped for the setup screen. Nations with their own
+ * arsenal use it; the two Great War sides fall back to their era's shared
+ * roster, which is the only place the era-level table is still read.
+ */
+export function weaponGroups(nation: Nation): Record<WeaponGroup, string[]> {
+  return arsenalFor(nation)?.groups ?? WEAPON_GROUPS_BY_ERA[eraOfNation(nation)];
 }
 
-export function allWeaponIds(era: EraId): string[] {
-  return Object.values(WEAPON_GROUPS_BY_ERA[era]).flat();
+export function allWeaponIds(nation: Nation): string[] {
+  return Object.values(weaponGroups(nation)).flat();
 }
 
-/** Which era a weapon id belongs to, for validation of saved loadouts. */
-export function eraOfWeapon(weaponId: string): EraId | null {
-  for (const era of Object.keys(WEAPON_GROUPS_BY_ERA) as EraId[]) {
-    if (allWeaponIds(era).includes(weaponId)) return era;
+/** Which nation issues a weapon id, for validating saved loadouts. */
+export function nationOfWeapon(weaponId: string): Nation | null {
+  for (const era of Object.keys(NATIONS_OF_ERA) as EraId[]) {
+    for (const nation of NATIONS_OF_ERA[era]) {
+      if (allWeaponIds(nation).includes(weaponId)) return nation;
+    }
   }
   return null;
 }
@@ -1852,8 +1812,8 @@ export type TeamLoadout = {
   skill: number;
 };
 
-export { PLAYABLE_ERAS, ERA_LABEL };
-export type { EraId };
+export { PLAYABLE_ERAS, ERA_LABEL, NATION_LABEL, NATION_SHORT, NATIONS_OF_ERA, SIDE_OF, defaultNations };
+export type { EraId, Nation, Side };
 
 export type MatchSettings = {
   /** Which era the match is fought in. Gates both the vehicle and weapon lists. */
@@ -1897,7 +1857,7 @@ function baseTeam(nation: Nation, era: EraId, slot: "team1" | "team2"): TeamLoad
     // Team colour follows the slot, not the nation, so a USA-vs-UK match still
     // has one blue side and one red one rather than two blues.
     team: slot === "team1" ? "blue" : "red",
-    enabledWeapons: allWeaponIds(era),
+    enabledWeapons: allWeaponIds(nation),
     enabledVehicles: vehiclesWhere(nation, era, () => true),
     botCount: 13,
     tickets: 320,
@@ -2036,7 +1996,7 @@ function sanitizeLoadout(map: MapDef, era: EraId, raw: unknown): MapLoadout {
       team.label = NATION_SHORT[team.nation];
     }
     const allowedVehicles = new Set(vehiclesForNation(team.nation, era).map((v) => v.id));
-    const allowedWeapons = allWeaponIds(era);
+    const allowedWeapons = allWeaponIds(team.nation);
     if (Array.isArray(saved.enabledWeapons)) {
       team.enabledWeapons = saved.enabledWeapons.filter((w) => allowedWeapons.includes(w));
     }
@@ -2167,11 +2127,12 @@ export class MatchConfig {
     if (l.teams[other].nation === nation) return;
     const previous = l.teams[slot];
     const rebuilt = baseTeam(nation, this.eraId, slot);
-    // Numbers the player set are theirs; only the roster follows the nation.
+    // Numbers the player set are theirs; the kit all follows the nation —
+    // carrying the old army's weapon list over would leave a Japanese squad
+    // holding Thompsons.
     rebuilt.botCount = previous.botCount;
     rebuilt.tickets = previous.tickets;
     rebuilt.skill = previous.skill;
-    rebuilt.enabledWeapons = [...previous.enabledWeapons];
     l.teams[slot] = rebuilt;
     l.presetId = null;
     this.emit();
@@ -2263,7 +2224,7 @@ export class MatchConfig {
   /** Select-All / Deselect-All for one weapon group. */
   setWeaponGroup(slot: "team1" | "team2", group: WeaponGroup, enabled: boolean) {
     const t = this.teamOf(slot);
-    const ids = weaponGroups(this.eraId)[group];
+    const ids = weaponGroups(this.teamOf(slot).nation)[group];
     t.enabledWeapons = enabled
       ? Array.from(new Set([...t.enabledWeapons, ...ids]))
       : t.enabledWeapons.filter((w) => !ids.includes(w));
@@ -2312,7 +2273,7 @@ export class MatchConfig {
       if (t.enabledWeapons.length === 0) {
         problems.push(`${t.label} has no weapons enabled.`);
       }
-      const sidearms = weaponGroups(this.eraId).sidearms;
+      const sidearms = weaponGroups(t.nation).sidearms;
       const hasPrimary = t.enabledWeapons.some((w) => !sidearms.includes(w));
       if (t.enabledWeapons.length > 0 && !hasPrimary) {
         problems.push(`${t.label} has only sidearms — enable at least one primary weapon.`);

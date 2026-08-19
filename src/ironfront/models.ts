@@ -178,46 +178,6 @@ export function tankBarrelGeometry(): THREE.BufferGeometry {
 
 /* ---------------- soldier ---------------- */
 
-/** Torso, head, helmet and webbing. Origin at the hips. */
-export function soldierTorsoGeometry(team: Team): THREE.BufferGeometry {
-  const tint = TEAM_COLOR[team];
-  return build([
-    { g: "box", size: [0.62, 0.72, 0.34], pos: [0, 0.36, 0], color: CLOTH },
-    // Webbing and pouches.
-    { g: "box", size: [0.66, 0.2, 0.38], pos: [0, 0.2, 0], color: CLOTH_DARK },
-    { g: "box", size: [0.16, 0.16, 0.12], pos: [0.2, 0.2, 0.22], color: CANVAS },
-    { g: "box", size: [0.16, 0.16, 0.12], pos: [-0.2, 0.2, 0.22], color: CANVAS },
-    // Pack.
-    { g: "box", size: [0.44, 0.42, 0.2], pos: [0, 0.44, -0.26], color: CANVAS },
-    // Shoulders, in team colour so squads read at range.
-    { g: "box", size: [0.68, 0.14, 0.36], pos: [0, 0.66, 0], color: tint.primary },
-    // Neck and head.
-    { g: "box", size: [0.16, 0.1, 0.16], pos: [0, 0.78, 0], color: SKIN },
-    { g: "box", size: [0.3, 0.3, 0.28], pos: [0, 0.96, 0], color: SKIN },
-    // Helmet: dome plus a brim.
-    { g: "sphere", r: 0.22, seg: 8, pos: [0, 1.09, 0] , color: tint.dark },
-    { g: "box", size: [0.38, 0.06, 0.42], pos: [0, 1.03, -0.01], color: tint.dark },
-  ]);
-}
-
-/** Both arms as one piece: they hold the weapon together, so they move together. */
-export function soldierArmsGeometry(): THREE.BufferGeometry {
-  return build([
-    { g: "box", size: [0.17, 0.5, 0.19], pos: [0.36, -0.16, 0.06], rot: [-0.5, 0, 0.1], color: CLOTH },
-    { g: "box", size: [0.17, 0.5, 0.19], pos: [-0.32, -0.16, 0.14], rot: [-0.9, 0, -0.15], color: CLOTH },
-    { g: "box", size: [0.12, 0.12, 0.12], pos: [0.34, -0.32, 0.28], color: SKIN },
-    { g: "box", size: [0.12, 0.12, 0.12], pos: [-0.26, -0.3, 0.44], color: SKIN },
-  ]);
-}
-
-export function soldierLegGeometry(): THREE.BufferGeometry {
-  return build([
-    { g: "box", size: [0.22, 0.5, 0.24], pos: [0, -0.25, 0], color: CLOTH_DARK },
-    { g: "box", size: [0.2, 0.38, 0.22], pos: [0, -0.66, 0], color: CLOTH_DARK },
-    { g: "box", size: [0.22, 0.14, 0.34], pos: [0, -0.88, 0.05], color: BOOT },
-  ]);
-}
-
 export function rifleGeometry(): THREE.BufferGeometry {
   return build([
     { g: "box", size: [0.07, 0.09, 0.95], pos: [0, 0, 0.25], color: WOOD },

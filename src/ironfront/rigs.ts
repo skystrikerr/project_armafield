@@ -4,15 +4,12 @@ import {
   lowPolyMaterial,
   propellerGeometry,
   rifleGeometry,
-  soldierArmsGeometry,
-  soldierLegGeometry,
-  soldierTorsoGeometry,
   tankBarrelGeometry,
   tankHullGeometry,
   tankTurretGeometry,
   wreckGeometry,
 } from "./models";
-import { weaponCategory } from "./eras";
+import { soldierArmsFor, soldierLegFor, soldierTorsoFor, weaponGeometry, weaponGrip } from "./weaponModels";
 import { vehicleById, type VehicleDef } from "./matchConfig";
 import {
   barrelGeometryFor,
@@ -42,12 +39,26 @@ export class RigAssets {
   readonly material = lowPolyMaterial();
   readonly hull: Record<Team, THREE.BufferGeometry>;
   readonly turret: Record<Team, THREE.BufferGeometry>;
-  readonly torso: Record<Team, THREE.BufferGeometry>;
+  /** Uniforms are per nation, not per team: two khaki armies need to differ. */
+  private uniformCache = new Map<string, { torso: THREE.BufferGeometry; arms: THREE.BufferGeometry; leg: THREE.BufferGeometry }>();
   readonly barrel = tankBarrelGeometry();
-  readonly leg = soldierLegGeometry();
-  readonly arms = soldierArmsGeometry();
   readonly rifle = rifleGeometry();
   readonly launcher = launcherGeometry();
+  private weaponCache = new Map<string, THREE.BufferGeometry>();
+
+  /** Torso, arms and legs in one nation's kit, built once per nation and team. */
+  uniformGeometry(nation: string, team: Team) {
+    const key = `${nation}:${team}`;
+    const hit = this.uniformCache.get(key);
+    if (hit) return hit;
+    const entry = {
+      torso: soldierTorsoFor(nation, TEAM_COLOR[team].primary),
+      arms: soldierArmsFor(nation),
+      leg: soldierLegFor(nation),
+    };
+    this.uniformCache.set(key, entry);
+    return entry;
+  }
   readonly propeller = propellerGeometry();
   readonly wreck = wreckGeometry();
 
@@ -57,7 +68,6 @@ export class RigAssets {
       Object.fromEntries(teams.map((t) => [t, fn(t)])) as Record<Team, T>;
     this.hull = rec(tankHullGeometry);
     this.turret = rec(tankTurretGeometry);
-    this.torso = rec(soldierTorsoGeometry);
   }
 
   /**
@@ -80,13 +90,30 @@ export class RigAssets {
     return entry;
   }
 
+  /** One mesh per weapon id, built the first time that weapon is drawn. */
+  weaponGeometryFor(weaponId: string): THREE.BufferGeometry {
+    let geo = this.weaponCache.get(weaponId);
+    if (!geo) {
+      geo = weaponGeometry(weaponId);
+      this.weaponCache.set(weaponId, geo);
+    }
+    return geo;
+  }
+
   dispose() {
     const all: THREE.BufferGeometry[] = [
-      this.barrel, this.leg, this.arms, this.rifle, this.launcher, this.propeller, this.wreck,
+      this.barrel, this.rifle, this.launcher, this.propeller, this.wreck,
       ...Object.values(this.hull), ...Object.values(this.turret),
-      ...Object.values(this.torso),
     ];
     for (const g of all) g.dispose();
+    for (const g of this.weaponCache.values()) g.dispose();
+    this.weaponCache.clear();
+    for (const u of this.uniformCache.values()) {
+      u.torso.dispose();
+      u.arms.dispose();
+      u.leg.dispose();
+    }
+    this.uniformCache.clear();
     // Cached vehicle meshes may alias the shared ones above, so only dispose
     // geometry this cache actually created.
     for (const entry of this.vehicleCache.values()) {
@@ -155,27 +182,28 @@ export class SoldierRig {
   private torso = new THREE.Group();
   private armsPivot = new THREE.Group();
   private legs: THREE.Mesh[] = [];
-  private rifle: THREE.Mesh;
-  private launcher: THREE.Mesh;
+  /** The weapon currently in the soldier's hands, swapped when it changes. */
+  private weapon: THREE.Mesh;
+  private weaponId = "";
+  private readonly assets: RigAssets;
   /** Marker floating above friendlies so a firefight stays legible. */
   readonly marker: THREE.Sprite;
 
-  constructor(assets: RigAssets, team: Team) {
+  constructor(assets: RigAssets, team: Team, nation = "usa") {
     const mat = assets.material;
+    this.assets = assets;
+    const kit = assets.uniformGeometry(nation, team);
     for (const side of [-1, 1]) {
-      const leg = mesh(assets.leg, mat);
+      const leg = mesh(kit.leg, mat);
       leg.position.set(side * 0.16, 0, 0);
       this.legs.push(leg);
       this.body.add(leg);
     }
-    this.torso.add(mesh(assets.torso[team], mat));
+    this.torso.add(mesh(kit.torso, mat));
     this.armsPivot.position.set(0, 0.62, 0);
-    this.rifle = mesh(assets.rifle, mat);
-    this.rifle.position.set(0.06, -0.3, 0.22);
-    this.launcher = mesh(assets.launcher, mat);
-    this.launcher.position.set(0.06, -0.22, 0.2);
-    this.launcher.visible = false;
-    this.armsPivot.add(mesh(assets.arms, mat), this.rifle, this.launcher);
+    this.weapon = mesh(assets.rifle, mat);
+    this.weapon.position.set(0.06, -0.3, 0.22);
+    this.armsPivot.add(mesh(kit.arms, mat), this.weapon);
     this.torso.add(this.armsPivot);
     this.body.add(this.torso);
     this.root.add(this.body);
@@ -198,8 +226,7 @@ export class SoldierRig {
       this.torso.rotation.y = 0;
       this.armsPivot.rotation.x = 0.2;
       for (let i = 0; i < 2; i++) this.legs[i].rotation.x = i === 0 ? 0.2 : -0.15;
-      this.rifle.visible = false;
-      this.launcher.visible = false;
+      this.weapon.visible = false;
       return;
     }
 
@@ -221,12 +248,14 @@ export class SoldierRig {
     // Sprinting soldiers carry the weapon low.
     this.armsPivot.rotation.z = s.sprinting ? -0.5 : 0;
 
-    // Only two weapon meshes exist today — everything reads as the rifle
-    // silhouette except AT weapons, which read as the launcher. A wider
-    // roster of low-poly meshes is a follow-up art pass, not a data one.
-    const heavy = weaponCategory(s.weapon) === "heavy";
-    this.rifle.visible = !heavy;
-    this.launcher.visible = heavy;
+    // Each weapon has its own silhouette, so the mesh is swapped whenever the
+    // soldier changes weapon rather than toggling between two fixed ones.
+    this.weapon.visible = true;
+    if (s.weapon !== this.weaponId) {
+      this.weaponId = s.weapon;
+      this.weapon.geometry = this.assets.weaponGeometryFor(s.weapon);
+      this.weapon.position.set(...weaponGrip(s.weapon));
+    }
   }
 
   dispose() {
