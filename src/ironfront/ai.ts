@@ -16,7 +16,7 @@ import {
   type Unit,
 } from "./units";
 import { angleDelta, approachAngle, clamp } from "./random";
-import { heavyWeaponOfSoldier, weaponCategory } from "./eras";
+import { grenadeOfNation, heavyWeaponOfSoldier, nationOfTeam, weaponCategory } from "./eras";
 import { airGunOf, coaxOf, mainGunOf, mobilityOf } from "./matchConfig";
 
 /**
@@ -253,7 +253,7 @@ export function updateSoldierAI(s: Soldier, ctx: AiContext, dt: number) {
       _dir.y = 0.55;
       ctx.battle.fire({
         kind: "grenade",
-        weapon: "grenade",
+        weapon: grenadeOfNation(nationOfTeam(s.team), s.classId),
         from: _muzzle,
         dir: _dir,
         ownerId: s.id,

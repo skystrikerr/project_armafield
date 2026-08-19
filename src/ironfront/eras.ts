@@ -780,9 +780,16 @@ export function classesForNation(nation: Nation): ClassDef[] {
   return arsenalFor(nation)?.classes ?? ERAS[eraOfNation(nation)].classes;
 }
 
-/** The grenade this nation throws. */
-export function grenadeOfNation(nation: Nation): string {
-  return arsenalFor(nation)?.grenade ?? "grenade";
+/**
+ * What this nation throws. Support troops reach for the anti-tank throwable
+ * where their army had one — a sticky bomb or a bundled charge is not
+ * something a rifleman was ever issued.
+ */
+export function grenadeOfNation(nation: Nation, classId?: ClassId): string {
+  const g = arsenalFor(nation)?.grenades;
+  if (!g) return "grenade";
+  if (classId === "support" && g.at) return g.at;
+  return g.frag;
 }
 
 /** Every class in the era currently selected, player-facing and AI-only alike. */

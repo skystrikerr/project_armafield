@@ -1358,7 +1358,7 @@ export class Ironfront {
     this.tmpVec2.set(Math.sin(s.aimYaw) * cp, Math.sin(s.aimPitch) + 0.32, Math.cos(s.aimYaw) * cp).normalize();
     this.battle.fire({
       kind: "grenade",
-      weapon: grenadeOfNation(nationOfTeam(s.team)),
+      weapon: grenadeOfNation(nationOfTeam(s.team), s.classId),
       from: this.tmpVec,
       dir: this.tmpVec2,
       ownerId: s.id,

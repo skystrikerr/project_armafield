@@ -18,8 +18,12 @@ import type { ClassDef } from "./eras";
 export type NationArsenal = {
   /** Adjective used in class names and the deploy screen. */
   label: string;
-  /** The grenade this army throws. */
-  grenade: string;
+  /**
+   * What this army throws. `frag` is the standard grenade every class carries;
+   * `at` is the anti-tank throwable the Support class swaps to, where one
+   * existed — several armies simply had no hand-thrown answer to a tank.
+   */
+  grenades: { frag: string; at?: string };
   weapons: Record<string, WeaponSpec>;
   classes: ClassDef[];
   /** Setup-screen grouping for this nation's small arms. */
@@ -115,6 +119,8 @@ const USA_CLASSES: ClassDef[] = [
 /* ------------------------------------------------------------------ */
 
 const UK_WEAPONS: Record<string, WeaponSpec> = {
+  no69_grenade: { name: "No. 69 Grenade", rpm: 0, speed: 21, damage: 0, penetration: 0, blast: 7.5, blastDamage: 105, spread: 0, magazine: 1, reloadTime: 1.2, auto: false, tracer: 0x8a8f7a, category: "heavy" },
+  no74_sticky: { name: "No. 74 Sticky Bomb", rpm: 0, speed: 16, damage: 0, penetration: 95, blast: 5.5, blastDamage: 90, spread: 0, magazine: 1, reloadTime: 1.2, auto: false, tracer: 0x8a8f7a, category: "heavy" },
   webley_mk6: { name: "Webley Mk VI", rpm: 95, speed: 320, damage: 38, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 6, reloadTime: 2.9, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.044, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
   enfield_no2: { name: "Enfield No. 2", rpm: 115, speed: 320, damage: 32, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 6, reloadTime: 2.7, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
   webley_auto: { name: "Webley & Scott", rpm: 150, speed: 320, damage: 34, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 8, reloadTime: 2.4, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
@@ -196,6 +202,8 @@ const UK_CLASSES: ClassDef[] = [
 /* ------------------------------------------------------------------ */
 
 const USSR_WEAPONS: Record<string, WeaponSpec> = {
+  rgd33: { name: "RGD-33", rpm: 0, speed: 21, damage: 0, penetration: 0, blast: 8.5, blastDamage: 122, spread: 0, magazine: 1, reloadTime: 1.2, auto: false, tracer: 0x8a8f7a, category: "heavy" },
+  rpg43: { name: "RPG-43 AT Grenade", rpm: 0, speed: 17, damage: 0, penetration: 110, blast: 5.5, blastDamage: 95, spread: 0, magazine: 1, reloadTime: 1.2, auto: false, tracer: 0x8a8f7a, category: "heavy" },
   tt33: { name: "TT-33", rpm: 160, speed: 320, damage: 30, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 8, reloadTime: 2.4, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
   nagant_m1895: { name: "Nagant M1895", rpm: 90, speed: 320, damage: 31, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 7, reloadTime: 3.2, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
   ppsh41: { name: "PPSh-41", rpm: 900, speed: 370, damage: 24, penetration: 0, blast: 0, blastDamage: 0, spread: 0.032, magazine: 71, reloadTime: 3.6, auto: true, tracer: 0xffd08a, category: "smg", recoilKick: 0.018, recoilRecover: 8.0, swayAmount: 0.009, adsZoom: 1.15, adsSwayMul: 0.5 },
@@ -274,6 +282,8 @@ const USSR_CLASSES: ClassDef[] = [
 /* ------------------------------------------------------------------ */
 
 const GERMANY_WEAPONS: Record<string, WeaponSpec> = {
+  eihandgranate: { name: "Eihandgranate 39", rpm: 0, speed: 24, damage: 0, penetration: 0, blast: 7.5, blastDamage: 108, spread: 0, magazine: 1, reloadTime: 1.2, auto: false, tracer: 0x8a8f7a, category: "heavy" },
+  geballte_ladung: { name: "Geballte Ladung", rpm: 0, speed: 15, damage: 0, penetration: 105, blast: 6.5, blastDamage: 130, spread: 0, magazine: 1, reloadTime: 1.2, auto: false, tracer: 0x8a8f7a, category: "heavy" },
   luger_p08: { name: "P08 Luger", rpm: 150, speed: 320, damage: 29, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 8, reloadTime: 2.4, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
   mauser_c96: { name: "Mauser C96", rpm: 130, speed: 320, damage: 33, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 10, reloadTime: 2.8, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
   walther_p38: { name: "Walther P38", rpm: 155, speed: 320, damage: 31, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 8, reloadTime: 2.4, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
@@ -356,6 +366,7 @@ const GERMANY_CLASSES: ClassDef[] = [
 /* ------------------------------------------------------------------ */
 
 const JAPAN_WEAPONS: Record<string, WeaponSpec> = {
+  type99_kiska: { name: "Type 99 Kiska Grenade", rpm: 0, speed: 21, damage: 0, penetration: 0, blast: 8.5, blastDamage: 124, spread: 0, magazine: 1, reloadTime: 1.2, auto: false, tracer: 0x8a8f7a, category: "heavy" },
   nambu_t14: { name: "Nambu Type 14", rpm: 145, speed: 320, damage: 26, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 8, reloadTime: 2.4, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
   nambu_t94: { name: "Nambu Type 94", rpm: 140, speed: 320, damage: 25, penetration: 0, blast: 0, blastDamage: 0, spread: 0.023, magazine: 6, reloadTime: 2.4, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
   type26_revolver: { name: "Type 26 Revolver", rpm: 100, speed: 320, damage: 30, penetration: 0, blast: 0, blastDamage: 0, spread: 0.019, magazine: 6, reloadTime: 2.9, auto: false, tracer: 0xffd08a, category: "sidearm", recoilKick: 0.032, recoilRecover: 7.5, swayAmount: 0.011, adsZoom: 1.1, adsSwayMul: 0.6 },
@@ -437,7 +448,7 @@ const JAPAN_CLASSES: ClassDef[] = [
 export const WW2_ARSENALS: Record<string, NationArsenal> = {
   usa: {
     label: "American",
-    grenade: "mk2_grenade",
+    grenades: { frag: "mk2_grenade" },
     weapons: USA_WEAPONS,
     classes: USA_CLASSES,
     groups: {
@@ -450,7 +461,7 @@ export const WW2_ARSENALS: Record<string, NationArsenal> = {
   },
   uk: {
     label: "British",
-    grenade: "mills_bomb",
+    grenades: { frag: "mills_bomb", at: "no74_sticky" },
     weapons: UK_WEAPONS,
     classes: UK_CLASSES,
     groups: {
@@ -463,7 +474,7 @@ export const WW2_ARSENALS: Record<string, NationArsenal> = {
   },
   ussr: {
     label: "Soviet",
-    grenade: "f1_grenade",
+    grenades: { frag: "f1_grenade", at: "rpg43" },
     weapons: USSR_WEAPONS,
     classes: USSR_CLASSES,
     groups: {
@@ -476,7 +487,7 @@ export const WW2_ARSENALS: Record<string, NationArsenal> = {
   },
   germany: {
     label: "German",
-    grenade: "stielhandgranate",
+    grenades: { frag: "stielhandgranate", at: "geballte_ladung" },
     weapons: GERMANY_WEAPONS,
     classes: GERMANY_CLASSES,
     groups: {
@@ -489,7 +500,7 @@ export const WW2_ARSENALS: Record<string, NationArsenal> = {
   },
   japan: {
     label: "Japanese",
-    grenade: "type97_grenade",
+    grenades: { frag: "type97_grenade" },
     weapons: JAPAN_WEAPONS,
     classes: JAPAN_CLASSES,
     groups: {
