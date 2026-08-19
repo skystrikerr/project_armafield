@@ -16,6 +16,7 @@ import {
   flagpoleGeometry,
   houseGeometry,
   lowPolyMaterial,
+  bridgeGeometry,
   rockGeometry,
   sandbagGeometry,
   stumpGeometry,
@@ -289,7 +290,7 @@ export class Ironfront {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.setClearColor(biome.sky);
+    this.renderer.setClearColor(biome.horizon);
 
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.2, 2600);
 
@@ -355,8 +356,10 @@ export class Ironfront {
     const count = geo.getAttribute("position").count;
     const pos = geo.getAttribute("position");
     const colors = new Float32Array(count * 3);
-    const top = new THREE.Color(0x5f9bd4).convertSRGBToLinear();
-    const bottom = new THREE.Color(0xdde6dd).convertSRGBToLinear();
+    // Both ends come from the biome, so an overcast mud map is not lit by a
+    // clear blue dome.
+    const top = new THREE.Color(this.terrain.biome.sky).convertSRGBToLinear();
+    const bottom = new THREE.Color(this.terrain.biome.horizon).convertSRGBToLinear();
     const c = new THREE.Color();
     for (let i = 0; i < count; i++) {
       const t = clamp(Math.pow(clamp(pos.getY(i) / 2200, 0, 1), 0.55), 0, 1);
@@ -426,6 +429,30 @@ export class Ironfront {
     }
 
     this.instanceProps(rockGeometry(), mat, this.terrain.rocks, (p) => p.scale);
+
+    // Bridge decks, and the water they cross.
+    if (this.terrain.props.length > 0) {
+      this.instanceProps(bridgeGeometry(), mat, this.terrain.props, () => 1);
+    }
+    const river = this.terrain.biome.river;
+    if (river) {
+      // One flat plane across the whole map at the waterline. The channel is
+      // the only place the ground is below it, so that is the only place it
+      // shows — cheaper and steadier than trying to mesh the river itself.
+      const water = new THREE.Mesh(
+        new THREE.PlaneGeometry(MAP_HALF * 2.4, MAP_HALF * 2.4),
+        new THREE.MeshLambertMaterial({
+          color: river.colour,
+          transparent: true,
+          opacity: 0.82,
+          depthWrite: false,
+        }),
+      );
+      water.rotation.x = -Math.PI / 2;
+      water.position.y = river.level;
+      water.renderOrder = -1;
+      this.scene.add(water);
+    }
     this.instanceProps(
       bushGeometry(),
       mat,

@@ -89,6 +89,27 @@ const ROAD_NODES: { x: number; z: number }[] = [
   { x: 0, z: -300 },
 ];
 
+/**
+ * The river. It runs down the right of the map and both roads cross it, which
+ * is what puts the two bridges where the references have them: one where the
+ * north road crosses and one on the lateral.
+ */
+const RIVER_NODES: { x: number; z: number }[] = [
+  { x: 150, z: -320 },
+  { x: 118, z: -180 },
+  { x: 96, z: -70 },
+  { x: 88, z: 10 },
+  { x: 104, z: 110 },
+  { x: 138, z: 230 },
+  { x: 160, z: 330 },
+];
+
+/** Where a road crosses the water, and how wide a deck it needs. */
+const BRIDGES: { x: number; z: number; yaw: number; span: number }[] = [
+  { x: 92, z: -14, yaw: Math.PI / 2, span: 46 },
+  { x: 100, z: 96, yaw: Math.PI / 2 - 0.24, span: 44 },
+];
+
 const LATERAL_NODES: { x: number; z: number }[] = [
   { x: -230, z: 55 },
   { x: -155, z: 30 },
@@ -98,6 +119,9 @@ const LATERAL_NODES: { x: number; z: number }[] = [
   { x: 155, z: 25 },
   { x: 235, z: 48 },
 ];
+
+/** Craters, generated per map so shelled ground differs between them. */
+export type Crater = { x: number; z: number; r: number; depth: number };
 
 function segmentDistance(
   px: number,
@@ -170,8 +194,21 @@ export type Biome = {
   };
   rocks: { count: number; minScale: number; maxScale: number };
   clutter: { count: number; bushChance: number };
-  /** Sky and fog, so a desert does not sit under a temperate haze. */
+  /**
+   * A river cut through the map, or null for dry ground. `level` is the water
+   * surface height; the channel is carved down to `depth` below it so the
+   * banks read as banks rather than a painted stripe.
+   */
+  river: { width: number; depth: number; level: number; colour: number } | null;
+  /** Shell holes. `count` 0 leaves the ground unbroken. */
+  craters: { count: number; minR: number; maxR: number; depth: number };
+  /**
+   * Sky and fog, so a desert does not sit under a temperate haze. `sky` is the
+   * colour overhead and `horizon` the colour at eye level; the dome is a
+   * gradient between them.
+   */
   sky: number;
+  horizon: number;
   fog: number;
   fogNear: number;
   fogFar: number;
@@ -187,7 +224,9 @@ const TEMPERATE: Biome = {
   trees: { count: 1900, kinds: ["pine", "pine", "oak", "birch"], density: 1.25, minScale: 0.75, maxScale: 1.45 },
   rocks: { count: 240, minScale: 1.1, maxScale: 3.4 },
   clutter: { count: 700, bushChance: 0.75 },
-  sky: 0x9fc4e0, fog: 0xb7cbd8, fogNear: 420, fogFar: 2300,
+  river: null,
+  craters: { count: 0, minR: 6, maxR: 14, depth: 2.2 },
+  sky: 0x5f9bd4, horizon: 0xdde6dd, fog: 0xb7cbd8, fogNear: 420, fogFar: 2300,
 };
 
 export const BIOMES: Record<string, Biome> = {
@@ -213,7 +252,7 @@ export const BIOMES: Record<string, Biome> = {
     trees: { count: 320, kinds: ["pine", "dead", "birch"], density: 0.5, minScale: 0.7, maxScale: 1.1 },
     rocks: { count: 380, minScale: 0.9, maxScale: 2.6 },
     clutter: { count: 900, bushChance: 0.6 },
-    sky: 0xb8cfe2, fog: 0xcbd6dc, fogNear: 700, fogFar: 3000,
+    sky: 0x86b4d8, horizon: 0xe2e6d8, fog: 0xcbd6dc, fogNear: 700, fogFar: 3000,
   },
 
   /** Coastal: low, sandy, palms, and a bright sky over the water. */
@@ -225,7 +264,7 @@ export const BIOMES: Record<string, Biome> = {
     trees: { count: 1100, kinds: ["palm", "palm", "pine", "oak"], density: 1.0, minScale: 0.8, maxScale: 1.5 },
     rocks: { count: 300, minScale: 1.0, maxScale: 3.0 },
     clutter: { count: 600, bushChance: 0.7 },
-    sky: 0xa8d2ea, fog: 0xc6dde8, fogNear: 600, fogFar: 2800,
+    sky: 0x59a3d8, horizon: 0xe6efe8, fog: 0xc6dde8, fogNear: 600, fogFar: 2800,
   },
 
   /** Desert: bare, pale, hot haze, and next to no vegetation. */
@@ -237,7 +276,7 @@ export const BIOMES: Record<string, Biome> = {
     trees: { count: 180, kinds: ["dead", "palm"], density: 0.35, minScale: 0.7, maxScale: 1.2 },
     rocks: { count: 620, minScale: 1.0, maxScale: 3.8 },
     clutter: { count: 400, bushChance: 0.45 },
-    sky: 0xd8d0b0, fog: 0xdcd2b4, fogNear: 500, fogFar: 2600,
+    sky: 0xb8ae8a, horizon: 0xe8dfc0, fog: 0xdcd2b4, fogNear: 500, fogFar: 2600,
   },
 
   /** Winter: snow over frozen ground, bare trees, flat grey light. */
@@ -249,7 +288,63 @@ export const BIOMES: Record<string, Biome> = {
     trees: { count: 1400, kinds: ["pine", "pine", "dead"], density: 1.1, minScale: 0.8, maxScale: 1.5 },
     rocks: { count: 260, minScale: 1.0, maxScale: 3.0 },
     clutter: { count: 380, bushChance: 0.5 },
-    sky: 0xc4ccd4, fog: 0xd4dade, fogNear: 260, fogFar: 1600,
+    sky: 0x9fb0c0, horizon: 0xe4eaee, fog: 0xd4dade, fogNear: 260, fogFar: 1600,
+  },
+
+  /**
+   * Falcon's Pass: an alpine river valley. Green pasture between rock
+   * shoulders, pine on the high ground, a fast blue river down the right with
+   * a bridge on each road, and enough shell holes to show it has been fought
+   * over.
+   */
+  alpine: {
+    ...TEMPERATE,
+    id: "alpine",
+    land: { rolling: 30, hills: 62, hillPower: 1.9, detail: 3.4, valley: 26, scale: 0.85 },
+    ground: { lush: 0x4f7034, grass: 0x66883c, dry: 0x8a8a52, dirt: 0x9b7d52, rock: 0x8c887e, high: 0xa6a496, highAt: 46 },
+    trees: { count: 2100, kinds: ["pine", "pine", "pine", "oak"], density: 1.3, minScale: 0.8, maxScale: 1.6 },
+    rocks: { count: 520, minScale: 1.4, maxScale: 5.2 },
+    clutter: { count: 800, bushChance: 0.8 },
+    river: { width: 17, depth: 5.5, level: -6, colour: 0x4f93c4 },
+    craters: { count: 46, minR: 7, maxR: 15, depth: 2.4 },
+    sky: 0x4f8fd4, horizon: 0xdae6e4, fog: 0xb4cede, fogNear: 460, fogFar: 2500,
+  },
+
+  /**
+   * Frost-Hammer: the same country under snow, with the river run out to a
+   * frozen inlet. Everything pale, the pines dark against it, and the haze
+   * closed right in.
+   */
+  arctic: {
+    ...TEMPERATE,
+    id: "arctic",
+    land: { rolling: 30, hills: 58, hillPower: 2.0, detail: 3.2, valley: 24, scale: 0.85 },
+    ground: { lush: 0xdfe6ea, grass: 0xe8eef1, dry: 0xcdd6da, dirt: 0xa8a49c, rock: 0x9aa2a8, high: 0xf4f8fa, highAt: 20 },
+    trees: { count: 1500, kinds: ["pine", "pine", "dead"], density: 1.15, minScale: 0.85, maxScale: 1.7 },
+    rocks: { count: 460, minScale: 1.3, maxScale: 4.6 },
+    clutter: { count: 420, bushChance: 0.35 },
+    river: { width: 21, depth: 5.0, level: -6, colour: 0x7fb4d6 },
+    craters: { count: 38, minR: 7, maxR: 14, depth: 2.0 },
+    sky: 0x9cc2de, horizon: 0xeaf2f6, fog: 0xdae6ee, fogNear: 280, fogFar: 1700,
+  },
+
+  /**
+   * Frost-Guard Peaks: churned mud under an overcast sky. Nothing green is
+   * left standing — only dead trunks — and the ground is more shell hole than
+   * field, with a sluggish flooded watercourse through the middle.
+   */
+  mud: {
+    ...TEMPERATE,
+    id: "mud",
+    land: { rolling: 24, hills: 30, hillPower: 2.4, detail: 5.4, valley: 20, scale: 1.25 },
+    ground: { lush: 0x50432f, grass: 0x5b4d38, dry: 0x6b5b43, dirt: 0x77654c, rock: 0x655d52, high: 0x6f6659, highAt: 34 },
+    trees: { count: 420, kinds: ["dead", "dead", "dead", "pine"], density: 0.75, minScale: 0.7, maxScale: 1.3 },
+    rocks: { count: 340, minScale: 0.9, maxScale: 2.8 },
+    clutter: { count: 1100, bushChance: 0.25 },
+    river: { width: 15, depth: 3.4, level: -7, colour: 0x5d6b63 },
+    // The defining feature: the ground is more crater than field.
+    craters: { count: 190, minR: 6, maxR: 18, depth: 3.0 },
+    sky: 0x7b848c, horizon: 0xb4babd, fog: 0xa8b0b6, fogNear: 200, fogFar: 1300,
   },
 };
 
@@ -260,6 +355,11 @@ export function biomeById(id: string): Biome {
 export class Terrain {
   readonly seed: number;
   readonly biome: Biome;
+  readonly craters: Crater[];
+  /** Bridge decks, for rendering and for AI that needs to find a crossing. */
+  readonly bridges: { x: number; z: number; yaw: number; span: number; deckY: number }[] = [];
+  /** Structural props the renderer instances — currently just bridge decks. */
+  readonly props: Prop[] = [];
   /** (GRID + 1)^2 heights, row-major in z. */
   readonly heights: Float32Array;
   readonly obstacles: Obstacle[] = [];
@@ -270,6 +370,9 @@ export class Terrain {
   constructor(seed: number, biome: Biome | string = TEMPERATE) {
     this.seed = seed;
     this.biome = typeof biome === "string" ? biomeById(biome) : biome;
+    // Shell holes are cut into the landform, so they have to exist before a
+    // single height is sampled.
+    this.craters = this.placeCraters(mulberry32(seed ^ 0xc7a7e5));
     const n = GRID + 1;
     this.heights = new Float32Array(n * n);
     for (let gz = 0; gz < n; gz++) {
@@ -281,6 +384,47 @@ export class Terrain {
     }
     const rand = mulberry32(seed ^ 0x51f3);
     this.scatter(rand);
+  }
+
+  /**
+   * Shell holes, kept clear of the roads and the bridges so the map stays
+   * drivable. Craters near the capture line are denser, which is where the
+   * shelling would have been.
+   */
+  private placeCraters(rand: Rand): Crater[] {
+    const spec = this.biome.craters;
+    const out: Crater[] = [];
+    for (let i = 0; i < spec.count * 3 && out.length < spec.count; i++) {
+      const x = range(rand, -MAP_HALF + 40, MAP_HALF - 40);
+      const z = range(rand, -MAP_HALF + 40, MAP_HALF - 40);
+      // Heavier towards the middle, where the two sides actually meet.
+      if (rand() > 1 - Math.abs(z) / (MAP_HALF * 1.4)) continue;
+      if (polylineDistance(x, z, ROAD_NODES) < 14) continue;
+      if (polylineDistance(x, z, LATERAL_NODES) < 14) continue;
+      if (this.biome.river && polylineDistance(x, z, RIVER_NODES) < this.biome.river.width + 8) continue;
+      let tooClose = false;
+      for (const b of BRIDGES) if (Math.hypot(x - b.x, z - b.z) < b.span) tooClose = true;
+      for (const zone of ZONES) if (Math.hypot(x - zone.x, z - zone.z) < zone.radius * 0.7) tooClose = true;
+      if (tooClose) continue;
+      out.push({ x, z, r: range(rand, spec.minR, spec.maxR), depth: spec.depth * range(rand, 0.6, 1.3) });
+    }
+    return out;
+  }
+
+  /** How far a point is from the middle of the river, or Infinity on dry maps. */
+  riverDistance(x: number, z: number) {
+    if (!this.biome.river) return Infinity;
+    return polylineDistance(x, z, RIVER_NODES);
+  }
+
+  /** True where the ground is below the waterline — vehicles should avoid it. */
+  inWater(x: number, z: number) {
+    const r = this.biome.river;
+    if (!r) return false;
+    if (this.riverDistance(x, z) > r.width * 1.2) return false;
+    // A bridge deck is not water, whatever the ground under it is doing.
+    for (const b of BRIDGES) if (Math.hypot(x - b.x, z - b.z) < b.span * 0.5) return false;
+    return this.heightAt(x, z) < r.level + 0.4;
   }
 
   /** Raw landform before roads and clearings are cut into it. */
@@ -306,12 +450,54 @@ export class Terrain {
   private shapedHeight(x: number, z: number) {
     let h = this.rawHeight(x, z);
 
+    // The river channel: pull the ground down to the bed inside the banks, and
+    // ease back up to the landform over a bank width either side.
+    const river = this.biome.river;
+    if (river) {
+      const d = polylineDistance(x, z, RIVER_NODES);
+      const bank = river.width * 2.1;
+      if (d < bank) {
+        const bed = river.level - river.depth;
+        // Flat bed in the middle, sloping banks outside it.
+        const t = smoothstep(river.width * 0.55, bank, d);
+        h = lerp(Math.min(h, bed), h, t);
+      }
+    }
+
+    // Shell holes: a bowl with a raised lip, cut after the river so a crater
+    // on the bank does not flood.
+    for (const c of this.craters) {
+      const d = Math.hypot(x - c.x, z - c.z);
+      if (d > c.r * 1.45) continue;
+      if (d < c.r) {
+        // Bowl, deepest at the centre.
+        const t = d / c.r;
+        h -= c.depth * (1 - t * t);
+      } else {
+        // Spoil thrown up around the rim.
+        const t = (d - c.r) / (c.r * 0.45);
+        h += c.depth * 0.28 * (1 - t) * (1 - t);
+      }
+    }
+
     // Roads: pull the ground towards the height at the nearest road centre.
+    // On a river map the deck height is held above the water so the approaches
+    // to a bridge rise to meet it instead of running into the channel.
     for (const nodes of [ROAD_NODES, LATERAL_NODES]) {
       const d = polylineDistance(x, z, nodes);
       if (d < 26) {
         const w = 1 - smoothstep(7, 26, d);
-        h = lerp(h, this.roadHeight(x, z, nodes), w * 0.9);
+        let target = this.roadHeight(x, z, nodes);
+        if (river) {
+          for (const b of BRIDGES) {
+            const db = Math.hypot(x - b.x, z - b.z);
+            if (db < b.span) {
+              const t = 1 - smoothstep(b.span * 0.35, b.span, db);
+              target = lerp(target, river.level + 2.6, t);
+            }
+          }
+        }
+        h = lerp(h, target, w * 0.9);
       }
     }
 
@@ -404,6 +590,7 @@ export class Terrain {
   private scatter(rand: Rand) {
     for (const zone of ZONES) this.village(rand, zone);
     for (const team of ["blue", "red"] as Team[]) this.depot(rand, team);
+    if (this.biome.river) for (const b of BRIDGES) this.bridge(b);
 
     // Woodland, thickest on the flanks where the capture line is not.
     const treeKinds = this.biome.trees.kinds;
@@ -514,6 +701,30 @@ export class Terrain {
   }
 
   /** Spawn depot: a couple of huts, a fuel dump and the flagpole. */
+  /**
+   * A bridge deck with parapets. The deck is a prop rather than terrain, so
+   * shells and wheels both meet it at the right height; the parapets are solid
+   * so nothing drives off the side into the river.
+   */
+  private bridge(b: { x: number; z: number; yaw: number; span: number }) {
+    const river = this.biome.river;
+    if (!river) return;
+    const deckY = river.level + 2.6;
+    const halfSpan = b.span * 0.5;
+    const halfWide = 7;
+    this.props.push({ x: b.x, y: deckY, z: b.z, rot: b.yaw, scale: 1, kind: "bridge" });
+    // The deck itself: walkable, and solid to shellfire from the side.
+    this.obstacles.push(box(b.x, deckY - 0.6, b.z, halfSpan, 0.6, halfWide, b.yaw, false));
+    // Parapets down both edges.
+    for (const side of [-1, 1]) {
+      const px = b.x + Math.cos(b.yaw) * 0 - Math.sin(b.yaw) * 0;
+      const ox = -Math.sin(b.yaw + Math.PI / 2) * side * halfWide;
+      const oz = -Math.cos(b.yaw + Math.PI / 2) * side * halfWide;
+      this.obstacles.push(box(px + ox, deckY + 0.6, b.z + oz, halfSpan, 0.6, 0.5, b.yaw, true));
+    }
+    this.bridges.push({ x: b.x, z: b.z, yaw: b.yaw, span: b.span, deckY });
+  }
+
   private depot(rand: Rand, team: Team) {
     const b = BASES[team];
     for (let i = 0; i < 4; i++) {

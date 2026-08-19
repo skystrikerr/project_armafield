@@ -1791,6 +1791,33 @@ export const MAPS: MapDef[] = [
     defaultPreset: "air_superiority",
     biome: "coast",
   },
+  {
+    id: "falcons_pass",
+    name: "Falcon's Pass",
+    seed: 24601,
+    blurb: "An alpine river valley. Two bridges are the only way across — take one or swim.",
+    tags: ["River", "Bridges"],
+    defaultPreset: "all_out",
+    biome: "alpine",
+  },
+  {
+    id: "frost_hammer",
+    name: "Frost-Hammer",
+    seed: 8801,
+    blurb: "The same pass under snow. Pale ground, close haze, and a freezing river.",
+    tags: ["Winter", "River"],
+    defaultPreset: "all_out",
+    biome: "arctic",
+  },
+  {
+    id: "frostguard_peaks",
+    name: "Frost-Guard Peaks",
+    seed: 19160,
+    blurb: "Churned mud and dead trees. More shell hole than field, under a grey sky.",
+    tags: ["Trenches", "Craters"],
+    defaultPreset: "infantry_only",
+    biome: "mud",
+  },
 ];
 
 export function mapById(id: string): MapDef {

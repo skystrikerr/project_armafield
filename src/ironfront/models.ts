@@ -264,6 +264,25 @@ export function treeGeometry(kind: string): THREE.BufferGeometry {
   ]);
 }
 
+/** A bridge deck: planked roadway on piers, with a kerb down each edge. */
+export function bridgeGeometry(): THREE.BufferGeometry {
+  const parts: Part[] = [
+    { g: "box", size: [46, 0.9, 14], pos: [0, 0, 0], color: 0x6f6a5c },
+    { g: "box", size: [46, 0.5, 1.1], pos: [0, 0.7, 6.6], color: 0x8a8375 },
+    { g: "box", size: [46, 0.5, 1.1], pos: [0, 0.7, -6.6], color: 0x8a8375 },
+  ];
+  // Plank courses across the deck, and piers down into the water.
+  for (let i = 0; i < 11; i++) {
+    parts.push({ g: "box", size: [1.1, 0.16, 13.4], pos: [-20 + i * 4, 0.5, 0], color: 0x5f5a4e });
+  }
+  for (const x of [-16, 0, 16]) {
+    for (const z of [-5, 5]) {
+      parts.push({ g: "box", size: [2.2, 9, 2.2], pos: [x, -5, z], color: 0x6b665a });
+    }
+  }
+  return build(parts);
+}
+
 export function rockGeometry(): THREE.BufferGeometry {
   const geo = new THREE.DodecahedronGeometry(1, 0);
   geo.scale(1, 0.72, 0.88);
