@@ -200,6 +200,12 @@ export type Biome = {
    * banks read as banks rather than a painted stripe.
    */
   river: { width: number; depth: number; level: number; colour: number } | null;
+  /**
+   * A standing body of water, carved as a bowl. Shares the river's waterline
+   * and colour, so a map wanting only a lake still declares a river for the
+   * surface and gives it width 0.
+   */
+  lake: { x: number; z: number; r: number; depth: number } | null;
   /** Shell holes. `count` 0 leaves the ground unbroken. */
   craters: { count: number; minR: number; maxR: number; depth: number };
   /**
@@ -225,6 +231,7 @@ const TEMPERATE: Biome = {
   rocks: { count: 240, minScale: 1.1, maxScale: 3.4 },
   clutter: { count: 700, bushChance: 0.75 },
   river: null,
+  lake: null,
   craters: { count: 0, minR: 6, maxR: 14, depth: 2.2 },
   sky: 0x5f9bd4, horizon: 0xdde6dd, fog: 0xb7cbd8, fogNear: 420, fogFar: 2300,
 };
@@ -346,6 +353,44 @@ export const BIOMES: Record<string, Biome> = {
     craters: { count: 190, minR: 6, maxR: 18, depth: 3.0 },
     sky: 0x7b848c, horizon: 0xb4babd, fog: 0xa8b0b6, fogNear: 200, fogFar: 1300,
   },
+
+  /**
+   * Frost-Guard Trenches: the churned battlefield under snow. Same broken
+   * ground and dead trunks as the mud map, but white, with the shell holes
+   * showing as grey-blue scars rather than brown ones.
+   */
+  snow_trench: {
+    ...TEMPERATE,
+    id: "snow_trench",
+    land: { rolling: 26, hills: 34, hillPower: 2.3, detail: 5.0, valley: 20, scale: 1.2 },
+    ground: { lush: 0xd4dde3, grass: 0xdfe7ec, dry: 0xc4ced6, dirt: 0x9aa0a4, rock: 0x8f979d, high: 0xeff5f8, highAt: 26 },
+    trees: { count: 520, kinds: ["dead", "dead", "dead", "pine"], density: 0.8, minScale: 0.7, maxScale: 1.4 },
+    rocks: { count: 380, minScale: 1.0, maxScale: 3.4 },
+    clutter: { count: 900, bushChance: 0.2 },
+    river: { width: 15, depth: 3.6, level: -7, colour: 0x9cc4dc },
+    lake: null,
+    craters: { count: 200, minR: 6, maxR: 18, depth: 3.0 },
+    sky: 0x8d9aa6, horizon: 0xd6dee4, fog: 0xcdd7dd, fogNear: 220, fogFar: 1500,
+  },
+
+  /**
+   * Frost-Guard Summit: high alpine snow. Steep ground, heavy snow-laden pine
+   * on the flanks and a frozen lake filling the eastern side of the valley.
+   */
+  alpine_snow: {
+    ...TEMPERATE,
+    id: "alpine_snow",
+    land: { rolling: 34, hills: 78, hillPower: 1.8, detail: 3.6, valley: 22, scale: 0.8 },
+    ground: { lush: 0xdae2e8, grass: 0xe6edf1, dry: 0xccd6dc, dirt: 0xa9a6a0, rock: 0x939ba2, high: 0xf6fafc, highAt: 30 },
+    trees: { count: 2600, kinds: ["pine", "pine", "pine", "dead"], density: 1.45, minScale: 0.85, maxScale: 1.8 },
+    rocks: { count: 560, minScale: 1.4, maxScale: 5.4 },
+    clutter: { count: 500, bushChance: 0.3 },
+    river: { width: 13, depth: 4.2, level: -6, colour: 0x86bbdc },
+    // The frozen lake on the eastern flank.
+    lake: { x: 168, z: 96, r: 120, depth: 9 },
+    craters: { count: 30, minR: 7, maxR: 14, depth: 2.0 },
+    sky: 0x6ea6d6, horizon: 0xe4eef4, fog: 0xd2e2ec, fogNear: 340, fogFar: 2100,
+  },
 };
 
 export function biomeById(id: string): Biome {
@@ -402,6 +447,8 @@ export class Terrain {
       if (polylineDistance(x, z, ROAD_NODES) < 14) continue;
       if (polylineDistance(x, z, LATERAL_NODES) < 14) continue;
       if (this.biome.river && polylineDistance(x, z, RIVER_NODES) < this.biome.river.width + 8) continue;
+      const lk = this.biome.lake;
+      if (lk && Math.hypot(x - lk.x, z - lk.z) < lk.r * 1.2) continue;
       let tooClose = false;
       for (const b of BRIDGES) if (Math.hypot(x - b.x, z - b.z) < b.span) tooClose = true;
       for (const zone of ZONES) if (Math.hypot(x - zone.x, z - zone.z) < zone.radius * 0.7) tooClose = true;
@@ -421,7 +468,9 @@ export class Terrain {
   inWater(x: number, z: number) {
     const r = this.biome.river;
     if (!r) return false;
-    if (this.riverDistance(x, z) > r.width * 1.2) return false;
+    const lk = this.biome.lake;
+    const inLake = lk !== null && Math.hypot(x - lk.x, z - lk.z) < lk.r;
+    if (!inLake && this.riverDistance(x, z) > r.width * 1.2) return false;
     // A bridge deck is not water, whatever the ground under it is doing.
     for (const b of BRIDGES) if (Math.hypot(x - b.x, z - b.z) < b.span * 0.5) return false;
     return this.heightAt(x, z) < r.level + 0.4;
@@ -461,6 +510,17 @@ export class Terrain {
         // Flat bed in the middle, sloping banks outside it.
         const t = smoothstep(river.width * 0.55, bank, d);
         h = lerp(Math.min(h, bed), h, t);
+      }
+    }
+
+    // A lake is the same idea as the river channel: a bowl down to the bed,
+    // easing back up to the landform around the shoreline.
+    const lake = this.biome.lake;
+    if (lake && river) {
+      const d = Math.hypot(x - lake.x, z - lake.z);
+      if (d < lake.r * 1.35) {
+        const bed = river.level - lake.depth;
+        h = lerp(Math.min(h, bed), h, smoothstep(lake.r * 0.72, lake.r * 1.35, d));
       }
     }
 
@@ -600,6 +660,7 @@ export class Terrain {
       const y = this.heightAt(x, z);
       if (this.slopeAt(x, z) > 0.62) continue;
       if (this.roadiness(x, z) > 0.25) continue;
+      if (this.inWater(x, z)) continue;
       if (this.nearFeature(x, z, 0.85)) continue;
       const density = fbm(this.seed + 77, x * 0.006, z * 0.006, 3);
       if (rand() > density * this.biome.trees.density) continue;
@@ -621,6 +682,7 @@ export class Terrain {
       const x = range(rand, -MAP_HALF + 10, MAP_HALF - 10);
       const z = range(rand, -MAP_HALF + 10, MAP_HALF - 10);
       if (this.roadiness(x, z) > 0.3) continue;
+      if (this.inWater(x, z)) continue;
       const steep = this.slopeAt(x, z);
       if (steep < 0.2 && rand() < 0.6) continue;
       const scale = range(rand, this.biome.rocks.minScale, this.biome.rocks.maxScale);
@@ -636,6 +698,7 @@ export class Terrain {
       const x = range(rand, -MAP_HALF + 10, MAP_HALF - 10);
       const z = range(rand, -MAP_HALF + 10, MAP_HALF - 10);
       if (this.slopeAt(x, z) > 0.55) continue;
+      if (this.inWater(x, z)) continue;
       this.clutter.push({
         x,
         y: this.heightAt(x, z),

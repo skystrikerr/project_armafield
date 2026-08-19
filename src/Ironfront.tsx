@@ -4,6 +4,7 @@ import { playableClasses, primaryOptionsFor, type ClassDef } from "@/ironfront/e
 import { MAP_HALF, ZONES } from "@/ironfront/terrain";
 import { TEAM_COLOR, WEAPONS, type ClassId } from "@/ironfront/units";
 import MatchSetup from "@/MatchSetup";
+import { startGamepadMenuNav } from "@/gamepadMenu";
 import { mapById, type MatchSettings } from "@/ironfront/matchConfig";
 import { cn } from "@/lib/utils";
 
@@ -67,6 +68,17 @@ export default function Ironfront() {
   const activeMap = matchSettings ? mapById(matchSettings.mapId) : null;
   const mapName = activeMap?.name ?? "";
   const mapBlurb = activeMap?.blurb ?? "";
+
+  // The pad drives the DOM menus whenever one is up, and is handed back to the
+  // simulation the moment a match is actually being played.
+  const menuOpenRef = useRef(true);
+  menuOpenRef.current =
+    !matchSettings ||
+    showControls ||
+    hud === null ||
+    hud.phase !== "playing" ||
+    hud.paused === true;
+  useEffect(() => startGamepadMenuNav(() => menuOpenRef.current), []);
 
   const reopenSetup = useCallback(() => {
     document.exitPointerLock?.();

@@ -1818,6 +1818,24 @@ export const MAPS: MapDef[] = [
     defaultPreset: "infantry_only",
     biome: "mud",
   },
+  {
+    id: "frostguard_trenches",
+    name: "Frost-Guard Trenches",
+    seed: 19171,
+    blurb: "The same shelled ground under snow. Dead trunks, white craters and a frozen watercourse.",
+    tags: ["Winter", "Craters"],
+    defaultPreset: "infantry_only",
+    biome: "snow_trench",
+  },
+  {
+    id: "frostguard_summit",
+    name: "Frost-Guard Summit",
+    seed: 30720,
+    blurb: "High alpine snow. Heavy pine on the flanks and a frozen lake filling the east.",
+    tags: ["Winter", "Forest", "Lake"],
+    defaultPreset: "all_out",
+    biome: "alpine_snow",
+  },
 ];
 
 export function mapById(id: string): MapDef {
