@@ -3,6 +3,8 @@ import {
   CATEGORY_LABEL,
   ERA_LABEL,
   MAPS,
+  NATIONS_OF_ERA,
+  NATION_LABEL,
   MatchConfig,
   PLAYABLE_ERAS,
   PRESETS,
@@ -219,7 +221,7 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
                   style={{ borderColor: activeTab === slot ? accent : "rgba(255,255,255,0.12)" }}
                 >
                   <span className="text-sm font-semibold" style={{ color: accent }}>
-                    {t.label}
+                    {NATION_LABEL[t.nation]}
                   </span>
                   <span className="ml-2 text-[11px] text-white/40">
                     {t.botCount} bots · {t.tickets} tickets · {t.enabledVehicles.length} vehicles
@@ -229,6 +231,7 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
             })}
           </div>
 
+          <NationPicker config={config} slot={activeTab} team={team} settings={settings} />
           <TeamPanel config={config} slot={activeTab} team={team} era={settings.eraId} />
         </section>
 
@@ -319,7 +322,7 @@ function TeamPanel({
         <SectionLabel>Vehicles</SectionLabel>
         <div className="space-y-3">
           {CATEGORIES.map((category) => {
-            const defs = vehiclesInCategory(team.faction, category, era);
+            const defs = vehiclesInCategory(team.nation, category, era);
             if (defs.length === 0) return null;
             const allOn = defs.every((v) => team.enabledVehicles.includes(v.id));
             return (
@@ -389,6 +392,53 @@ function TeamPanel({
 }
 
 /* ---------------- primitives ---------------- */
+
+/**
+ * Which combatant this team fields. The other team's nation is disabled rather
+ * than hidden, so it is obvious why it cannot be picked.
+ */
+function NationPicker({
+  config,
+  slot,
+  team,
+  settings,
+}: {
+  config: MatchConfig;
+  slot: "team1" | "team2";
+  team: TeamLoadout;
+  settings: MatchSettings;
+}) {
+  const taken = slot === "team1" ? settings.teams.team2.nation : settings.teams.team1.nation;
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded border border-white/10 bg-white/[0.02] px-3 py-2.5">
+      <SectionLabel>Nation</SectionLabel>
+      {NATIONS_OF_ERA[settings.eraId].map((n) => {
+        const active = team.nation === n;
+        const disabled = !active && n === taken;
+        return (
+          <button
+            key={n}
+            type="button"
+            disabled={disabled}
+            onClick={() => config.setNation(slot, n)}
+            aria-pressed={active}
+            title={disabled ? "Already fielded by the other team" : NATION_LABEL[n]}
+            className={cn(
+              "rounded border px-3 py-1.5 text-xs font-semibold transition",
+              active
+                ? "border-[#ffd479]/70 bg-[#ffd479]/10 text-[#ffd479]"
+                : disabled
+                  ? "cursor-not-allowed border-white/8 text-white/20"
+                  : "border-white/12 bg-white/[0.03] text-white/60 hover:border-white/30 hover:bg-white/[0.07]",
+            )}
+          >
+            {NATION_LABEL[n]}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-white/35">{children}</div>;

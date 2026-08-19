@@ -4,7 +4,6 @@ import { Battle, muzzleOf, tankMuzzle } from "./combat";
 import {
   BARREL_MAX,
   BARREL_MIN,
-  PLANE_MAX_SPEED,
   STANCE_EYE,
   TANK_GUN_Y,
   TANK_TURRET,
@@ -621,7 +620,7 @@ function flyToward(p: Plane, point: THREE.Vector3, dt: number, ctx: AiContext) {
   p.quat.normalize();
 
   p.throttle = clamp(p.throttle + (0.85 - p.throttle) * dt, 0, 1);
-  p.speed += (PLANE_MAX_SPEED * p.throttle * 0.82 - p.speed) * dt * 0.5;
+  p.speed += (mobilityOf(p.defId).maxSpeed * p.throttle * 0.82 - p.speed) * dt * 0.5;
 }
 
 const _flyFwd = new THREE.Vector3();

@@ -33,7 +33,12 @@ export type Chassis =
   | "medium_tank" // turret, balanced — Sherman, Panzer IV
   | "heavy_tank" // turret, thick armour, slow — Tiger I
   | "tank_destroyer" // casemate hull, no turret, limited traverse — StuG III
-  | "fighter" // monoplane propeller aircraft
+  | "fighter" // single-engine monoplane fighter — Mustang, Spitfire, Bf 109
+  | "dive_bomber" // inverted gull wing, fixed spatted gear — Ju 87 Stuka
+  | "attack_plane" // armoured ground-attack — IL-2 Shturmovik
+  | "medium_bomber" // twin engines, twin tail — B-25 Mitchell
+  | "heavy_bomber" // four engines — B-17, Lancaster
+  | "floatplane" // fighter on floats — A6M2-N Rufe
   /* ---- Great War ---- */
   | "rhomboid_tank" // all-round track frame, guns in side sponsons — Mark IV
   | "box_tank" // tall armoured box on a short track base — A7V
@@ -54,8 +59,65 @@ export const CATEGORY_LABEL: Record<VehicleCategory, string> = {
   air: "Aircraft",
 };
 
-/** Which side historically fielded a vehicle. "both" = available to either team. */
-export type Faction = "allies" | "axis" | "both";
+/* ================================================================== */
+/*  Nations                                                             */
+/* ================================================================== */
+
+/**
+ * The combatant a team represents. This is what picks the roster: a UK team
+ * flies Spitfires and Lancasters, a Japanese team flies Zeros. Which side of
+ * the war a nation is on only decides team colour and who shoots at whom.
+ */
+export type Nation = "usa" | "uk" | "ussr" | "germany" | "japan" | "britain_ww1" | "germany_ww1";
+
+export type Side = "allies" | "axis";
+
+export const NATION_LABEL: Record<Nation, string> = {
+  usa: "United States",
+  uk: "United Kingdom",
+  ussr: "Soviet Union",
+  germany: "Germany",
+  japan: "Japan",
+  britain_ww1: "British Empire",
+  germany_ww1: "Central Powers",
+};
+
+/** Short form for the HUD and team tabs, where the full name will not fit. */
+export const NATION_SHORT: Record<Nation, string> = {
+  usa: "USA",
+  uk: "UK",
+  ussr: "USSR",
+  germany: "Germany",
+  japan: "Japan",
+  britain_ww1: "Britain",
+  germany_ww1: "Central",
+};
+
+export const SIDE_OF: Record<Nation, Side> = {
+  usa: "allies",
+  uk: "allies",
+  ussr: "allies",
+  germany: "axis",
+  japan: "axis",
+  britain_ww1: "allies",
+  germany_ww1: "axis",
+};
+
+/** Which nations a given era fields, in the order the picker lists them. */
+export const NATIONS_OF_ERA: Record<EraId, Nation[]> = {
+  ww1: ["britain_ww1", "germany_ww1"],
+  ww2: ["usa", "uk", "ussr", "germany", "japan"],
+  coldwar: [],
+  modern: [],
+};
+
+/** Default matchup a fresh era opens on. */
+export function defaultNations(era: EraId): { team1: Nation; team2: Nation } {
+  const list = NATIONS_OF_ERA[era];
+  const allies = list.find((n) => SIDE_OF[n] === "allies") ?? list[0];
+  const axis = list.find((n) => SIDE_OF[n] === "axis") ?? list[list.length - 1];
+  return { team1: allies, team2: axis };
+}
 
 /**
  * Armour thickness per plate, in millimetres, before impact angle is applied.
@@ -104,7 +166,12 @@ export type VehicleDef = {
   displayName: string;
   chassis: Chassis;
   category: VehicleCategory;
-  faction: Faction;
+  /**
+   * Every nation that fielded this vehicle. Lend-lease means one entry can
+   * belong to several — the Sherman served with the USA, the UK and the USSR —
+   * so a team's roster is everything listing its own nation.
+   */
+  nations: Nation[];
   hp: number;
   armor: ArmorScheme;
   mobility: Mobility;
@@ -203,7 +270,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Willys MB Jeep",
     chassis: "light_car",
     category: "light",
-    faction: "allies",
+    nations: ["usa", "uk", "ussr"],
     hp: 45,
     armor: UNARMORED,
     mobility: { maxSpeed: 24, reverseSpeed: 8, accel: 14, turnRate: 1.9, turretTraverse: 0, turretArc: 0 },
@@ -220,7 +287,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Kübelwagen",
     chassis: "light_car",
     category: "light",
-    faction: "axis",
+    nations: ["germany"],
     hp: 45,
     armor: UNARMORED,
     mobility: { maxSpeed: 23, reverseSpeed: 8, accel: 13.5, turnRate: 1.95, turretTraverse: 0, turretArc: 0 },
@@ -237,7 +304,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "BMW R75 Motorcycle",
     chassis: "motorcycle",
     category: "light",
-    faction: "axis",
+    nations: ["germany"],
     hp: 28,
     armor: UNARMORED,
     mobility: { maxSpeed: 30, reverseSpeed: 5, accel: 18, turnRate: 2.4, turretTraverse: 0, turretArc: 0 },
@@ -256,7 +323,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "GMC CCKW 353 Truck",
     chassis: "truck",
     category: "transport",
-    faction: "allies",
+    nations: ["usa", "uk", "ussr"],
     hp: 80,
     armor: UNARMORED,
     mobility: { maxSpeed: 17, reverseSpeed: 6, accel: 7, turnRate: 1.0, turretTraverse: 0, turretArc: 0 },
@@ -273,7 +340,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Opel Blitz Truck",
     chassis: "truck",
     category: "transport",
-    faction: "axis",
+    nations: ["germany"],
     hp: 80,
     armor: UNARMORED,
     mobility: { maxSpeed: 18, reverseSpeed: 6, accel: 7.2, turnRate: 1.0, turretTraverse: 0, turretArc: 0 },
@@ -290,7 +357,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "GMC DUKW Amphibious Truck",
     chassis: "amphibious",
     category: "transport",
-    faction: "allies",
+    nations: ["usa", "uk"],
     hp: 90,
     armor: UNARMORED,
     mobility: { maxSpeed: 15, reverseSpeed: 5, accel: 6, turnRate: 0.9, turretTraverse: 0, turretArc: 0 },
@@ -307,7 +374,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "SdKfz 251 Half-track",
     chassis: "halftrack",
     category: "transport",
-    faction: "axis",
+    nations: ["germany"],
     hp: 120,
     armor: LIGHT_ARMOR,
     mobility: { maxSpeed: 16, reverseSpeed: 6, accel: 7, turnRate: 1.05, turretTraverse: 0, turretArc: 0 },
@@ -326,7 +393,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "M8 Greyhound Armored Car",
     chassis: "armored_car",
     category: "armor",
-    faction: "allies",
+    nations: ["usa", "uk"],
     hp: 130,
     armor: LIGHT_ARMOR,
     mobility: { maxSpeed: 21, reverseSpeed: 8, accel: 9, turnRate: 1.4, turretTraverse: 0.6, turretArc: Math.PI },
@@ -344,7 +411,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "M4 Sherman Tank",
     chassis: "medium_tank",
     category: "armor",
-    faction: "allies",
+    nations: ["usa", "uk", "ussr"],
     hp: 200,
     armor: MEDIUM_ARMOR,
     mobility: { maxSpeed: 12.5, reverseSpeed: 5.5, accel: 5.2, turnRate: 0.72, turretTraverse: 0.55, turretArc: Math.PI },
@@ -362,7 +429,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Panzer IV Ausf. H",
     chassis: "medium_tank",
     category: "armor",
-    faction: "axis",
+    nations: ["germany"],
     hp: 195,
     armor: {
       ...MEDIUM_ARMOR,
@@ -384,7 +451,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Tiger I",
     chassis: "heavy_tank",
     category: "armor",
-    faction: "axis",
+    nations: ["germany"],
     hp: 300,
     armor: HEAVY_ARMOR,
     mobility: { maxSpeed: 9.5, reverseSpeed: 4, accel: 3.4, turnRate: 0.5, turretTraverse: 0.32, turretArc: Math.PI },
@@ -402,7 +469,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "StuG III Ausf. G",
     chassis: "tank_destroyer",
     category: "armor",
-    faction: "axis",
+    nations: ["germany"],
     hp: 185,
     armor: { ...MEDIUM_ARMOR, hullFront: 80, turretFront: 80 },
     mobility: {
@@ -424,40 +491,6 @@ export const VEHICLES: VehicleDef[] = [
   },
 
   /* ---------- Aircraft ---------- */
-  {
-    id: "fighter_allied",
-    era: "ww2",
-    name: "Fighter",
-    displayName: "Allied Fighter",
-    chassis: "fighter",
-    category: "air",
-    faction: "allies",
-    hp: 100,
-    armor: UNARMORED,
-    mobility: { maxSpeed: 118, reverseSpeed: 0, accel: 10, turnRate: 1.2, turretTraverse: 0, turretArc: 0 },
-    weapons: ["aircannon", "bomb"],
-    passengerSeats: 0,
-    tint: 0x4a6b8a,
-    triangles: 600,
-    blurb: "Propeller fighter with 20 mm cannon and two bombs.",
-  },
-  {
-    id: "fighter_axis",
-    era: "ww2",
-    name: "Fighter",
-    displayName: "Axis Fighter",
-    chassis: "fighter",
-    category: "air",
-    faction: "axis",
-    hp: 100,
-    armor: UNARMORED,
-    mobility: { maxSpeed: 120, reverseSpeed: 0, accel: 10, turnRate: 1.25, turretTraverse: 0, turretArc: 0 },
-    weapons: ["aircannon", "bomb"],
-    passengerSeats: 0,
-    tint: 0x8a5240,
-    triangles: 600,
-    blurb: "Propeller fighter with 20 mm cannon and two bombs.",
-  },
 
   {
     id: "m3_halftrack",
@@ -466,7 +499,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "M3 Half-track",
     chassis: "halftrack",
     category: "transport",
-    faction: "allies",
+    nations: ["usa", "uk", "ussr"],
     hp: 95,
     armor: LIGHT_ARMOR,
     mobility: { maxSpeed: 17, reverseSpeed: 6, accel: 7.4, turnRate: 1.05, turretTraverse: 0.7, turretArc: Math.PI },
@@ -483,7 +516,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "SdKfz 7 (8t) Half-track",
     chassis: "heavy_halftrack",
     category: "transport",
-    faction: "axis",
+    nations: ["germany"],
     hp: 110,
     armor: UNARMORED,
     // Built to tow guns, not to fight: heavy, steady, and slow to change its mind.
@@ -501,7 +534,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "SdKfz 234/2 Puma",
     chassis: "heavy_armored_car",
     category: "armor",
-    faction: "axis",
+    nations: ["germany"],
     hp: 95,
     armor: PUMA_ARMOR,
     // Eight driven wheels and a rear steering position — quick, and quick to leave.
@@ -520,7 +553,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "T-34/76 Tank (Soviet)",
     chassis: "sloped_medium",
     category: "armor",
-    faction: "allies",
+    nations: ["ussr"],
     hp: 155,
     armor: SLOPED_MEDIUM_ARMOR,
     mobility: { maxSpeed: 14.5, reverseSpeed: 5, accel: 6.2, turnRate: 0.8, turretTraverse: 0.42, turretArc: Math.PI },
@@ -530,6 +563,232 @@ export const VEHICLES: VehicleDef[] = [
     tint: 0x4a5540,
     triangles: 1100,
     blurb: "Sloped plate everywhere and wide tracks. Faster than a Sherman, and the turret is cramped.",
+  },
+
+  /* ---------- Aircraft ---------- */
+  {
+    id: "p51_mustang",
+    era: "ww2",
+    name: "Mustang",
+    displayName: "P-51D Mustang",
+    chassis: "fighter",
+    category: "air",
+    nations: ["usa"],
+    hp: 100,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 128, reverseSpeed: 0, accel: 11, turnRate: 1.2, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x5d6647,
+    triangles: 700,
+    blurb: "Fast, long-legged escort fighter. Six .50s and the legs to follow bombers anywhere.",
+  },
+  {
+    id: "spitfire_ix",
+    era: "ww2",
+    name: "Spitfire",
+    displayName: "Supermarine Spitfire Mk IX",
+    chassis: "fighter",
+    category: "air",
+    nations: ["uk"],
+    hp: 96,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 120, reverseSpeed: 0, accel: 11.5, turnRate: 1.45, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x59634a,
+    triangles: 720,
+    blurb: "Elliptical wings and a Merlin. Turns tighter than a Mustang, runs shorter.",
+  },
+  {
+    id: "bf109_g",
+    era: "ww2",
+    name: "Bf 109",
+    displayName: "Messerschmitt Bf 109 G",
+    chassis: "fighter",
+    category: "air",
+    nations: ["germany"],
+    hp: 92,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 122, reverseSpeed: 0, accel: 12, turnRate: 1.3, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x6e7468,
+    triangles: 680,
+    blurb: "Small, light and quick to accelerate. Narrow gear and a heavy nose — land it carefully.",
+  },
+  {
+    id: "fw190_a8",
+    era: "ww2",
+    name: "Fw 190",
+    displayName: "Focke-Wulf Fw 190 A-8",
+    chassis: "fighter",
+    category: "air",
+    nations: ["germany"],
+    hp: 108,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 118, reverseSpeed: 0, accel: 12.5, turnRate: 1.15, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x5a6350,
+    triangles: 700,
+    blurb: "Radial-engined and heavily armed. Rolls faster than anything; turns worse than everything.",
+  },
+  {
+    id: "yak9",
+    era: "ww2",
+    name: "Yak-9",
+    displayName: "Yakovlev Yak-9",
+    chassis: "fighter",
+    category: "air",
+    nations: ["ussr"],
+    hp: 94,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 116, reverseSpeed: 0, accel: 11.8, turnRate: 1.4, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x4f5a42,
+    triangles: 660,
+    blurb: "Light, nimble and built for the deck. At low level nothing German turns with it.",
+  },
+  {
+    id: "a6m_zero",
+    era: "ww2",
+    name: "Zero",
+    displayName: "Mitsubishi A6M Zero",
+    chassis: "fighter",
+    category: "air",
+    nations: ["japan"],
+    hp: 78,
+    armor: UNARMORED,
+    // No armour and no self-sealing tanks: it out-turns everything and burns.
+    mobility: { maxSpeed: 112, reverseSpeed: 0, accel: 12.2, turnRate: 1.7, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x5b6141,
+    triangles: 680,
+    blurb: "Turns inside anything alive. One burst anywhere near it and it is gone.",
+  },
+  {
+    id: "f6f_hellcat",
+    era: "ww2",
+    name: "Hellcat",
+    displayName: "Grumman F6F Hellcat",
+    chassis: "fighter",
+    category: "air",
+    nations: ["usa"],
+    hp: 118,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 114, reverseSpeed: 0, accel: 11, turnRate: 1.25, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x39485a,
+    triangles: 720,
+    blurb: "Big, tough carrier fighter. Built to take hits a Zero cannot survive giving.",
+  },
+  {
+    id: "a6m2n_rufe",
+    era: "ww2",
+    name: "Rufe",
+    displayName: "A6M2-N Rufe",
+    chassis: "floatplane",
+    category: "air",
+    nations: ["japan"],
+    hp: 76,
+    armor: UNARMORED,
+    // A Zero with a boat bolted under it: everything costs speed.
+    mobility: { maxSpeed: 96, reverseSpeed: 0, accel: 9.5, turnRate: 1.5, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon"],
+    passengerSeats: 0,
+    tint: 0x59633f,
+    triangles: 760,
+    blurb: "A Zero on floats. Slower for the drag, and it can sit down on water.",
+  },
+  {
+    id: "ju87_stuka",
+    era: "ww2",
+    name: "Stuka",
+    displayName: "Junkers Ju 87 D Stuka",
+    chassis: "dive_bomber",
+    category: "air",
+    nations: ["germany"],
+    hp: 110,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 82, reverseSpeed: 0, accel: 8, turnRate: 1.0, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x6a7066,
+    triangles: 780,
+    blurb: "Inverted gull wings and fixed spats. Slow enough to be shot down, accurate enough to matter.",
+  },
+  {
+    id: "il2_shturmovik",
+    era: "ww2",
+    name: "IL-2",
+    displayName: "Ilyushin IL-2 Shturmovik",
+    chassis: "attack_plane",
+    category: "air",
+    nations: ["ussr"],
+    hp: 175,
+    armor: LIGHT_ARMOR,
+    // An armoured bathtub with wings — the only aircraft here that shrugs off ground fire.
+    mobility: { maxSpeed: 88, reverseSpeed: 0, accel: 8.5, turnRate: 1.05, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x4a5348,
+    triangles: 800,
+    blurb: "The flying tank. Armoured around the pilot and the engine — ground fire mostly bounces.",
+  },
+  {
+    id: "b25_mitchell",
+    era: "ww2",
+    name: "B-25",
+    displayName: "B-25J Mitchell",
+    chassis: "medium_bomber",
+    category: "air",
+    nations: ["usa", "ussr"],
+    hp: 220,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 90, reverseSpeed: 0, accel: 7, turnRate: 0.72, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x7a6f52,
+    triangles: 950,
+    blurb: "Twin-engined medium with a twin tail. Carries a real bomb load and defends itself.",
+  },
+  {
+    id: "b17_fortress",
+    era: "ww2",
+    name: "B-17",
+    displayName: "Boeing B-17G Flying Fortress",
+    chassis: "heavy_bomber",
+    category: "air",
+    nations: ["usa"],
+    hp: 340,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 74, reverseSpeed: 0, accel: 5, turnRate: 0.5, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x5f664c,
+    triangles: 1400,
+    blurb: "Four engines and guns in every direction. Slow, enormous, and very hard to put down.",
+  },
+  {
+    id: "lancaster",
+    era: "ww2",
+    name: "Lancaster",
+    displayName: "Avro Lancaster",
+    chassis: "heavy_bomber",
+    category: "air",
+    nations: ["uk"],
+    hp: 330,
+    armor: UNARMORED,
+    mobility: { maxSpeed: 76, reverseSpeed: 0, accel: 5.2, turnRate: 0.52, turretTraverse: 0, turretArc: 0 },
+    weapons: ["aircannon", "bomb"],
+    passengerSeats: 0,
+    tint: 0x4b5148,
+    triangles: 1400,
+    blurb: "The RAF's heavy. Twin fins, a cavernous bomb bay, and it flies at night for a reason.",
   },
 
   /* ================================================================ */
@@ -544,7 +803,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "British Mark IV (Male)",
     chassis: "rhomboid_tank",
     category: "armor",
-    faction: "allies",
+    nations: ["britain_ww1"],
     hp: 150,
     armor: RIVETED_ARMOR,
     // Walking pace. The sponson guns barely traverse — you aim the whole tank.
@@ -563,7 +822,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "British Mark IV (Female)",
     chassis: "rhomboid_tank",
     category: "armor",
-    faction: "allies",
+    nations: ["britain_ww1"],
     hp: 150,
     armor: RIVETED_ARMOR,
     mobility: { maxSpeed: 4.6, reverseSpeed: 2.2, accel: 2.3, turnRate: 0.36, turretTraverse: 0.5, turretArc: 0.7 },
@@ -581,7 +840,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "German A7V",
     chassis: "box_tank",
     category: "armor",
-    faction: "axis",
+    nations: ["germany_ww1"],
     hp: 170,
     armor: A7V_ARMOR,
     mobility: { maxSpeed: 4.0, reverseSpeed: 2.0, accel: 2.0, turnRate: 0.3, turretTraverse: 0.3, turretArc: 0.42 },
@@ -601,7 +860,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "British Rolls-Royce Armored Car",
     chassis: "vintage_armored_car",
     category: "armor",
-    faction: "allies",
+    nations: ["britain_ww1"],
     hp: 70,
     armor: RIVETED_LIGHT,
     mobility: { maxSpeed: 17, reverseSpeed: 7, accel: 8, turnRate: 1.25, turretTraverse: 0.55, turretArc: Math.PI },
@@ -618,7 +877,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Lancia IZ Armored Car",
     chassis: "vintage_armored_car",
     category: "armor",
-    faction: "allies",
+    nations: ["britain_ww1"],
     hp: 78,
     armor: RIVETED_LIGHT,
     mobility: { maxSpeed: 15.5, reverseSpeed: 6.5, accel: 7.4, turnRate: 1.15, turretTraverse: 0.5, turretArc: Math.PI },
@@ -635,7 +894,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Austro-Daimler Armored Car",
     chassis: "vintage_armored_car",
     category: "armor",
-    faction: "axis",
+    nations: ["germany_ww1"],
     hp: 72,
     armor: RIVETED_LIGHT,
     mobility: { maxSpeed: 16, reverseSpeed: 7, accel: 7.8, turnRate: 1.3, turretTraverse: 0.55, turretArc: Math.PI },
@@ -654,7 +913,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "75mm Field Gun",
     chassis: "field_gun",
     category: "artillery",
-    faction: "both",
+    nations: ["britain_ww1", "germany_ww1"],
     hp: 55,
     armor: GUN_SHIELD,
     // Emplaced: it traverses on its trail but it does not go anywhere.
@@ -673,7 +932,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Schneider 155mm Howitzer",
     chassis: "howitzer",
     category: "artillery",
-    faction: "both",
+    nations: ["britain_ww1", "germany_ww1"],
     hp: 70,
     armor: GUN_SHIELD,
     mobility: { maxSpeed: 0, reverseSpeed: 0, accel: 0, turnRate: 0, turretTraverse: 0.26, turretArc: 0.38 },
@@ -691,7 +950,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Supply Wagon",
     chassis: "wagon",
     category: "artillery",
-    faction: "both",
+    nations: ["britain_ww1", "germany_ww1"],
     hp: 40,
     armor: UNARMORED,
     mobility: { maxSpeed: 4.5, reverseSpeed: 2, accel: 3, turnRate: 1.1, turretTraverse: 0, turretArc: 0 },
@@ -710,7 +969,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Sopwith Camel",
     chassis: "biplane",
     category: "air",
-    faction: "allies",
+    nations: ["britain_ww1"],
     hp: 70,
     armor: UNARMORED,
     mobility: { maxSpeed: 52, reverseSpeed: 0, accel: 7, turnRate: 1.6, turretTraverse: 0, turretArc: 0 },
@@ -727,7 +986,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "Fokker Dr.I",
     chassis: "biplane",
     category: "air",
-    faction: "axis",
+    nations: ["germany_ww1"],
     hp: 68,
     armor: UNARMORED,
     mobility: { maxSpeed: 48, reverseSpeed: 0, accel: 7.6, turnRate: 1.85, turretTraverse: 0, turretArc: 0 },
@@ -744,7 +1003,7 @@ export const VEHICLES: VehicleDef[] = [
     displayName: "SPAD S.XIII",
     chassis: "biplane",
     category: "air",
-    faction: "allies",
+    nations: ["britain_ww1"],
     hp: 76,
     armor: UNARMORED,
     mobility: { maxSpeed: 58, reverseSpeed: 0, accel: 8.2, turnRate: 1.35, turretTraverse: 0, turretArc: 0 },
@@ -797,8 +1056,12 @@ export function coaxOf(defId: string): string | null {
 }
 
 /** Aircraft chassis — spawned as Plane objects rather than parked vehicles. */
+const AIR_CHASSIS: ReadonlySet<Chassis> = new Set<Chassis>([
+  "fighter", "biplane", "dive_bomber", "attack_plane", "medium_bomber", "floatplane", "heavy_bomber",
+]);
+
 export function isAircraft(def: VehicleDef): boolean {
-  return def.chassis === "fighter" || def.chassis === "biplane";
+  return AIR_CHASSIS.has(def.chassis);
 }
 
 /** The spec `makePlane` needs, derived from a catalog entry. */
@@ -828,16 +1091,16 @@ export function armorOf(defId: string): ArmorScheme {
 }
 
 /** Every vehicle a given side is allowed to field (its own plus shared ones). */
-export function vehiclesForFaction(faction: "allies" | "axis", era: EraId = "ww2"): VehicleDef[] {
-  return VEHICLES.filter((v) => v.era === era && (v.faction === faction || v.faction === "both"));
+export function vehiclesForNation(nation: Nation, era: EraId = "ww2"): VehicleDef[] {
+  return VEHICLES.filter((v) => v.era === era && v.nations.includes(nation));
 }
 
 export function vehiclesInCategory(
-  faction: "allies" | "axis",
+  nation: Nation,
   category: VehicleCategory,
   era: EraId = "ww2",
 ): VehicleDef[] {
-  return vehiclesForFaction(faction, era).filter((v) => v.category === category);
+  return vehiclesForNation(nation, era).filter((v) => v.category === category);
 }
 
 /* ================================================================== */
@@ -962,9 +1225,10 @@ export function mapById(id: string): MapDef {
 /* ================================================================== */
 
 export type TeamLoadout = {
-  /** Display name — "Eagle"/"Raven" in Ravenfield terms, Allies/Axis here. */
+  /** Display name, taken from the nation. */
   label: string;
-  faction: "allies" | "axis";
+  /** Which combatant this team fields. Decides the whole roster. */
+  nation: Nation;
   /** Which engine team colour this side renders as. */
   team: Team;
   enabledWeapons: string[];
@@ -1002,39 +1266,40 @@ export type Preset = {
    * you can put Armor Clash on the bocage if you want to watch tanks struggle.
    * Called fresh each time so presets never share mutable state.
    */
-  build: (era: EraId) => { team1: TeamLoadout; team2: TeamLoadout };
+  build: (era: EraId, nations: { team1: Nation; team2: Nation }) => {
+    team1: TeamLoadout;
+    team2: TeamLoadout;
+  };
 };
 
 /** Every vehicle a side can field, by category filter. */
-function vehiclesWhere(faction: "allies" | "axis", era: EraId, pred: (v: VehicleDef) => boolean): string[] {
-  return vehiclesForFaction(faction, era).filter(pred).map((v) => v.id);
+function vehiclesWhere(nation: Nation, era: EraId, pred: (v: VehicleDef) => boolean): string[] {
+  return vehiclesForNation(nation, era).filter(pred).map((v) => v.id);
 }
 
-function baseTeam(faction: "allies" | "axis", era: EraId): TeamLoadout {
+function baseTeam(nation: Nation, era: EraId, slot: "team1" | "team2"): TeamLoadout {
   return {
-    label: faction === "allies" ? ALLIED_LABEL[era] : AXIS_LABEL[era],
-    faction,
-    team: faction === "allies" ? "blue" : "red",
+    label: NATION_SHORT[nation],
+    nation,
+    // Team colour follows the slot, not the nation, so a USA-vs-UK match still
+    // has one blue side and one red one rather than two blues.
+    team: slot === "team1" ? "blue" : "red",
     enabledWeapons: allWeaponIds(era),
-    enabledVehicles: vehiclesWhere(faction, era, () => true),
+    enabledVehicles: vehiclesWhere(nation, era, () => true),
     botCount: 13,
     tickets: 320,
     skill: 0.55,
   };
 }
 
-/** Side names change with the era: it is Entente and Central Powers in 1917. */
-const ALLIED_LABEL: Record<EraId, string> = {
-  ww1: "Entente", ww2: "Allies", coldwar: "Blue", modern: "Blue",
-};
-const AXIS_LABEL: Record<EraId, string> = {
-  ww1: "Central Powers", ww2: "Axis", coldwar: "Red", modern: "Red",
-};
-
 /** Applies the same mutation to both sides, so presets stay symmetric. */
-function bothTeams(era: EraId, mutate: (t: TeamLoadout, era: EraId) => void): { team1: TeamLoadout; team2: TeamLoadout } {
-  const team1 = baseTeam("allies", era);
-  const team2 = baseTeam("axis", era);
+function bothTeams(
+  era: EraId,
+  nations: { team1: Nation; team2: Nation },
+  mutate: (t: TeamLoadout, era: EraId) => void,
+): { team1: TeamLoadout; team2: TeamLoadout } {
+  const team1 = baseTeam(nations.team1, era, "team1");
+  const team2 = baseTeam(nations.team2, era, "team2");
   mutate(team1, era);
   mutate(team2, era);
   return { team1, team2 };
@@ -1045,24 +1310,24 @@ export const PRESETS: Preset[] = [
     id: "all_out",
     name: "All-Out Warfare",
     blurb: "Everything unlocked. Tanks, trucks, aircraft, the lot.",
-    build: (era) => bothTeams(era, () => {}),
+    build: (era, nations) => bothTeams(era, nations, () => {}),
   },
   {
     id: "ww2_historical",
     name: "WW2 Historical",
     blurb: "Each side fields only what it historically operated. No shared kit.",
-    build: (era) =>
-      bothTeams(era, (t, e) => {
+    build: (era, nations) =>
+      bothTeams(era, nations, (t, e) => {
         // Drop anything marked as shared — historical mode is strict.
-        t.enabledVehicles = vehiclesWhere(t.faction, e, (v) => v.faction === t.faction);
+        t.enabledVehicles = vehiclesWhere(t.nation, e, (v) => v.nations.length === 1);
       }),
   },
   {
     id: "infantry_only",
     name: "Infantry Only",
     blurb: "No vehicles at all. Rifles, SMGs and the ground between you.",
-    build: (era) =>
-      bothTeams(era, (t) => {
+    build: (era, nations) =>
+      bothTeams(era, nations, (t) => {
         t.enabledVehicles = [];
         t.botCount = 18;
       }),
@@ -1071,9 +1336,9 @@ export const PRESETS: Preset[] = [
     id: "armor_clash",
     name: "Armor Clash",
     blurb: "Tanks and tank destroyers only. Bring AT weapons.",
-    build: (era) =>
-      bothTeams(era, (t, e) => {
-        t.enabledVehicles = vehiclesWhere(t.faction, e, (v) => v.category === "armor" || v.category === "artillery");
+    build: (era, nations) =>
+      bothTeams(era, nations, (t, e) => {
+        t.enabledVehicles = vehiclesWhere(t.nation, e, (v) => v.category === "armor" || v.category === "artillery");
         t.botCount = 10;
       }),
   },
@@ -1081,9 +1346,9 @@ export const PRESETS: Preset[] = [
     id: "air_superiority",
     name: "Air Superiority",
     blurb: "Aircraft and light ground transport. The fight is overhead.",
-    build: (era) =>
-      bothTeams(era, (t, e) => {
-        t.enabledVehicles = vehiclesWhere(t.faction, e, (v) => v.category === "air" || v.category === "light");
+    build: (era, nations) =>
+      bothTeams(era, nations, (t, e) => {
+        t.enabledVehicles = vehiclesWhere(t.nation, e, (v) => v.category === "air" || v.category === "light");
         t.botCount = 10;
       }),
   },
@@ -1111,6 +1376,11 @@ export type MapLoadout = {
   teams: { team1: TeamLoadout; team2: TeamLoadout };
 };
 
+/** The nations a saved loadout was built for, read back off its teams. */
+function nationsOf(l: MapLoadout): { team1: Nation; team2: Nation } {
+  return { team1: l.teams.team1.nation, team2: l.teams.team2.nation };
+}
+
 /** Bumped whenever the saved shape changes, so old saves are discarded. */
 const STORAGE_KEY = "claudefield.matchConfig.v2";
 
@@ -1118,8 +1388,12 @@ function cloneTeam(t: TeamLoadout): TeamLoadout {
   return { ...t, enabledWeapons: [...t.enabledWeapons], enabledVehicles: [...t.enabledVehicles] };
 }
 
-function defaultLoadout(map: MapDef, era: EraId): MapLoadout {
-  return { seed: map.seed, presetId: map.defaultPreset, teams: presetById(map.defaultPreset).build(era) };
+function defaultLoadout(map: MapDef, era: EraId, nations = defaultNations(era)): MapLoadout {
+  return {
+    seed: map.seed,
+    presetId: map.defaultPreset,
+    teams: presetById(map.defaultPreset).build(era, nations),
+  };
 }
 
 /** Rosters are stored per era *and* per map, so switching era keeps both. */
@@ -1143,7 +1417,12 @@ function sanitizeLoadout(map: MapDef, era: EraId, raw: unknown): MapLoadout {
     const saved = r.teams?.[slot];
     if (!saved) continue;
     const team = base.teams[slot];
-    const allowedVehicles = new Set(vehiclesForFaction(team.faction, era).map((v) => v.id));
+    // The nation comes first: it decides which vehicle ids are even legal.
+    if (typeof saved.nation === "string" && NATIONS_OF_ERA[era].includes(saved.nation as Nation)) {
+      team.nation = saved.nation as Nation;
+      team.label = NATION_SHORT[team.nation];
+    }
+    const allowedVehicles = new Set(vehiclesForNation(team.nation, era).map((v) => v.id));
     const allowedWeapons = allWeaponIds(era);
     if (Array.isArray(saved.enabledWeapons)) {
       team.enabledWeapons = saved.enabledWeapons.filter((w) => allowedWeapons.includes(w));
@@ -1262,6 +1541,30 @@ export class MatchConfig {
   }
 
   /**
+   * Changes which nation a team fields. The old nation's vehicles are not this
+   * one's to fly, so the roster is rebuilt wholesale rather than filtered —
+   * silently dropping a Spitfire when you switch to Japan would leave the team
+   * looking configured when it is not.
+   */
+  setNation(slot: "team1" | "team2", nation: Nation) {
+    if (!NATIONS_OF_ERA[this.eraId].includes(nation)) return;
+    const l = this.current();
+    const other = slot === "team1" ? "team2" : "team1";
+    // Both sides cannot be the same nation — it would be one army fighting itself.
+    if (l.teams[other].nation === nation) return;
+    const previous = l.teams[slot];
+    const rebuilt = baseTeam(nation, this.eraId, slot);
+    // Numbers the player set are theirs; only the roster follows the nation.
+    rebuilt.botCount = previous.botCount;
+    rebuilt.tickets = previous.tickets;
+    rebuilt.skill = previous.skill;
+    rebuilt.enabledWeapons = [...previous.enabledWeapons];
+    l.teams[slot] = rebuilt;
+    l.presetId = null;
+    this.emit();
+  }
+
+  /**
    * Switches era. The previous era's rosters are left exactly as they were, so
    * flipping between 1917 and 1944 does not cost you either setup.
    */
@@ -1282,14 +1585,19 @@ export class MatchConfig {
   /** Applies a preset's rosters to the map currently being configured. */
   applyPreset(id: PresetId) {
     const l = this.current();
-    l.teams = presetById(id).build(this.eraId);
+    l.teams = presetById(id).build(this.eraId, nationsOf(l));
     l.presetId = id;
     this.emit();
   }
 
   /** Puts this map back to the roster it shipped with. */
   resetMap() {
-    this.slots.set(slotKey(this.eraId, this.mapId), defaultLoadout(mapById(this.mapId), this.eraId));
+    // Reset keeps the matchup — it is the roster that is being reset, not who
+    // is fighting whom.
+    this.slots.set(
+      slotKey(this.eraId, this.mapId),
+      defaultLoadout(mapById(this.mapId), this.eraId, nationsOf(this.current())),
+    );
     this.emit();
   }
 
@@ -1353,7 +1661,7 @@ export class MatchConfig {
   /** Select-All / Deselect-All for one vehicle category. */
   setVehicleCategory(slot: "team1" | "team2", category: VehicleCategory, enabled: boolean) {
     const t = this.teamOf(slot);
-    const ids = vehiclesInCategory(t.faction, category, this.eraId).map((v) => v.id);
+    const ids = vehiclesInCategory(t.nation, category, this.eraId).map((v) => v.id);
     t.enabledVehicles = enabled
       ? Array.from(new Set([...t.enabledVehicles, ...ids]))
       : t.enabledVehicles.filter((v) => !ids.includes(v));

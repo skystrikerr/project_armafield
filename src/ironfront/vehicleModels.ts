@@ -1002,6 +1002,331 @@ function biplaneGeometry(tint: number, triplane: boolean): THREE.BufferGeometry 
 }
 
 /* ================================================================== */
+/*  WWII aircraft                                                       */
+/* ================================================================== */
+
+/**
+ * What separates one single-engine fighter from another at low poly count is
+ * three things: the shape of the wing, whether the nose is a pointed inline or
+ * a blunt radial, and how big the whole thing is. One builder covers all seven
+ * rather than seven near-identical part lists.
+ *
+ * Nose is +Z, matching the existing plane rig — the opposite of the camera's
+ * forward, which the aircraft control code already accounts for.
+ */
+type WingShape = "elliptical" | "tapered" | "square" | "gull";
+
+type FighterProfile = {
+  /** Half-span in metres. */
+  span: number;
+  length: number;
+  wing: WingShape;
+  /** Radial engines get a blunt cowl; inline engines a long pointed spinner. */
+  radial: boolean;
+  /** Tail fin height. */
+  fin: number;
+  /** Retracted gear on a fighter, fixed spatted gear on a Stuka. */
+  fixedGear?: boolean;
+  /** A floatplane has no wheels at all. */
+  noGear?: boolean;
+};
+
+const UNDERSIDE = 0x8d99a6;
+const CANOPY = 0x2c3a44;
+const CANOPY_GLASS = 0x5d7382;
+
+/**
+ * A wing built as a run of chord-tapered segments. An elliptical wing loses
+ * chord as a sine of the span, a tapered one linearly, a square one not at
+ * all, and a gull wing kinks downward at the root — which is the entire visual
+ * signature of a Stuka.
+ */
+function wingPanels(
+  parts: Part[],
+  shape: WingShape,
+  span: number,
+  rootChord: number,
+  y: number,
+  z: number,
+  top: number,
+  bottom: number,
+) {
+  const steps = 5;
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < steps; i++) {
+      const t0 = i / steps;
+      const t1 = (i + 1) / steps;
+      const mid = (t0 + t1) / 2;
+      let chord: number;
+      switch (shape) {
+        case "elliptical":
+          chord = rootChord * Math.sqrt(Math.max(0.04, 1 - mid * mid));
+          break;
+        case "tapered":
+          chord = rootChord * (1 - 0.55 * mid);
+          break;
+        case "gull":
+          chord = rootChord * (1 - 0.45 * mid);
+          break;
+        default:
+          chord = rootChord * (1 - 0.12 * mid);
+      }
+      // The gull kink: the inner third drops away from the root, the outer
+      // panels rise again, which is why a Ju 87 looks bent from head on.
+      const drop = shape === "gull" ? (mid < 0.34 ? -0.55 * (mid / 0.34) : -0.55 + 0.75 * ((mid - 0.34) / 0.66)) : 0;
+      const dihedral = shape === "gull" ? 0 : mid * 0.22;
+      parts.push({
+        g: "box",
+        size: [(span / steps) * 1.02, 0.2, chord],
+        pos: [side * span * mid, y + drop + dihedral, z + (rootChord - chord) * 0.28],
+        rot: [0, 0, side * (shape === "gull" && mid < 0.34 ? -0.5 : 0.05)],
+        color: i === steps - 1 ? top : i % 2 === 0 ? top : shade(top, 1.08),
+      });
+      parts.push({
+        g: "box",
+        size: [(span / steps) * 1.0, 0.08, chord * 0.7],
+        pos: [side * span * mid, y + drop + dihedral - 0.12, z + (rootChord - chord) * 0.28],
+        color: bottom,
+      });
+    }
+  }
+}
+
+function fighterGeometry(tint: number, p: FighterProfile): THREE.BufferGeometry {
+  return build(fighterParts(tint, p));
+}
+
+/** Split out from the builder so the floatplane can extend the same airframe. */
+function fighterParts(tint: number, p: FighterProfile): Part[] {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.18);
+  const half = p.length / 2;
+  const parts: Part[] = [
+    // Fuselage, tapering to the tail.
+    { g: "cyl", r: 0.6, r2: 0.3, h: p.length * 0.72, seg: 8, pos: [0, 0, -p.length * 0.16], rot: [Math.PI / 2, 0, 0], color: body },
+  ];
+  if (p.radial) {
+    // Blunt cowl over a radial: a short fat drum with a small spinner.
+    parts.push(
+      { g: "cyl", r: 0.72, h: 1.2, seg: 10, pos: [0, 0, half - 0.5], rot: [Math.PI / 2, 0, 0], color: dark },
+      { g: "cyl", r: 0.66, h: 0.2, seg: 10, pos: [0, 0, half + 0.1], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+      { g: "cyl", r: 0.2, r2: 0.12, h: 0.5, seg: 8, pos: [0, 0, half + 0.35], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    );
+  } else {
+    // Inline engine: a long cowl running out to a pointed spinner.
+    parts.push(
+      { g: "cyl", r: 0.55, r2: 0.42, h: 1.8, seg: 8, pos: [0, 0, half - 0.9], rot: [Math.PI / 2, 0, 0], color: dark },
+      { g: "cone", r: 0.4, h: 0.9, seg: 8, pos: [0, 0, half + 0.35], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+      // Chin radiator, the giveaway of a liquid-cooled fighter.
+      { g: "box", size: [0.7, 0.4, 1.2], pos: [0, -0.5, half - 1.6], color: STEEL_DARK },
+    );
+  }
+  parts.push(
+    // Canopy.
+    { g: "box", size: [0.7, 0.42, 1.5], pos: [0, 0.55, 0.5], color: CANOPY },
+    { g: "box", size: [0.62, 0.3, 0.95], pos: [0, 0.8, 0.45], color: CANOPY_GLASS },
+    // Tail surfaces.
+    { g: "box", size: [p.span * 0.62, 0.16, 0.95], pos: [0, 0.12, -half + 0.5], color: body },
+    { g: "box", size: [0.16, p.fin, 1.25], pos: [0, p.fin * 0.5, -half + 0.45], color: dark },
+    { g: "box", size: [0.18, p.fin * 0.6, 0.5], pos: [0, p.fin * 0.8, -half + 0.1], color: light },
+  );
+  wingPanels(parts, p.wing, p.span, 2.0, -0.08, 0.5, body, UNDERSIDE);
+  // Wing guns.
+  for (const side of [-1, 1]) {
+    parts.push({
+      g: "cyl", r: 0.07, h: 1.2, seg: 6,
+      pos: [side * p.span * 0.38, -0.1, 1.5], rot: [Math.PI / 2, 0, 0], color: GUNMETAL,
+    });
+  }
+  if (p.noGear) {
+    // Nothing: the floats are the undercarriage.
+  } else if (p.fixedGear) {
+    // Trousered legs and spats, the Stuka's other signature.
+    for (const side of [-1, 1]) {
+      parts.push(
+        { g: "box", size: [0.34, 1.0, 0.7], pos: [side * p.span * 0.3, -0.75, 0.7], rot: [0, 0, side * 0.12], color: body },
+        { g: "box", size: [0.4, 0.5, 0.9], pos: [side * p.span * 0.3, -1.25, 0.7], color: dark },
+        { g: "cyl", r: 0.3, h: 0.18, seg: 8, pos: [side * p.span * 0.3, -1.35, 0.7], rot: [0, 0, Math.PI / 2], color: RUBBER },
+      );
+    }
+  } else {
+    for (const side of [-1, 1]) {
+      parts.push(
+        { g: "cyl", r: 0.06, h: 0.9, seg: 6, pos: [side * 1.4, -0.6, 0.6], color: GUNMETAL },
+        { g: "cyl", r: 0.28, h: 0.18, seg: 8, pos: [side * 1.4, -1.02, 0.6], rot: [0, 0, Math.PI / 2], color: RUBBER },
+      );
+    }
+  }
+  return parts;
+}
+
+/** The Rufe: a Zero with a big central float and two underwing outriggers. */
+function floatplaneGeometry(tint: number, p: FighterProfile): THREE.BufferGeometry {
+  const parts = fighterParts(tint, { ...p, noGear: true });
+  const dark = shade(tint, 0.72);
+  // Central float on its pylon, and two little outriggers under the wings.
+  parts.push(
+    { g: "box", size: [0.8, 0.5, 5.4], pos: [0, -1.9, 0.4], color: dark },
+    { g: "cone", r: 0.42, h: 1.1, seg: 8, pos: [0, -1.9, 3.5], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "box", size: [0.3, 1.0, 0.5], pos: [0, -1.25, 1.4], color: STEEL_DARK },
+    { g: "box", size: [0.3, 1.0, 0.5], pos: [0, -1.25, -0.8], color: STEEL_DARK },
+  );
+  for (const side of [-1, 1]) {
+    parts.push(
+      { g: "box", size: [0.42, 0.3, 1.6], pos: [side * p.span * 0.62, -0.75, 0.6], color: dark },
+      { g: "box", size: [0.1, 0.55, 0.3], pos: [side * p.span * 0.62, -0.45, 0.6], color: STEEL_DARK },
+    );
+  }
+  return build(parts);
+}
+
+/**
+ * The IL-2: an armoured tub rather than a tube. Deeper, squarer and visibly
+ * heavier than a fighter, with a second crew position behind the pilot.
+ */
+function attackPlaneGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.16);
+  const parts: Part[] = [
+    // Slab-sided armoured fuselage.
+    { g: "box", size: [1.1, 1.15, 5.2], pos: [0, 0, -0.4], color: body },
+    { g: "cyl", r: 0.5, r2: 0.28, h: 2.6, seg: 8, pos: [0, 0.1, -3.3], rot: [Math.PI / 2, 0, 0], color: body },
+    { g: "cyl", r: 0.6, r2: 0.5, h: 1.9, seg: 8, pos: [0, 0, 3.1], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "cone", r: 0.42, h: 0.9, seg: 8, pos: [0, 0, 4.4], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+    // Long two-seat greenhouse.
+    { g: "box", size: [0.9, 0.5, 2.4], pos: [0, 0.72, 0.4], color: CANOPY },
+    { g: "box", size: [0.8, 0.34, 1.9], pos: [0, 1.0, 0.4], color: CANOPY_GLASS },
+    { g: "box", size: [0.5, 0.26, 0.4], pos: [0, 1.14, -0.7], color: GUNMETAL },
+    // Tail.
+    { g: "box", size: [4.4, 0.18, 1.1], pos: [0, 0.2, -4.0], color: body },
+    { g: "box", size: [0.18, 1.7, 1.4], pos: [0, 0.95, -4.1], color: dark },
+    { g: "box", size: [0.2, 1.0, 0.5], pos: [0, 1.5, -4.5], color: light },
+  ];
+  wingPanels(parts, "tapered", 6.4, 2.4, -0.2, 0.4, body, UNDERSIDE);
+  // Rocket rails and cannon, which is what it is actually for.
+  for (const side of [-1, 1]) {
+    parts.push(
+      { g: "cyl", r: 0.09, h: 1.4, seg: 6, pos: [side * 2.0, -0.2, 1.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+      { g: "box", size: [0.16, 0.16, 1.2], pos: [side * 3.0, -0.5, 0.5], color: STEEL_DARK },
+      { g: "box", size: [0.16, 0.16, 1.2], pos: [side * 4.0, -0.42, 0.5], color: STEEL_DARK },
+      { g: "cyl", r: 0.06, h: 0.9, seg: 6, pos: [side * 1.4, -0.7, 0.6], color: GUNMETAL },
+      { g: "cyl", r: 0.3, h: 0.18, seg: 8, pos: [side * 1.4, -1.15, 0.6], rot: [0, 0, Math.PI / 2], color: RUBBER },
+    );
+  }
+  return build(parts);
+}
+
+/** Engine nacelle on a wing, with its own spinner. Shared by both bombers. */
+function nacelle(parts: Part[], x: number, y: number, z: number, r: number, tint: number) {
+  const dark = shade(tint, 0.74);
+  parts.push(
+    { g: "cyl", r, r2: r * 0.75, h: r * 5.2, seg: 8, pos: [x, y, z], rot: [Math.PI / 2, 0, 0], color: dark },
+    { g: "cyl", r: r * 1.05, h: r * 1.2, seg: 10, pos: [x, y, z + r * 2.1], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
+    { g: "cone", r: r * 0.42, h: r * 1.2, seg: 8, pos: [x, y, z + r * 3.0], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    // Blades baked in — bombers have too many engines to spin them all in the rig.
+    { g: "box", size: [r * 0.22, r * 5.4, 0.08], pos: [x, y, z + r * 3.2], color: 0x2a2c26 },
+    { g: "box", size: [r * 5.4, r * 0.22, 0.08], pos: [x, y, z + r * 3.2], color: 0x2a2c26 },
+  );
+}
+
+/** Twin-engined, twin-finned medium: the B-25. */
+function mediumBomberGeometry(tint: number): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.16);
+  const parts: Part[] = [
+    { g: "cyl", r: 0.95, r2: 0.55, h: 9.5, seg: 10, pos: [0, 0, -1.0], rot: [Math.PI / 2, 0, 0], color: body },
+    { g: "cyl", r: 0.9, h: 2.2, seg: 10, pos: [0, 0, 4.4], rot: [Math.PI / 2, 0, 0], color: body },
+    // Glazed bombardier nose.
+    { g: "cone", r: 0.85, h: 1.6, seg: 10, pos: [0, 0, 6.2], rot: [Math.PI / 2, 0, 0], color: CANOPY_GLASS },
+    // Stepped cockpit, dorsal turret and tail gun.
+    { g: "box", size: [1.3, 0.6, 2.0], pos: [0, 0.85, 3.4], color: CANOPY },
+    { g: "box", size: [1.15, 0.4, 1.5], pos: [0, 1.15, 3.4], color: CANOPY_GLASS },
+    { g: "cyl", r: 0.5, h: 0.5, seg: 10, pos: [0, 1.05, 1.2], color: dark },
+    { g: "cyl", r: 0.07, h: 1.2, seg: 6, pos: [0, 1.15, 1.7], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "box", size: [0.8, 0.7, 1.0], pos: [0, 0.15, -5.6], color: dark },
+    // Twin fins on a straight tailplane — the B-25's silhouette in one line.
+    { g: "box", size: [6.4, 0.2, 1.5], pos: [0, 0.2, -5.2], color: body },
+    { g: "box", size: [0.2, 2.0, 1.6], pos: [2.9, 1.1, -5.2], color: dark },
+    { g: "box", size: [0.2, 2.0, 1.6], pos: [-2.9, 1.1, -5.2], color: dark },
+    { g: "box", size: [0.22, 1.0, 0.6], pos: [2.9, 1.9, -5.6], color: light },
+    { g: "box", size: [0.22, 1.0, 0.6], pos: [-2.9, 1.9, -5.6], color: light },
+  ];
+  wingPanels(parts, "tapered", 9.5, 3.0, 0.1, 0.6, body, UNDERSIDE);
+  nacelle(parts, 3.0, -0.1, 1.4, 0.62, tint);
+  nacelle(parts, -3.0, -0.1, 1.4, 0.62, tint);
+  for (const side of [-1, 1]) {
+    parts.push({ g: "cyl", r: 0.32, h: 0.2, seg: 8, pos: [side * 3.0, -1.2, 1.2], rot: [0, 0, Math.PI / 2], color: RUBBER });
+  }
+  return build(parts);
+}
+
+/** Four engines and a very long wing: the B-17 and the Lancaster. */
+function heavyBomberGeometry(tint: number, twinFin: boolean): THREE.BufferGeometry {
+  const body = tint;
+  const dark = shade(tint, 0.74);
+  const light = shade(tint, 1.16);
+  const parts: Part[] = [
+    { g: "cyl", r: 1.15, r2: 0.65, h: 14.0, seg: 10, pos: [0, 0, -1.5], rot: [Math.PI / 2, 0, 0], color: body },
+    { g: "cyl", r: 1.1, h: 3.0, seg: 10, pos: [0, 0, 6.4], rot: [Math.PI / 2, 0, 0], color: body },
+    { g: "cone", r: 1.0, h: 2.0, seg: 10, pos: [0, 0, 8.9], rot: [Math.PI / 2, 0, 0], color: CANOPY_GLASS },
+    // Flight deck.
+    { g: "box", size: [1.6, 0.7, 2.6], pos: [0, 1.0, 5.2], color: CANOPY },
+    { g: "box", size: [1.45, 0.5, 2.0], pos: [0, 1.35, 5.2], color: CANOPY_GLASS },
+    // Turrets: dorsal, ventral ball and tail.
+    { g: "cyl", r: 0.6, h: 0.6, seg: 10, pos: [0, 1.35, 2.6], color: dark },
+    { g: "sphere", r: 0.65, seg: 8, pos: [0, -1.2, 0.6], color: dark },
+    { g: "box", size: [1.0, 0.9, 1.4], pos: [0, 0.2, -8.0], color: dark },
+    { g: "cyl", r: 0.07, h: 1.4, seg: 6, pos: [0.2, 0.2, -8.8], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    { g: "cyl", r: 0.07, h: 1.4, seg: 6, pos: [-0.2, 0.2, -8.8], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
+    // Tailplane.
+    { g: "box", size: [8.4, 0.24, 2.2], pos: [0, 0.25, -7.4], color: body },
+  ];
+  if (twinFin) {
+    // Lancaster: two fins out on the tailplane, no central one.
+    parts.push(
+      { g: "box", size: [0.24, 2.4, 2.0], pos: [3.8, 1.4, -7.4], color: dark },
+      { g: "box", size: [0.24, 2.4, 2.0], pos: [-3.8, 1.4, -7.4], color: dark },
+      { g: "box", size: [0.26, 1.2, 0.7], pos: [3.8, 2.4, -7.9], color: light },
+      { g: "box", size: [0.26, 1.2, 0.7], pos: [-3.8, 2.4, -7.9], color: light },
+    );
+  } else {
+    // B-17: one enormous fin with a dorsal fillet running forward.
+    parts.push(
+      { g: "box", size: [0.24, 3.4, 2.6], pos: [0, 1.9, -7.2], color: dark },
+      { g: "box", size: [0.24, 1.4, 3.6], pos: [0, 0.8, -4.6], rot: [0.28, 0, 0], color: dark },
+      { g: "box", size: [0.26, 1.6, 0.9], pos: [0, 3.3, -7.9], color: light },
+    );
+  }
+  wingPanels(parts, "tapered", 14.0, 4.0, 0.15, 0.8, body, UNDERSIDE);
+  for (const side of [-1, 1]) {
+    nacelle(parts, side * 3.2, -0.1, 2.0, 0.62, tint);
+    nacelle(parts, side * 6.2, -0.05, 1.7, 0.58, tint);
+    parts.push({ g: "cyl", r: 0.38, h: 0.24, seg: 8, pos: [side * 3.2, -1.4, 1.8], rot: [0, 0, Math.PI / 2], color: RUBBER });
+  }
+  return build(parts);
+}
+
+/** Profiles for every single-engine type, keyed by catalog id. */
+const FIGHTER_PROFILES: Record<string, FighterProfile> = {
+  p51_mustang: { span: 5.6, length: 9.8, wing: "tapered", radial: false, fin: 1.9 },
+  spitfire_ix: { span: 5.6, length: 9.2, wing: "elliptical", radial: false, fin: 1.8 },
+  bf109_g: { span: 4.9, length: 8.8, wing: "square", radial: false, fin: 1.6 },
+  fw190_a8: { span: 5.2, length: 8.9, wing: "tapered", radial: true, fin: 1.7 },
+  yak9: { span: 5.0, length: 8.5, wing: "tapered", radial: false, fin: 1.6 },
+  a6m_zero: { span: 6.0, length: 9.0, wing: "elliptical", radial: true, fin: 1.7 },
+  f6f_hellcat: { span: 6.4, length: 10.2, wing: "square", radial: true, fin: 2.0 },
+  a6m2n_rufe: { span: 6.0, length: 9.0, wing: "elliptical", radial: true, fin: 1.8 },
+  ju87_stuka: { span: 6.8, length: 11.0, wing: "gull", radial: false, fin: 2.0, fixedGear: true },
+};
+
+function profileFor(id: string): FighterProfile {
+  return FIGHTER_PROFILES[id] ?? FIGHTER_PROFILES.p51_mustang;
+}
+
+/* ================================================================== */
 /*  Public builders                                                     */
 /* ================================================================== */
 
@@ -1031,7 +1356,17 @@ export function hullGeometryFor(def: VehicleDef): THREE.BufferGeometry | null {
     case "medium_tank":
       return null; // uses the existing tankHullGeometry, tinted by team
     case "fighter":
-      return null; // uses the existing planeBody geometry, tinted by team
+      return fighterGeometry(def.tint, profileFor(def.id));
+    case "dive_bomber":
+      return fighterGeometry(def.tint, profileFor(def.id));
+    case "floatplane":
+      return floatplaneGeometry(def.tint, profileFor(def.id));
+    case "attack_plane":
+      return attackPlaneGeometry(def.tint);
+    case "medium_bomber":
+      return mediumBomberGeometry(def.tint);
+    case "heavy_bomber":
+      return heavyBomberGeometry(def.tint, def.id === "lancaster");
     case "heavy_halftrack":
       return heavyHalftrackGeometry(def.tint);
     case "heavy_armored_car":
@@ -1131,6 +1466,27 @@ export function barrelMount(chassis: Chassis): [number, number, number] {
       return [0, 0.55, 1.7];
     default:
       return [0, 0.5, 1.45]; // medium tank
+  }
+}
+
+/**
+ * Where the spinning propeller disc sits on an aircraft, and how big it is.
+ * Returns null for types that bake their blades into the airframe — a four
+ * engined bomber has too many to animate, and one spinning disc floating at
+ * the nose of a B-17 looks worse than four still ones on the wings.
+ */
+export function propellerMount(def: VehicleDef): { pos: [number, number, number]; scale: number } | null {
+  switch (def.chassis) {
+    case "biplane":
+      return { pos: [0, 0.95, 2.66], scale: 0.52 };
+    case "fighter":
+    case "dive_bomber":
+    case "floatplane":
+      return { pos: [0, 0, profileFor(def.id).length / 2 + 0.8], scale: 0.75 };
+    case "attack_plane":
+      return { pos: [0, 0, 4.9], scale: 0.8 };
+    default:
+      return null; // bombers: blades are part of the nacelles
   }
 }
 

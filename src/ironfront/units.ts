@@ -412,7 +412,7 @@ export const BARREL_RATE = 0.34;
 export const BARREL_MIN = -0.16;
 export const BARREL_MAX = 0.31;
 
-export const PLANE_MAX_SPEED = 118;
+/** Aircraft top speed and turn rate come from the catalog, per type. */
 export const PLANE_STALL_SPEED = 26;
 
 const FIRST = [

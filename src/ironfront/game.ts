@@ -38,7 +38,6 @@ import {
   BARREL_MAX,
   BARREL_MIN,
   MODULE_LABEL,
-  PLANE_MAX_SPEED,
   PLANE_STALL_SPEED,
   SHELLS,
   STANCE_EYE,
@@ -1444,7 +1443,10 @@ export class Ironfront {
     if (this.keys.has("KeyD")) rudder += 1;
 
     // Mouse offset from centre is a control deflection, and it recentres itself.
-    const authority = clamp(p.speed / 60, 0.15, 1.4);
+    // The catalog's turnRate scales all three axes, so a Zero whips round and a
+    // Lancaster leans into a turn like the bus it is.
+    const agility = mobilityOf(p.defId).turnRate;
+    const authority = clamp(p.speed / 60, 0.15, 1.4) * agility;
     this.tmpQuat.setFromAxisAngle(_AXIS_Z, -this.aimYaw * 2.1 * authority * dt);
     p.quat.multiply(this.tmpQuat);
     this.tmpQuat.setFromAxisAngle(_AXIS_X, this.aimPitch * 1.7 * authority * dt);
@@ -1746,12 +1748,16 @@ export class Ironfront {
 
   private movePlane(p: Plane, dt: number) {
     forward(p, this.tmpVec);
+    // Top speed and acceleration come from the aircraft's own catalog entry:
+    // a Fortress is not going to cruise at Mustang speed.
+    const mob = mobilityOf(p.defId);
+    const vMax = mob.maxSpeed;
 
     if (p.onGround) {
       // Ground roll: wings level, steered by the rudder, until there is
       // enough air over them to fly.
       const heading = Math.atan2(this.tmpVec.x, this.tmpVec.z);
-      p.speed += (PLANE_MAX_SPEED * p.throttle * 0.95 - p.speed) * dt * 0.5;
+      p.speed += (vMax * p.throttle * 0.95 - p.speed) * dt * 0.5;
       p.speed *= 1 - Math.min(1, dt * 0.12);
       p.vel.set(Math.sin(heading) * p.speed, 0, Math.cos(heading) * p.speed);
       p.pos.addScaledVector(p.vel, dt);
@@ -1773,7 +1779,7 @@ export class Ironfront {
 
     // Thrust against drag, plus the speed you trade for height.
     const climbRate = this.tmpVec.y;
-    p.speed += (PLANE_MAX_SPEED * p.throttle - p.speed) * dt * 0.32;
+    p.speed += (vMax * p.throttle - p.speed) * dt * (0.22 + mob.accel * 0.012);
     p.speed -= climbRate * 26 * dt;
     p.speed = Math.max(0, p.speed - dt * 1.5);
 
@@ -1796,7 +1802,7 @@ export class Ironfront {
       // Touching down is only a landing if it is gentle, level and slow.
       const heavy = p.vel.y < -9;
       const steep = Math.abs(this.tmpVec.y) > 0.28;
-      const fast = p.speed > PLANE_MAX_SPEED * 0.62;
+      const fast = p.speed > vMax * 0.62;
       const banked = Math.abs(new THREE.Vector3(0, 1, 0).applyQuaternion(p.quat).y) < 0.86;
       if (heavy || steep || fast || banked) {
         this.destroyPlane(p, p.pilotId ?? -1, "crashed");

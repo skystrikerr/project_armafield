@@ -2,7 +2,6 @@ import * as THREE from "three";
 import {
   launcherGeometry,
   lowPolyMaterial,
-  planeBodyGeometry,
   propellerGeometry,
   rifleGeometry,
   soldierArmsGeometry,
@@ -19,6 +18,7 @@ import {
   barrelGeometryFor,
   barrelMount,
   hullGeometryFor,
+  propellerMount,
   turretGeometryFor,
   turretRingHeight,
 } from "./vehicleModels";
@@ -42,7 +42,6 @@ export class RigAssets {
   readonly hull: Record<Team, THREE.BufferGeometry>;
   readonly turret: Record<Team, THREE.BufferGeometry>;
   readonly torso: Record<Team, THREE.BufferGeometry>;
-  readonly planeBody: Record<Team, THREE.BufferGeometry>;
   readonly barrel = tankBarrelGeometry();
   readonly leg = soldierLegGeometry();
   readonly arms = soldierArmsGeometry();
@@ -58,7 +57,6 @@ export class RigAssets {
     this.hull = rec(tankHullGeometry);
     this.turret = rec(tankTurretGeometry);
     this.torso = rec(soldierTorsoGeometry);
-    this.planeBody = rec(planeBodyGeometry);
   }
 
   /**
@@ -73,7 +71,7 @@ export class RigAssets {
     const cached = this.vehicleCache.get(key);
     if (cached) return cached;
     const entry = {
-      hull: hullGeometryFor(def) ?? (def.chassis === "fighter" ? this.planeBody[team] : this.hull[team]),
+      hull: hullGeometryFor(def) ?? this.hull[team],
       turret: turretGeometryFor(def) ?? (def.chassis === "medium_tank" ? this.turret[team] : null),
       barrel: barrelGeometryFor(def) ?? this.barrel,
     };
@@ -85,7 +83,7 @@ export class RigAssets {
     const all: THREE.BufferGeometry[] = [
       this.barrel, this.leg, this.arms, this.rifle, this.launcher, this.propeller, this.wreck,
       ...Object.values(this.hull), ...Object.values(this.turret),
-      ...Object.values(this.torso), ...Object.values(this.planeBody),
+      ...Object.values(this.torso),
     ];
     for (const g of all) g.dispose();
     // Cached vehicle meshes may alias the shared ones above, so only dispose
@@ -296,6 +294,8 @@ export class PlaneRig {
   readonly root = new THREE.Group();
   private body: THREE.Mesh;
   private prop: THREE.Mesh;
+  /** False for bombers, whose blades are baked into the nacelles. */
+  private hasProp: boolean;
   readonly marker: THREE.Sprite;
   private spin = 0;
 
@@ -305,17 +305,19 @@ export class PlaneRig {
     // Biplanes bring their own airframe; the WWII monoplane uses the shared one.
     this.body = mesh(assets.vehicleGeometry(def, team).hull, mat);
     this.root.add(this.body);
+    // Airscrew size and position vary a great deal across the roster — the
+    // shared prop mesh dwarfs a Camel and sits inside a Stuka's nose unless it
+    // is placed per type. Bombers return null and bake their blades in.
     this.prop = mesh(assets.propeller, mat);
-    // A rotary-engined scout is a much shorter aeroplane than a 1944 fighter,
-    // and its airscrew is correspondingly smaller — the shared prop mesh is
-    // sized for a Mustang and dwarfs a Camel if it is not scaled down.
-    if (def.chassis === "biplane") {
-      this.prop.position.set(0, 0.95, 2.66);
-      this.prop.scale.setScalar(0.52);
+    const spinner = propellerMount(def);
+    this.hasProp = spinner !== null;
+    if (spinner) {
+      this.prop.position.set(...spinner.pos);
+      this.prop.scale.setScalar(spinner.scale);
+      this.root.add(this.prop);
     } else {
-      this.prop.position.set(0, 0, 4.25);
+      this.prop.visible = false;
     }
-    this.root.add(this.prop);
 
     this.marker = marker(team, 0.9, 2.6);
     this.root.add(this.marker);
@@ -327,7 +329,7 @@ export class PlaneRig {
     this.root.position.copy(p.pos);
     this.root.quaternion.copy(p.quat);
     this.body.visible = !hide;
-    this.prop.visible = !hide;
+    this.prop.visible = this.hasProp && !hide;
     this.marker.visible = showMarker;
     this.spin += dt * (6 + p.throttle * 60);
     this.prop.rotation.z = this.spin;

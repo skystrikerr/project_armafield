@@ -239,43 +239,6 @@ export function launcherGeometry(): THREE.BufferGeometry {
 
 /* ---------------- aircraft ---------------- */
 
-export function planeBodyGeometry(team: Team): THREE.BufferGeometry {
-  const tint = TEAM_COLOR[team];
-  const under = 0x8d99a6;
-  return build([
-    // Fuselage: a long tapered barrel.
-    { g: "cyl", r: 0.62, r2: 0.34, h: 5.6, seg: 8, pos: [0, 0, -0.9], rot: [Math.PI / 2, 0, 0], color: tint.primary },
-    { g: "cyl", r: 0.55, r2: 0.62, h: 1.6, seg: 8, pos: [0, 0, 2.7], rot: [Math.PI / 2, 0, 0], color: tint.dark },
-    { g: "cone", r: 0.55, h: 0.7, seg: 8, pos: [0, 0, 3.7], rot: [Math.PI / 2, 0, 0], color: STEEL_DARK },
-    // Propeller hub and blades. The blades are baked in; the disc spins in the rig.
-    { g: "cyl", r: 0.14, h: 0.3, seg: 6, pos: [0, 0, 4.1], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
-    // Canopy.
-    { g: "box", size: [0.7, 0.42, 1.5], pos: [0, 0.6, 0.4], color: 0x2c3a44 },
-    { g: "box", size: [0.62, 0.3, 0.9], pos: [0, 0.85, 0.3], color: 0x5d7382 },
-    // Main wing, with a little dihedral suggested by the tip blocks.
-    { g: "box", size: [11.2, 0.24, 2.0], pos: [0, -0.1, 0.35], color: tint.primary },
-    { g: "box", size: [11.4, 0.1, 1.4], pos: [0, -0.22, 0.15], color: under },
-    { g: "box", size: [1.6, 0.2, 1.2], pos: [5.2, 0.12, 0.3], rot: [0, 0, 0.16], color: tint.light },
-    { g: "box", size: [1.6, 0.2, 1.2], pos: [-5.2, 0.12, 0.3], rot: [0, 0, -0.16], color: tint.light },
-    // Roundels.
-    { g: "cyl", r: 0.45, h: 0.05, seg: 10, pos: [3.2, 0.04, 0.35], color: tint.light },
-    { g: "cyl", r: 0.45, h: 0.05, seg: 10, pos: [-3.2, 0.04, 0.35], color: tint.light },
-    // Tail.
-    { g: "box", size: [4.0, 0.18, 1.1], pos: [0, 0.15, -3.4], color: tint.primary },
-    { g: "box", size: [0.18, 1.5, 1.4], pos: [0, 0.75, -3.5], color: tint.dark },
-    { g: "box", size: [0.2, 1.0, 0.5], pos: [0, 1.1, -3.9], color: tint.light },
-    // Wing cannons and radiator.
-    { g: "cyl", r: 0.07, h: 1.2, seg: 6, pos: [1.9, -0.12, 1.3], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
-    { g: "cyl", r: 0.07, h: 1.2, seg: 6, pos: [-1.9, -0.12, 1.3], rot: [Math.PI / 2, 0, 0], color: GUNMETAL },
-    { g: "box", size: [1.0, 0.5, 0.9], pos: [0, -0.5, -0.2], color: STEEL_DARK },
-    // Fixed gear, so it reads as a warbird on the strip.
-    { g: "cyl", r: 0.06, h: 0.9, seg: 6, pos: [1.5, -0.6, 0.5], color: GUNMETAL },
-    { g: "cyl", r: 0.06, h: 0.9, seg: 6, pos: [-1.5, -0.6, 0.5], color: GUNMETAL },
-    { g: "cyl", r: 0.3, h: 0.18, seg: 8, pos: [1.5, -1.05, 0.5], rot: [0, 0, Math.PI / 2], color: RUBBER },
-    { g: "cyl", r: 0.3, h: 0.18, seg: 8, pos: [-1.5, -1.05, 0.5], rot: [0, 0, Math.PI / 2], color: RUBBER },
-  ]);
-}
-
 export function propellerGeometry(): THREE.BufferGeometry {
   return build([
     { g: "box", size: [0.16, 3.4, 0.06], pos: [0, 0, 0], color: 0x2a2c26 },
