@@ -1,28 +1,4 @@
-# Thronglets
 
-A colony of little yellow voxel creatures that live, learn and build on their
-own, rendered in three.js. Inspired by the Tamagotchi-like creatures in the
-*Black Mirror* episode "Plaything" — an unaffiliated fan project.
-
-It opens as a naturalist's monograph — printed paper, Garamond, ruled data
-tables, red annotations — because every simulation and AI toy reaches for the
-same two skins, dark glass or a green terminal, and both say *software* rather
-than *place*. You are whoever is keeping the notebook. That is the frame, and
-the colony eventually notices it — see [Being watched](#being-watched).
-
-The island runs 230 units across, with around fourteen hundred trees of four
-kinds, four hundred boulders in fields, thirty ponds, room for fourteen clans
-and up to five hundred and sixty creatures at once. A seed takes about a week
-of colony time to fill the near half of it; the far shores stay empty until
-somebody's grandchildren decide to walk out there.
-
-Nothing about the colony is scripted. Every creature scores its own drives once
-a second and acts on whichever shouts loudest, so where they settle, what they
-build, who they pair off with and whether the colony thrives are all emergent.
-Watch long enough and you'll see a village appear, generations turn over, and
-inherited traits drift across the population.
-
-![day 8 of the second year: 344 alive across fourteen peoples, the age of Settled four-fifths done, and a third of them aware they are being observed](docs/colony.png)
 
 > This repository also holds **[Claudefield](#claudefield)** — an unrelated
 > low-poly combined-arms battle game that happens to share the toolchain. It is
