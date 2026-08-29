@@ -23,6 +23,11 @@
 **In a browser** — nothing to install, nothing to sign in to:
 **[skystrikerr.github.io/project_armafield](https://skystrikerr.github.io/project_armafield/)**
 
+> The site goes live once Pages is switched on for the repository:
+> **Settings → Pages → Build and deployment → Source: GitHub Actions**. That is
+> a one-time click; the `Deploy web version` workflow publishes every push
+> after it.
+
 **As a desktop app** — grab the file for your platform from
 **[Releases → latest](../../releases/tag/latest)** and run it. Every push to
 `main` rebuilds all three on real runners.
