@@ -9,8 +9,9 @@ import {
   tankTurretGeometry,
   wreckGeometry,
 } from "./models";
-import { soldierArmsFor, soldierLegFor, soldierTorsoFor, weaponGeometry, weaponGrip } from "./weaponModels";
+import { soldierArmsFor, soldierLegFor, soldierTorsoFor, viewHandsGeometry, weaponGeometry, weaponGrip } from "./weaponModels";
 import { vehicleById, type VehicleDef } from "./matchConfig";
+import { lerp } from "./random";
 import {
   barrelGeometryFor,
   barrelMount,
@@ -260,6 +261,162 @@ export class SoldierRig {
 
   dispose() {
     (this.marker.material as THREE.Material).dispose();
+  }
+}
+
+/**
+ * The weapon in the player's own hands, in first person.
+ *
+ * The soldier rig is hidden for the player when the camera is at their eyes —
+ * you would be looking at the inside of your own head — which used to hide the
+ * weapon along with it, so the player fought with empty hands. This is a
+ * separate copy of the weapon parented to the camera instead of to a body.
+ *
+ * It lives in the main render pass rather than a second overlay pass, so the
+ * field of view the world is drawn with also applies here. Aiming down the
+ * sights narrows the FOV to zoom, which would blow the weapon up to fill the
+ * screen; pushing it away by exactly the amount the zoom magnifies keeps it
+ * the same size on screen at every FOV.
+ */
+/**
+ * How large the weapon is drawn relative to its true size. The world uses a
+ * wide 72° field so the battlefield reads, and anything held at the camera
+ * under that field is enormous. Games solve this with a second, narrower FOV
+ * for the viewmodel alone; with a single render pass the equivalent is simply
+ * to draw the weapon smaller.
+ */
+const VIEW_SCALE = 0.72;
+
+export class ViewModel {
+  readonly root = new THREE.Group();
+  private hold = new THREE.Group();
+  private weapon: THREE.Mesh;
+  private hands: THREE.Mesh;
+  private weaponId = "";
+  private nation = "";
+  private readonly assets: RigAssets;
+  private handsCache = new Map<string, THREE.BufferGeometry>();
+  /** Recoil offset and its velocity, in metres along the sight line. */
+  private kick = 0;
+  private kickVel = 0;
+  private lastFlash = 0;
+  /** Smoothed 0 (hip) to 1 (sighted), so the weapon rises rather than snaps. */
+  private ads = 0;
+  private sway = 0;
+  /** How far the current weapon's stock sits behind its origin. */
+  private butt = 0.3;
+
+  constructor(assets: RigAssets) {
+    this.assets = assets;
+    // The meshes point their muzzles down +Z, the way a soldier holds them.
+    // The camera looks down -Z, so the whole hold turns to face away from it.
+    this.hold.rotation.y = Math.PI;
+    this.hold.scale.setScalar(VIEW_SCALE);
+    this.weapon = new THREE.Mesh(assets.rifle, assets.material);
+    this.hands = new THREE.Mesh(assets.rifle, assets.material);
+    // Nothing at the camera should cast into the scene it is looking at.
+    for (const m of [this.weapon, this.hands]) {
+      m.castShadow = false;
+      m.receiveShadow = false;
+    }
+    this.hold.add(this.weapon, this.hands);
+    this.root.add(this.hold);
+    this.root.visible = false;
+  }
+
+  private handsFor(nation: string, weaponId: string) {
+    const key = `${nation}:${weaponId}`;
+    let geo = this.handsCache.get(key);
+    if (!geo) {
+      geo = viewHandsGeometry(nation, weaponId);
+      this.handsCache.set(key, geo);
+    }
+    return geo;
+  }
+
+  /**
+   * @param fov       the camera's current vertical FOV, in degrees
+   * @param baseFov   the FOV the poses below were laid out at
+   */
+  update(s: Soldier, nation: string, zoomed: boolean, fov: number, baseFov: number, dt: number, now: number) {
+    this.root.visible = true;
+
+    if (s.weapon !== this.weaponId || nation !== this.nation) {
+      this.weaponId = s.weapon;
+      this.nation = nation;
+      const geo = this.assets.weaponGeometryFor(s.weapon);
+      this.weapon.geometry = geo;
+      this.hands.geometry = this.handsFor(nation, s.weapon);
+      // Weapon meshes are centred on the receiver, so half the length sits
+      // behind the origin — hung straight off the camera that half is behind
+      // the eye, and a rifle reads as a plank sliced by the near plane. Seat
+      // the butt of the stock at the origin instead and let the length run
+      // away from the eye, whatever the weapon: a bazooka and a pistol have
+      // wildly different amounts of themselves behind the grip.
+      geo.computeBoundingBox();
+      this.butt = geo.boundingBox ? -geo.boundingBox.min.z : 0.3;
+    }
+
+    // A shot is visible as the muzzle-flash timer being refreshed. Drive the
+    // kick as a spring so it snaps back rather than sliding.
+    if (s.flash > this.lastFlash) this.kickVel += 2.6;
+    this.lastFlash = s.flash;
+    this.kickVel += (-this.kick * 190 - this.kickVel * 21) * dt;
+    this.kick += this.kickVel * dt;
+
+    const reloading = now < s.reloadUntil;
+    const wantAds = zoomed && !s.sprinting && !reloading;
+    this.ads += ((wantAds ? 1 : 0) - this.ads) * Math.min(1, dt * 13);
+
+    const moving = Math.hypot(s.vel.x, s.vel.z) > 0.5;
+    this.sway += dt * (s.sprinting ? 9 : 6);
+    const bob = moving ? (s.sprinting ? 0.03 : 0.014) : 0.003;
+    const bobX = Math.sin(this.sway) * bob;
+    const bobY = Math.abs(Math.cos(this.sway)) * bob * 0.8;
+
+    // Hip and sighted poses, blended. Sighted brings the weapon to the centre
+    // of the screen and tucks it in; the hip pose holds it low and to the right.
+    const x = lerp(0.185, 0.0, this.ads) + bobX * (1 - this.ads * 0.75);
+    const y = lerp(-0.2, -0.05, this.ads) + bobY * (1 - this.ads * 0.75);
+    const z = lerp(-0.16, -0.12, this.ads) + this.kick * 0.1;
+
+    // Sprinting carries the weapon across the body, muzzle up and out of the
+    // way; reloading drops it out of the sight line.
+    const sprint = s.sprinting ? 1 : 0;
+    const reload = reloading ? 1 : 0;
+    const dip = sprint * 0.1 + reload * 0.13;
+
+    // Keep the on-screen size constant as the FOV narrows for the sights.
+    // Moving the weapon further out is not enough on its own: a rifle is a
+    // metre long, so translating its butt away barely shrinks its muzzle.
+    // Scaling by the same ratio as well makes it a true dolly about the eye,
+    // which projects to exactly the same pixels at any FOV.
+    // Sighted, the eye goes behind the rear sight, so the weapon slides back
+    // along its own axis until most of the stock is behind the near plane and
+    // clipped away. Without this the receiver sits in front of the eye and
+    // fills the bottom of the screen exactly where the target is.
+    const seat = this.butt - this.ads * (this.butt * 0.86);
+    this.weapon.position.z = seat;
+    this.hands.position.z = seat;
+    this.hands.visible = this.ads < 0.6;
+
+    const k = Math.tan((baseFov * Math.PI) / 360) / Math.tan((fov * Math.PI) / 360);
+    this.hold.scale.setScalar(VIEW_SCALE * k);
+    this.root.position.set(x * k, (y - dip) * k, z * k);
+    this.root.rotation.set(
+      -this.kick * 0.5 + sprint * -0.22 + reload * -0.34,
+      lerp(0.085, 0, this.ads) + sprint * 0.5,
+      sprint * 0.55 + reload * 0.2,
+    );
+  }
+
+  hide() {
+    this.root.visible = false;
+  }
+
+  dispose() {
+    for (const g of this.handsCache.values()) g.dispose();
+    this.handsCache.clear();
   }
 }
 

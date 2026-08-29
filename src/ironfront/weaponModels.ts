@@ -318,6 +318,32 @@ export function weaponGrip(weaponId: string): [number, number, number] {
   return [0.06, -0.3, 0.22];
 }
 
+/**
+ * The pair of hands and forearms that hold a weapon in first person. Built to
+ * the same grip offsets `weaponGrip` uses, so a hand lands on the small of the
+ * stock and the other under the forend whatever the weapon's length. Sleeves
+ * take the nation's tunic colour — a British player looks down at battledress,
+ * not at olive drab.
+ */
+export function viewHandsGeometry(nation: string, weaponId: string): THREE.BufferGeometry {
+  const u = uniformFor(nation);
+  const p = profileFor(weaponId);
+  const half = p.body / 2;
+  // Trigger hand sits just behind the receiver's midpoint; the support hand
+  // goes under the barrel, brought in close on a pistol which has neither.
+  const front = p.kind === "pistol" ? half * 0.3 : half + p.barrel * 0.28;
+  const skin = 0xb08256;
+  const parts: Part[] = [
+    // Trigger hand and the forearm running back to the shoulder.
+    { g: "box", size: [0.075, 0.075, 0.1], pos: [0.045, -0.055, -half * 0.1], color: skin },
+    { g: "box", size: [0.095, 0.095, 0.34], pos: [0.075, -0.1, -half * 0.1 - 0.22], color: u.tunic },
+    // Support hand under the forend, forearm angled in from the left.
+    { g: "box", size: [0.075, 0.075, 0.11], pos: [-0.035, -0.055, front], color: skin },
+    { g: "box", size: [0.095, 0.095, 0.32], pos: [-0.09, -0.13, front - 0.22], rot: [0, 0.34, 0], color: u.tunic },
+  ];
+  return build(parts);
+}
+
 /** Every weapon id that has a mesh, for warming the cache up front. */
 export function knownWeaponIds(): string[] {
   return Object.keys(WEAPONS);

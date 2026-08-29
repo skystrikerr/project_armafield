@@ -502,6 +502,8 @@ export type Tank = {
   barrel: number;
   speed: number;
   hp: number;
+  /** Health at full strength. A penetrating hit costs a share of this. */
+  maxHp: number;
   alive: boolean;
   respawnAt: number;
   modules: Record<TankModule, number>;
@@ -554,6 +556,8 @@ export type Plane = {
   throttle: number;
   speed: number;
   hp: number;
+  /** Health at full strength, so damage can be expressed as a share of it. */
+  maxHp: number;
   alive: boolean;
   respawnAt: number;
   ammo: number;
@@ -685,6 +689,7 @@ export function makeTank(
     barrel: 0,
     speed: 0,
     hp: spec.hp,
+    maxHp: spec.hp,
     alive: true,
     respawnAt: 0,
     modules: { engine: 100, tracks: 100, gunner: 100, driver: 100, ammo: 100 },
@@ -729,6 +734,7 @@ export function makePlane(
     throttle: 0,
     speed: 0,
     hp: spec.hp,
+    maxHp: spec.hp,
     alive: true,
     respawnAt: 0,
     ammo: WEAPONS[spec.gun].magazine,

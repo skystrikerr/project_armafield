@@ -18,6 +18,7 @@ import {
   type WeaponId,
 } from "./units";
 import { armorOf } from "./matchConfig";
+import { clamp } from "./random";
 
 export type ProjectileKind = "bullet" | "shell" | "rocket" | "grenade" | "bomb";
 
@@ -395,7 +396,14 @@ export class Battle {
 
     if (target.kind === "plane") {
       this.world.effects.impact(point, normal, "metal");
-      const dmg = p.blast > 0 ? p.damage + p.blastDamage * 0.4 : p.damage;
+      // An airframe is not a soldier: the same round that kills a man outright
+      // punches a hole in aluminium. At full damage a pair of 20 mm hits swatted
+      // anything with wings, bombers included. Cannon and heavy AA still bite;
+      // rifle fire chips, which is what a rifleman shooting at an aeroplane
+      // should amount to. Health is what separates a fighter from a bomber
+      // here, so damage stays absolute rather than a share of the airframe.
+      const heavy = p.blast > 0 || p.penetration >= 25;
+      const dmg = p.damage * (heavy ? 0.42 : 0.16) + (p.blast > 0 ? p.blastDamage * 0.25 : 0);
       this.world.applyDamage(target, dmg, p.ownerId, {
         weapon: p.weapon,
         result: "hit",
@@ -495,9 +503,23 @@ export class Battle {
     // Through the plate. Something inside gets broken.
     const overmatch = Math.min(2.2, pen / effective);
     const module = this.rollModule(part, p);
-    let damage = p.damage * (0.5 + overmatch * 0.4);
-    if (p.blast > 0) damage += p.blastDamage * 0.3;
-    if (module === "ammo" && Math.random() < 0.45 + overmatch * 0.2) damage = 999;
+
+    // A penetrating hit costs a share of the vehicle rather than a flat number
+    // of points, so armour is the thing that decides whether a shell hurts and
+    // health is the thing that decides how many times. With flat damage the
+    // armour model did the job twice over: a light car both failed to stop a
+    // 75 mm and had too few points to survive one, so a single hit deleted it
+    // outright while the same shell needed three on a heavy. Overmatch still
+    // separates a round that barely squeezed through from one that walked in.
+    const share = clamp(0.26 + (overmatch - 1) * 0.13, 0.2, 0.42);
+    let damage = tank.maxHp * share;
+    if (p.blast > 0) damage += tank.maxHp * 0.05;
+
+    // A catastrophic detonation is an event, not a coin flip: the rack has to
+    // have been hit already, and even then it is a long shot.
+    if (module === "ammo" && tank.modules.ammo < 55 && Math.random() < 0.16 + overmatch * 0.07) {
+      damage = tank.maxHp;
+    }
 
     this.world.effects.impact(point, normal, "metal");
     this.world.effects.burst(point, 10, 9, {

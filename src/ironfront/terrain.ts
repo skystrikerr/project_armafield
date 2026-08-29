@@ -731,36 +731,66 @@ export class Terrain {
       }
     }
 
-    // Villages and bases sit on levelled ground.
+    // Villages and bases sit on levelled ground. The pad is the raw landform
+    // at the centre, but never below the waterline: these run after the river
+    // and lake are carved, so a zone whose landform sits in a dip used to be
+    // levelled straight back down into the water with the houses still on it.
+    const pad = (px: number, pz: number) => {
+      const raw = this.rawHeight(px, pz);
+      return river ? Math.max(raw, river.level + 1.4) : raw;
+    };
     for (const zone of ZONES) {
       const d = Math.hypot(x - zone.x, z - zone.z);
       const w = 1 - smoothstep(zone.radius * 0.5, zone.radius * 1.5, d);
-      if (w > 0) h = lerp(h, this.rawHeight(zone.x, zone.z), w * 0.88);
+      if (w > 0) h = lerp(h, pad(zone.x, zone.z), w * 0.88);
     }
     for (const team of ["blue", "red"] as Team[]) {
       const b = BASES[team];
       const d = Math.hypot(x - b.x, z - b.z);
       const w = 1 - smoothstep(30, 90, d);
-      if (w > 0) h = lerp(h, this.rawHeight(b.x, b.z), w * 0.95);
+      if (w > 0) h = lerp(h, pad(b.x, b.z), w * 0.95);
       const a = AIRFIELDS[team];
       const da = Math.hypot(x - a.x, z - a.z);
       const wa = 1 - smoothstep(24, 70, da);
-      if (wa > 0) h = lerp(h, this.rawHeight(a.x, a.z), wa * 0.98);
+      if (wa > 0) h = lerp(h, pad(a.x, a.z), wa * 0.98);
     }
 
-    // Inland ground is held above the waterline. The sea plane spans the whole
-    // map, so anything below sea level anywhere shows as water — without this
-    // a levelled village sitting in a dip appears flooded to the rooftops.
-    const shoreline = this.biome.coast;
-    if (shoreline && this.biome.river) {
-      const inland = x - shoreline.shoreX;
-      if (inland > 4) {
-        const floor = this.biome.river.level + 0.6;
-        h = Math.max(h, lerp(this.biome.river.level - 1, floor, smoothstep(4, 16, inland)));
-      }
+    // Dry land is held above the waterline. The water plane spans the whole
+    // map, so any ground below its level reads as water wherever it is — a
+    // village in a hollow appeared flooded to the rooftops, and a lake looked
+    // like it had a town at the bottom of it. Lift the ground everywhere the
+    // map does not actually mean to be wet; inside the channel, the lake bowl
+    // and below the shoreline the mask leaves the bed alone.
+    if (river) {
+      const wet = this.waterMask(x, z);
+      if (wet < 1) h = lerp(Math.max(h, river.level + 0.6), h, wet);
     }
 
     return h;
+  }
+
+  /**
+   * How much of a water body covers this point: 1 inside the river channel,
+   * the lake bowl or the sea, easing to 0 on dry land. Mirrors the falloffs
+   * the channel and bowl are carved with, so the clamp above releases exactly
+   * where the bed begins rather than leaving a step at the bank.
+   */
+  private waterMask(x: number, z: number) {
+    const river = this.biome.river;
+    if (!river) return 0;
+    let wet = 0;
+    if (river.width > 0) {
+      const d = polylineDistance(x, z, RIVER_NODES);
+      wet = Math.max(wet, 1 - smoothstep(river.width * 0.55, river.width * 2.1, d));
+    }
+    const lake = this.biome.lake;
+    if (lake) {
+      const d = Math.hypot(x - lake.x, z - lake.z);
+      wet = Math.max(wet, 1 - smoothstep(lake.r * 0.72, lake.r * 1.35, d));
+    }
+    const coast = this.biome.coast;
+    if (coast) wet = Math.max(wet, 1 - smoothstep(4, 16, x - coast.shoreX));
+    return wet;
   }
 
   /** Height of the road surface itself: the raw ground, smoothed along the run. */

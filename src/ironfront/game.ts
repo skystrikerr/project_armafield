@@ -28,7 +28,7 @@ import {
 import { Effects } from "./effects";
 import { Audio } from "./audio";
 import { Battle, muzzleOf, tankMuzzle, type DamageInfo } from "./combat";
-import { PlaneRig, RigAssets, SoldierRig, TankRig } from "./rigs";
+import { PlaneRig, RigAssets, SoldierRig, TankRig, ViewModel } from "./rigs";
 import {
   ballisticPitch,
   fireCoax,
@@ -204,6 +204,8 @@ export class Ironfront {
   private soldierRigs = new Map<number, SoldierRig>();
   private tankRigs = new Map<number, TankRig>();
   private planeRigs = new Map<number, PlaneRig>();
+  /** The weapon in the player's own hands, hung off the camera. */
+  private viewModel = new ViewModel(this.assets);
 
   private zones: ZoneState[] = [];
   private banners: THREE.Mesh[] = [];
@@ -296,6 +298,10 @@ export class Ironfront {
     this.renderer.setClearColor(biome.horizon);
 
     this.camera = new THREE.PerspectiveCamera(70, 1, 0.2, 2600);
+    // A camera renders its children only when it is part of the scene graph
+    // itself, and the first-person weapon hangs off the camera.
+    this.camera.add(this.viewModel.root);
+    this.scene.add(this.camera);
 
     // Enough haze for depth, but not so much that the gunner's sight goes blind
     // at 600 m — long shots are the point of having one.
@@ -1145,6 +1151,7 @@ export class Ironfront {
     document.removeEventListener("pointerlockchange", this.onPointerLock);
     window.removeEventListener("blur", this.onBlur);
     if (document.pointerLockElement === this.canvas) document.exitPointerLock();
+    this.viewModel.dispose();
     for (const rig of this.soldierRigs.values()) rig.dispose();
     for (const rig of this.tankRigs.values()) rig.dispose();
     for (const rig of this.planeRigs.values()) rig.dispose();
@@ -2361,6 +2368,24 @@ export class Ironfront {
         (this.canvas.clientHeight || window.innerHeight) * Math.min(window.devicePixelRatio, 2),
         this.camera.fov,
       );
+    }
+
+    // The weapon in the player's own hands. It rides the camera, so it is
+    // updated here where the FOV it has to compensate for is already known.
+    // Only infantry in first person: a tank crewman is not holding a rifle,
+    // and in third person the soldier rig is drawn with its own weapon.
+    if (this.mode === "infantry" && !this.thirdPerson && this.player.alive && this.phase === "playing") {
+      this.viewModel.update(
+        this.player,
+        nationOfTeam(this.player.team),
+        this.zoomed,
+        this.camera.fov,
+        72,
+        dt,
+        this.now,
+      );
+    } else {
+      this.viewModel.hide();
     }
 
     this.measureAim();
