@@ -1,4 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap');
+/* Bundled rather than pulled from Google Fonts: the desktop build has to run
+   with no network at all, and a remote @import would leave it waiting on a
+   request that can never resolve. Latin subset only — the UI is English.
+   JetBrains Mono, SIL Open Font License 1.1, see src/fonts/OFL.txt. */
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("./fonts/jetbrains-mono-latin.woff2") format("woff2");
+}
 
 @tailwind base;
 @tailwind components;
@@ -9,6 +19,6 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  background: #0a1030;
+  background: #0d1117;
   overscroll-behavior: none;
 }

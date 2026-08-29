@@ -3,16 +3,41 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <meta name="theme-color" content="#0a1030" />
+    <meta name="theme-color" content="#0d1117" />
     <meta
       name="description"
-      content="Thronglets — a colony of voxel creatures that live, learn and build on their own."
+      content="Claudefield — a low-poly combined-arms battle: infantry, tanks and aircraft over three capture points."
     />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230a1030'/%3E%3Crect x='3' y='2' width='10' height='9' fill='%23f6cf5a'/%3E%3Crect x='1' y='3' width='2' height='7' fill='%23f6cf5a'/%3E%3Crect x='13' y='3' width='2' height='7' fill='%23f6cf5a'/%3E%3Crect x='5' y='5' width='2' height='3' fill='%23fff'/%3E%3Crect x='9' y='5' width='2' height='3' fill='%23fff'/%3E%3Crect x='5' y='6' width='1' height='1' fill='%23222'/%3E%3Crect x='10' y='6' width='1' height='1' fill='%23222'/%3E%3Crect x='4' y='11' width='8' height='3' fill='%2374bcd8'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%230d1117'/%3E%3Crect x='2' y='9' width='11' height='3' fill='%234a6b8a'/%3E%3Crect x='4' y='6' width='6' height='3' fill='%237d9ab5'/%3E%3Crect x='9' y='7' width='6' height='1' fill='%233a3d3f'/%3E%3Crect x='2' y='12' width='11' height='2' fill='%232b2b2b'/%3E%3C/svg%3E"
     />
-    <title>Thronglets</title>
+    <title>Claudefield</title>
+
+    <!-- Link preview for X, Discord, Slack and the rest. og:image has to be an
+         absolute URL — a relative one is silently dropped by every scraper. -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Claudefield" />
+    <meta property="og:title" content="Claudefield — low-poly WWII combined arms" />
+    <meta
+      property="og:description"
+      content="Infantry, armour and aircraft over three capture points. 11 maps, 71 vehicles, 78 weapons, five nations — running in a browser tab."
+    />
+    <meta property="og:url" content="https://skystrikerr.github.io/project_armafield/" />
+    <meta property="og:image" content="https://skystrikerr.github.io/project_armafield/social-preview.png" />
+    <meta property="og:image:width" content="1280" />
+    <meta property="og:image:height" content="640" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Claudefield — low-poly WWII combined arms" />
+    <meta
+      name="twitter:description"
+      content="Infantry, armour and aircraft over three capture points. 11 maps, 71 vehicles, 78 weapons, five nations — running in a browser tab."
+    />
+    <meta name="twitter:image" content="https://skystrikerr.github.io/project_armafield/social-preview.png" />
+    <style>
+      html, body, #root { height: 100%; margin: 0; background: #0d1117; overscroll-behavior: none; }
+      canvas { display: block; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

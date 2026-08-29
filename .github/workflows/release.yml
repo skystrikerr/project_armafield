@@ -1,0 +1,66 @@
+name: Build downloads
+
+# One portable build per desktop platform, published to a release anyone can
+# download without installing anything. Each OS is built on its own runner:
+# electron-builder's Windows target needs rcedit and the macOS target needs
+# hdiutil, neither of which cross-compiles.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write # to publish the "latest" release
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            script: dist:win
+            artifact: release/Claudefield-*-windows.exe
+            name: windows
+          - os: ubuntu-latest
+            script: dist:linux
+            artifact: release/Claudefield-*-linux.AppImage
+            name: linux
+          - os: macos-latest
+            script: dist:mac
+            artifact: release/Claudefield-*-mac-*.dmg
+            name: mac
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build the desktop app
+        run: npm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Claudefield-${{ matrix.name }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+      - name: Publish to the "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Claudefield — latest build
+          body: >
+            Rebuilt automatically from the tip of `main`. Download the file for
+            your platform and run it — nothing to install. Windows: the .exe is
+            unsigned, so SmartScreen shows a warning; choose "More info" then
+            "Run anyway". macOS: right-click the app and choose Open the first
+            time. Prefer not to download anything? Play in the browser:
+            https://skystrikerr.github.io/project_armafield/
+          make_latest: true
+          files: ${{ matrix.artifact }}

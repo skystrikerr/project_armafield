@@ -1,9 +1,9 @@
 {
-  "name": "projectblackmirror",
+  "name": "claudefield",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "Thronglets \u2014 an autonomous three.js voxel colony",
+  "description": "Claudefield \u2014 a low-poly WWII combined-arms battle in the browser: infantry, tanks and aircraft over three capture points.",
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
@@ -11,16 +11,10 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "electron": "electron .",
-    "electron:dev": "THRONGLETS_DEV_URL=http://localhost:5173 electron .",
-    "electron:claudefield": "electron electron/claudefield-main.cjs",
-    "electron:claudefield:dev": "CLAUDEFIELD_DEV_URL=http://localhost:5173/ironfront.html electron electron/claudefield-main.cjs",
-    "dist": "npm run build && electron-builder --publish=never",
+    "electron:dev": "CLAUDEFIELD_DEV_URL=http://localhost:5173 electron .",
     "dist:win": "npm run build && electron-builder --win portable --publish=never",
-    "dist:claudefield:win": "npm run build && electron-builder --win portable --publish=never --config electron-builder.claudefield.json",
     "dist:linux": "npm run build && electron-builder --linux AppImage --publish=never",
-    "dist:claudefield:linux": "npm run build && electron-builder --linux AppImage --publish=never --config electron-builder.claudefield.json",
-    "dist:mac": "npm run build && electron-builder --mac --publish=never",
-    "dist:claudefield:mac": "npm run build && electron-builder --mac --publish=never --config electron-builder.claudefield.json"
+    "dist:mac": "npm run build && electron-builder --mac dmg --publish=never"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -45,8 +39,8 @@
     "vite": "^5.4.19"
   },
   "build": {
-    "appId": "com.skystrikerr.thronglets",
-    "productName": "Thronglets",
+    "appId": "com.skystrikerr.claudefield",
+    "productName": "Claudefield",
     "asar": true,
     "directories": {
       "output": "release"
@@ -66,7 +60,7 @@
           ]
         }
       ],
-      "artifactName": "Thronglets-${version}-win.${ext}"
+      "artifactName": "Claudefield-${version}-windows.${ext}"
     },
     "linux": {
       "target": [
@@ -78,7 +72,7 @@
         }
       ],
       "category": "Game",
-      "artifactName": "Thronglets-${version}-linux.${ext}"
+      "artifactName": "Claudefield-${version}-linux.${ext}"
     },
     "mac": {
       "target": [
@@ -91,7 +85,14 @@
         }
       ],
       "category": "public.app-category.games",
-      "artifactName": "Thronglets-${version}-mac.${ext}"
+      "artifactName": "Claudefield-${version}-mac-${arch}.${ext}"
     }
+  },
+  "license": "MIT",
+  "author": "skystrikerr",
+  "homepage": "https://skystrikerr.github.io/project_armafield/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/skystrikerr/project_armafield.git"
   }
 }

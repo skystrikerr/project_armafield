@@ -1,34 +1,28 @@
-// The desktop shell. Thronglets is a self-contained client-side sim — no
-// server, no network calls except the optional oracle the player wires up
-// themselves — so this window just loads the built page off disk and gets
-// out of the way. CommonJS (.cjs) because the rest of the project is ESM
-// ("type": "module" in package.json) and Electron's main process is loaded
-// directly by Node without going through Vite.
+// The desktop shell for Claudefield: a plain Electron window that loads the
+// built page off disk. Nothing game-specific lives here — the whole game is
+// the web build in dist/, so the desktop app and the browser version run
+// exactly the same code.
 const { app, BrowserWindow, Menu, shell } = require("electron");
 const path = require("node:path");
 
-const DEV_SERVER_URL = process.env.THRONGLETS_DEV_URL;
+const DEV_SERVER_URL = process.env.CLAUDEFIELD_DEV_URL;
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1440,
+    width: 1600,
     height: 900,
-    minWidth: 900,
-    minHeight: 600,
-    backgroundColor: "#0a1030", // matches the sim's night sky — no white flash on load
+    minWidth: 1024,
+    minHeight: 640,
+    backgroundColor: "#0d1117", // matches the deploy screen — no white flash on load
     autoHideMenuBar: true,
-    title: "Thronglets",
+    title: "Claudefield",
     webPreferences: {
-      // No preload, no IPC, no Node integration in the page: the renderer
-      // is an ordinary web page and never needs to touch the filesystem.
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
     },
   });
 
-  // Anything the page tries to open in a new tab (the oracle's "get a key"
-  // links) goes to the system browser instead of a second app window.
   win.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
     return { action: "deny" };
