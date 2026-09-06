@@ -21,14 +21,17 @@ jobs:
           - os: windows-latest
             script: dist:win
             artifact: release/Claudefield-*-windows.exe
+            stale: '^Claudefield-.*-windows\.exe$'
             name: windows
           - os: ubuntu-latest
             script: dist:linux
             artifact: release/Claudefield-*-linux.AppImage
+            stale: '^Claudefield-.*-linux\.AppImage$'
             name: linux
           - os: macos-latest
             script: dist:mac
             artifact: release/Claudefield-*-mac-*.dmg
+            stale: '^Claudefield-.*-mac-.*\.dmg$'
             name: mac
     runs-on: ${{ matrix.os }}
     steps:
@@ -49,6 +52,34 @@ jobs:
           name: Claudefield-${{ matrix.name }}
           path: ${{ matrix.artifact }}
           if-no-files-found: error
+
+      # The "latest" release always holds today's main, so anything that renames
+      # a build — a version bump, most often — would otherwise leave the old
+      # file sitting beside the new one for someone to download by mistake.
+      # Each job clears only its own platform's leftovers and never touches a
+      # name it is about to upload, so the three jobs running in parallel
+      # cannot delete each other's work.
+      - name: Clear this platform's previous build off the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          shopt -s nullglob
+          built=(${{ matrix.artifact }})
+          if [ ${#built[@]} -eq 0 ]; then
+            echo "nothing built, nothing to clear"
+            exit 0
+          fi
+          keeping=" "
+          for f in "${built[@]}"; do keeping="$keeping$(basename "$f") "; done
+          echo "uploading:$keeping"
+          existing=$(gh release view latest --json assets --jq '.assets[].name' 2>/dev/null || true)
+          for name in $existing; do
+            if ! echo "$name" | grep -qE '${{ matrix.stale }}'; then continue; fi
+            case "$keeping" in *" $name "*) continue ;; esac
+            echo "removing stale asset $name"
+            gh release delete-asset latest "$name" -y || true
+          done
 
       - name: Publish to the "latest" release
         uses: softprops/action-gh-release@v2
