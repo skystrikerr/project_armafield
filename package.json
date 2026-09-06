@@ -1,7 +1,7 @@
 {
   "name": "claudefield",
   "private": true,
-  "version": "1.0.0",
+  "version": "0.0.1",
   "type": "module",
   "description": "Claudefield \u2014 a low-poly WWII combined-arms battle in the browser: infantry, tanks and aircraft over three capture points.",
   "main": "electron/main.cjs",
