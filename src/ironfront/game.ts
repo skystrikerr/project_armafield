@@ -1983,8 +1983,8 @@ export class Ironfront {
     this.tickets[target.team] = Math.max(0, this.tickets[target.team] - cost);
 
     if (target.kind === "tank") {
-      this.effects.explosion(this.tmpVec.copy(target.pos).setY(target.pos.y + 1.4), 9);
-      this.audio.explosion(target.pos.distanceTo(this.camera.position), 1.4);
+      this.effects.vehicleExplosion(this.tmpVec.copy(target.pos).setY(target.pos.y + 1.2), 1.15);
+      this.audio.explosion(target.pos.distanceTo(this.camera.position), 1.6);
       target.speed = 0;
       if (target.driverId !== null && target.driverId === this.player.id) this.leaveVehicleOnDeath();
       target.driverId = null;
@@ -2033,8 +2033,8 @@ export class Ironfront {
     if (!p.alive) return;
     p.alive = false;
     p.hp = 0;
-    this.effects.explosion(p.pos, 14);
-    this.audio.explosion(p.pos.distanceTo(this.camera.position), 1.6);
+    this.effects.vehicleExplosion(p.pos, 1.35);
+    this.audio.explosion(p.pos.distanceTo(this.camera.position), 1.7);
     this.tickets[p.team] = Math.max(0, this.tickets[p.team] - 8);
     p.respawnAt = this.now + 32;
     const attacker = this.units.find((u) => u.id === attackerId);
@@ -2203,13 +2203,29 @@ export class Ironfront {
 
   private updateAmbience(dt: number) {
     this.smokeTimer -= dt;
-    if (this.smokeTimer <= 0) {
-      this.smokeTimer = 0.12;
-      for (const t of this.tanks) {
-        if (t.alive) continue;
-        if (t.pos.distanceTo(this.camera.position) > 420) continue;
+    if (this.smokeTimer > 0) return;
+    this.smokeTimer = 0.12;
+    for (const t of this.tanks) {
+      if (t.pos.distanceTo(this.camera.position) > 420) continue;
+      if (!t.alive) {
         this.effects.wreckSmoke(this.tmpVec.copy(t.pos).setY(t.pos.y + 1.8));
+        continue;
       }
+      // A hurt vehicle shows it. Below half health it trails smoke, and by a
+      // quarter it is burning — so you can read how much fight is left in a
+      // tank from across the field, the same way its crew would, without a
+      // health bar hanging over the battlefield.
+      const hurt = 1 - t.hp / Math.max(1, t.maxHp);
+      if (hurt < 0.5) continue;
+      const severity = clamp((hurt - 0.5) / 0.45, 0, 1);
+      if (Math.random() > 0.35 + severity * 0.65) continue;
+      this.effects.vehicleDamage(this.tmpVec.copy(t.pos).setY(t.pos.y + 1.5), severity);
+    }
+    for (const p of this.planes) {
+      if (!p.alive || p.pos.distanceTo(this.camera.position) > 520) continue;
+      const hurt = 1 - p.hp / Math.max(1, p.maxHp);
+      if (hurt < 0.5) continue;
+      this.effects.vehicleDamage(this.tmpVec.copy(p.pos), clamp((hurt - 0.5) / 0.45, 0, 1));
     }
   }
 

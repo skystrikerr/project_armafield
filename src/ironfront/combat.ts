@@ -88,6 +88,17 @@ const SOLDIER_BOX = {
 };
 
 const _dir = new THREE.Vector3();
+/**
+ * How much a round throws up when it lands, on a scale where a rifle bullet is
+ * about 1. Calibre is not modelled directly anywhere, so penetration stands in
+ * for it — it tracks shell size closely enough — with blast folded in for
+ * anything explosive.
+ */
+function impactEnergy(p: Projectile): number {
+  return clamp(0.8 + p.penetration * 0.022 + p.blast * 0.5, 0.6, 6);
+}
+
+const _ric = new THREE.Vector3();
 const _tmp = new THREE.Vector3();
 const _tmp2 = new THREE.Vector3();
 const _seg = new THREE.Vector3();
@@ -148,7 +159,10 @@ export class Battle {
       life: opts.kind === "grenade" ? 3.4 : opts.kind === "bullet" ? 3 : 12,
       fuse: opts.kind === "grenade" ? 3.4 : 0,
       tracerColor: spec.tracer,
-      showTracer: opts.kind !== "grenade" && opts.kind !== "bomb" && this.tracerCounter++ % 2 === 0,
+      // Roughly one round in three carries a tracer. Every second round read
+      // as a solid rope of light; a belt is loaded a few ball to one tracer,
+      // and the gaps are what make the burst look like separate rounds.
+      showTracer: opts.kind !== "grenade" && opts.kind !== "bomb" && this.tracerCounter++ % 3 === 0,
       travelled: 0,
       dead: false,
     };
@@ -210,8 +224,12 @@ export class Battle {
         continue;
       }
       if (p.showTracer) {
-        const len = p.kind === "bullet" ? 6 : p.kind === "shell" ? 4 : 2.5;
-        _tmp.copy(p.vel).normalize().multiplyScalar(-len).add(p.pos);
+        // The streak is the distance the round covered this frame, give or
+        // take: a rifle bullet leaves a long thin line and a slow rocket a
+        // short stub, which is the difference you actually see downrange.
+        const speed = p.vel.length();
+        const len = clamp(speed * 0.02, 1.6, p.kind === "bullet" ? 9 : 5);
+        _tmp.copy(p.vel).multiplyScalar(-len / Math.max(1e-3, speed)).add(p.pos);
         effects.tracer(_tmp, p.pos, p.tracerColor);
       }
     }
@@ -456,7 +474,13 @@ export class Battle {
     const dist = point.distanceTo(this.world.listener);
 
     if (ricochet) {
-      this.world.effects.impact(point, normal, "metal");
+      const e = impactEnergy(p);
+      this.world.effects.impact(point, normal, "metal", e);
+      // Show where the round actually went. A shot skating off a sloped
+      // glacis is a different event from one stopping dead on it, and the
+      // spray along the deflection is what tells the two apart at a distance.
+      _ric.copy(dir).reflect(normal);
+      this.world.effects.ricochetSpray(point, _ric, e);
       this.world.audio.ricochet(dist);
       this.world.notify(p.ownerId, tank.id, {
         weapon: p.weapon,
@@ -474,7 +498,13 @@ export class Battle {
     }
 
     if (pen < effective) {
-      this.world.effects.impact(point, normal, "metal");
+      // Stopped by the plate. Small arms against armour are the common case —
+      // a rifleman shooting at a tank should see his rounds spark off and
+      // leave nothing but paint chipped, and should not be quietly whittling
+      // the vehicle down behind the scenes. No damage is applied here at all
+      // unless the round carried explosive.
+      this.world.effects.impact(point, normal, "metal", impactEnergy(p));
+      this.world.effects.bulletHole(point, normal, "metal");
       this.world.audio.ricochet(dist);
       // HE still rattles the crew even when the plate holds.
       if (p.blast > 0) {
@@ -521,7 +551,7 @@ export class Battle {
       damage = tank.maxHp;
     }
 
-    this.world.effects.impact(point, normal, "metal");
+    this.world.effects.impact(point, normal, "metal", impactEnergy(p));
     this.world.effects.burst(point, 10, 9, {
       color: 0xffcf7a,
       size: 0.2,
@@ -562,7 +592,8 @@ export class Battle {
       this.detonate(p, point);
       return;
     }
-    this.world.effects.impact(point, normal, surface);
+    this.world.effects.impact(point, normal, surface, impactEnergy(p));
+    this.world.effects.bulletHole(point, normal, surface);
     const d = point.distanceTo(this.world.listener);
     if (d < 90 && Math.random() < 0.3) this.world.audio.ricochet(d);
   }

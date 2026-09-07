@@ -37,6 +37,12 @@ const particleFragment = /* glsl */ `
   }
 `;
 
+/** How much of its colour a tracer keeps at the tail end of the streak. */
+const TRACER_TAIL = 0.08;
+
+/** The materials a round can strike, which decide what it throws up. */
+export type ImpactKind = "dirt" | "metal" | "stone" | "flesh";
+
 export type ParticleOpts = {
   color: number;
   /** Diameter in world units, not pixels. */
@@ -80,6 +86,9 @@ export class Effects {
   private dummy = new THREE.Object3D();
   private tmpColor = new THREE.Color();
 
+  /** Secondary blasts queued to go off a moment after a vehicle brews up. */
+  private pending: { at: number; pos: THREE.Vector3; scale: number }[] = [];
+
   /** Point lights recycled for muzzle flashes and explosions. */
   private lights: { light: THREE.PointLight; life: number; maxLife: number; peak: number }[] = [];
 
@@ -107,7 +116,13 @@ export class Effects {
     tgeo.setAttribute("color", new THREE.BufferAttribute(this.tracerCol, 3));
     this.tracers = new THREE.LineSegments(
       tgeo,
-      new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, depthWrite: false }),
+      new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
     );
     this.tracers.frustumCulled = false;
     this.group.add(this.tracers);
@@ -117,9 +132,9 @@ export class Effects {
     this.decals = new THREE.InstancedMesh(
       decalGeo,
       new THREE.MeshBasicMaterial({
-        color: 0x1c1712,
+        color: 0xffffff,
         transparent: true,
-        opacity: 0.55,
+        opacity: 0.62,
         depthWrite: false,
         polygonOffset: true,
         polygonOffsetFactor: -3,
@@ -127,6 +142,10 @@ export class Effects {
       MAX_DECALS,
     );
     this.decals.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // Per-instance colour lets one pool carry both the small brown puncture a
+    // rifle round leaves and the wide black scorch a shell leaves, instead of
+    // needing a second mesh and a second draw call for each.
+    this.decals.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(MAX_DECALS * 3).fill(1), 3);
     this.decals.frustumCulled = false;
     this.decals.count = 0;
     this.group.add(this.decals);
@@ -208,28 +227,117 @@ export class Effects {
     }
   }
 
-  impact(pos: THREE.Vector3, normal: THREE.Vector3, kind: "dirt" | "metal" | "stone" | "flesh") {
-    const palette = {
-      dirt: { spark: 0x8a7350, smoke: 0x8b7f68, count: 12 },
-      metal: { spark: 0xffe0a0, smoke: 0x6f6a60, count: 14 },
-      stone: { spark: 0xc9c3b4, smoke: 0x9a958a, count: 10 },
-      flesh: { spark: 0x8e2d2a, smoke: 0x7a2320, count: 8 },
-    }[kind];
-    this.burst(pos, palette.count, 7, {
-      color: palette.spark,
-      size: 0.16,
-      life: 0.45,
+  /**
+   * What a round striking a surface throws up. Each material behaves like
+   * itself rather than being one recoloured puff: soil lofts a slow dust cloud
+   * and a few heavy clods, stone shatters into pale chips that bounce, steel
+   * throws hot sparks that arc and die, and flesh gives a fine mist and no
+   * debris at all.
+   *
+   * `energy` is roughly "how big was the round" — 1 for a rifle bullet, up
+   * towards 6 for a tank shell striking dirt — and scales the whole thing so a
+   * 122 mm hit does not look like a pistol shot.
+   */
+  impact(pos: THREE.Vector3, normal: THREE.Vector3, kind: ImpactKind, energy = 1) {
+    const e = Math.max(0.35, energy);
+    if (kind === "flesh") {
+      this.burst(pos, 9, 3.4, {
+        color: 0x7e2422,
+        size: 0.13,
+        life: 0.4,
+        drag: 0.6,
+        gravity: 11,
+      }, normal, 0.7);
+      this.burst(pos, 4, 1.4, {
+        color: 0x5c1a19,
+        size: 0.3,
+        life: 0.5,
+        drag: 0.8,
+        gravity: 1.5,
+        growth: 2,
+        fade: 0.55,
+      }, normal, 0.9);
+      return;
+    }
+
+    if (kind === "metal") {
+      // Sparks are struck metal, not fire: they fly fast, fall hard and are
+      // gone quickly, so a burst of them reads as a strike rather than a hit.
+      this.burst(pos, Math.round(10 + 8 * e), 11 * Math.sqrt(e), {
+        color: 0xffd98a,
+        size: 0.1,
+        life: 0.34,
+        drag: 0.35,
+        gravity: 22,
+      }, normal, 0.75);
+      this.burst(pos, 3, 2.2, {
+        color: 0x6f6a60,
+        size: 0.4 * e,
+        life: 0.55,
+        drag: 0.5,
+        gravity: -0.5,
+        growth: 2.6,
+        fade: 0.5,
+      }, normal, 0.8);
+      this.flash(pos, 0xffc070, 5 * e, 0.05);
+      return;
+    }
+
+    if (kind === "stone") {
+      this.burst(pos, Math.round(8 + 6 * e), 9 * Math.sqrt(e), {
+        color: 0xd8d2c4,
+        size: 0.12 * e,
+        life: 0.6,
+        drag: 0.3,
+        gravity: 17,
+      }, normal, 0.6);
+      this.burst(pos, Math.round(4 + 3 * e), 2.6, {
+        color: 0xa8a294,
+        size: 0.5 * e,
+        life: 0.9,
+        drag: 0.45,
+        gravity: -0.7,
+        growth: 2.8,
+        fade: 0.6,
+      }, normal, 0.85);
+      return;
+    }
+
+    // Dirt. The dust is the loud part — it hangs, spreads and drifts up — and
+    // the clods are what sell the scale of whatever made it.
+    this.burst(pos, Math.round(3 + 5 * e), 1.6 + e, {
+      color: 0x9c8e72,
+      size: 0.26 * e,
+      life: 0.7 + e * 0.4,
       drag: 0.5,
-      gravity: 14,
-    }, normal, 0.55);
-    this.burst(pos, 4, 2.4, {
-      color: palette.smoke,
-      size: 0.55,
-      life: 0.7,
-      drag: 0.4,
-      gravity: -0.6,
-      growth: 2.4,
-    }, normal, 0.7);
+      gravity: -0.55,
+      growth: 3.2,
+      fade: 0.5,
+    }, normal, 0.85);
+    this.burst(pos, Math.round(5 + 5 * e), 7 * Math.sqrt(e), {
+      color: 0x6d5b3f,
+      size: 0.13 * e,
+      life: 0.75,
+      drag: 0.25,
+      gravity: 19,
+    }, normal, 0.5);
+  }
+
+  /**
+   * The spray thrown off when a shell fails to bite and skates away. Aimed
+   * along where the round went, so a bounce is legible as a bounce from
+   * outside the tank as well as inside it.
+   */
+  ricochetSpray(pos: THREE.Vector3, along: THREE.Vector3, energy = 1) {
+    const e = Math.max(0.5, energy);
+    this.burst(pos, Math.round(12 + 10 * e), 16 * Math.sqrt(e), {
+      color: 0xffe6a8,
+      size: 0.12,
+      life: 0.42,
+      drag: 0.2,
+      gravity: 16,
+    }, along, 0.25);
+    this.flash(pos, 0xffd28a, 8 * e, 0.07);
   }
 
   explosion(pos: THREE.Vector3, radius: number) {
@@ -259,6 +367,83 @@ export class Effects {
     });
     this.flash(pos, 0xffa040, 60 * s, 0.35);
     this.scar(pos, radius * 0.55);
+  }
+
+  /**
+   * A vehicle coming apart. Bigger and longer-lived than a shell burst: a
+   * white-hot core, a fireball that climbs, the black column that follows it,
+   * and debris thrown clear. `cookOff` queues the secondary bangs of ammunition
+   * going up over the next few seconds, which is what makes a knocked-out tank
+   * read as a knocked-out tank rather than a large grenade.
+   */
+  vehicleExplosion(pos: THREE.Vector3, scale = 1) {
+    const s = scale;
+    this.burst(pos, Math.round(14 * s) + 8, 9 * s, {
+      color: 0xfff0c0,
+      size: 2.2 * s,
+      life: 0.22,
+      drag: 0.3,
+      growth: 2.6,
+    });
+    this.burst(pos, Math.round(26 * s) + 14, 15 * s, {
+      color: 0xff9a3c,
+      size: 2.6 * s,
+      life: 0.75,
+      drag: 0.28,
+      gravity: -3.2,
+      growth: 3.0,
+    });
+    this.burst(pos, Math.round(30 * s) + 18, 8 * s, {
+      color: 0x2b2724,
+      size: 3.2 * s,
+      life: 3.6,
+      drag: 0.32,
+      gravity: -2.2,
+      growth: 4.2,
+      fade: 0.65,
+    });
+    // Debris: heavy, fast, and thrown flat as well as up.
+    this.burst(pos, Math.round(16 * s) + 10, 24 * s, {
+      color: 0x4a423a,
+      size: 0.3 * s,
+      life: 1.6,
+      drag: 0.12,
+      gravity: 26,
+    });
+    this.flash(pos, 0xffa848, 110 * s, 0.5);
+    this.scar(_p.copy(pos).setY(pos.y - 1.4), 5.5 * s);
+    for (let i = 0; i < 3; i++) {
+      this.pending.push({ at: 0.5 + Math.random() * 2.6, pos: pos.clone(), scale: s });
+    }
+  }
+
+  /**
+   * Smoke and flame off a vehicle that is hurt but still running. Called
+   * repeatedly while damaged; `severity` from 0 (a wisp) to 1 (burning), so
+   * how badly a tank is hit is visible from outside it without a health bar
+   * floating over the battlefield.
+   */
+  vehicleDamage(pos: THREE.Vector3, severity: number) {
+    _p.copy(pos).add(_v.set((Math.random() - 0.5) * 1.2, 0, (Math.random() - 0.5) * 1.2));
+    this.spawn(_p, _v.set((Math.random() - 0.5) * 0.6, 3.4 + severity * 3, (Math.random() - 0.5) * 0.6), {
+      color: severity > 0.62 ? 0x2a2724 : 0x6b675f,
+      size: 0.7 + severity * 0.9,
+      life: 1.6 + severity * 1.4,
+      drag: 0.2,
+      gravity: -1.5,
+      growth: 3.0,
+      fade: 0.3 + severity * 0.35,
+    });
+    if (severity > 0.62 && Math.random() < 0.4) {
+      this.spawn(_p, _v.set((Math.random() - 0.5) * 0.5, 2.4, (Math.random() - 0.5) * 0.5), {
+        color: 0xff8a30,
+        size: 0.55,
+        life: 0.35,
+        drag: 0.4,
+        gravity: -3,
+        growth: 1.6,
+      });
+    }
   }
 
   /** Oily column left rising off a wreck. Called every so often, not per frame. */
@@ -303,21 +488,54 @@ export class Effects {
     slot.light.visible = true;
   }
 
-  /** A scorch mark on the ground. `y` is expected to already sit on the terrain. */
-  scar(pos: THREE.Vector3, radius: number) {
+  /**
+   * Lay a flat mark on a surface, lying in the plane the normal describes so
+   * it sits flush on a hillside or a wall rather than only on level ground.
+   */
+  private placeDecal(pos: THREE.Vector3, normal: THREE.Vector3, radius: number, color: number) {
     const i = this.decalCursor;
     this.decalCursor = (this.decalCursor + 1) % MAX_DECALS;
     this.decalCount = Math.min(MAX_DECALS, this.decalCount + 1);
-    this.dummy.position.set(pos.x, pos.y + 0.06, pos.z);
-    this.dummy.rotation.set(0, Math.random() * Math.PI, 0);
+    // The disc is built facing +Y, so turning +Y onto the surface normal lays
+    // it flat against whatever was hit; the spin after is just so repeats of
+    // the same mark do not tile visibly.
+    this.dummy.quaternion.setFromUnitVectors(_up, normal);
+    this.dummy.position.copy(pos).addScaledVector(normal, 0.05);
+    this.dummy.rotateY(Math.random() * Math.PI);
     this.dummy.scale.setScalar(radius * (0.8 + Math.random() * 0.5));
     this.dummy.updateMatrix();
     this.decals.setMatrixAt(i, this.dummy.matrix);
+    this.decals.setColorAt(i, this.tmpColor.setHex(color).convertSRGBToLinear());
     this.decals.count = this.decalCount;
     this.decals.instanceMatrix.needsUpdate = true;
+    if (this.decals.instanceColor) this.decals.instanceColor.needsUpdate = true;
   }
 
-  /** Queue a tracer segment for this frame. Cleared every update. */
+  /** A scorch mark on the ground. `y` is expected to already sit on the terrain. */
+  scar(pos: THREE.Vector3, radius: number) {
+    this.placeDecal(_p.copy(pos).setY(pos.y + 0.01), _up, radius, 0x1c1712);
+  }
+
+  /**
+   * The mark a single round leaves behind. Small, and tinted to the surface —
+   * a puncture in soil reads as turned earth, one in stone as pale chipping.
+   * Without these a firefight leaves no trace of itself once the dust settles.
+   */
+  bulletHole(pos: THREE.Vector3, normal: THREE.Vector3, kind: ImpactKind) {
+    if (kind === "flesh") return;
+    const color = kind === "dirt" ? 0x2e2419 : kind === "stone" ? 0x55504a : 0x1a1a1c;
+    this.placeDecal(pos, normal, kind === "metal" ? 0.09 : 0.15, color);
+  }
+
+  /**
+   * Queue a tracer segment for this frame. Cleared every update.
+   *
+   * `from` is the tail and `to` the round itself. The tail vertex is dimmed
+   * towards black so the streak fades out behind the round instead of being a
+   * uniform stick of light with a hard end — the line is additively blended,
+   * so a dark vertex simply contributes nothing and the taper costs no extra
+   * geometry.
+   */
   tracer(from: THREE.Vector3, to: THREE.Vector3, color: number) {
     if (this.tracerCount >= MAX_TRACERS) return;
     const i = this.tracerCount++;
@@ -328,11 +546,12 @@ export class Effects {
     this.tracerPos[i * 6 + 4] = to.y;
     this.tracerPos[i * 6 + 5] = to.z;
     this.tmpColor.setHex(color).convertSRGBToLinear();
-    for (let v = 0; v < 2; v++) {
-      this.tracerCol[i * 6 + v * 3] = this.tmpColor.r;
-      this.tracerCol[i * 6 + v * 3 + 1] = this.tmpColor.g;
-      this.tracerCol[i * 6 + v * 3 + 2] = this.tmpColor.b;
-    }
+    this.tracerCol[i * 6] = this.tmpColor.r * TRACER_TAIL;
+    this.tracerCol[i * 6 + 1] = this.tmpColor.g * TRACER_TAIL;
+    this.tracerCol[i * 6 + 2] = this.tmpColor.b * TRACER_TAIL;
+    this.tracerCol[i * 6 + 3] = this.tmpColor.r;
+    this.tracerCol[i * 6 + 4] = this.tmpColor.g;
+    this.tracerCol[i * 6 + 5] = this.tmpColor.b;
   }
 
   beginFrame() {
@@ -340,6 +559,23 @@ export class Effects {
   }
 
   update(dt: number) {
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      const q = this.pending[i];
+      q.at -= dt;
+      if (q.at > 0) continue;
+      this.pending.splice(i, 1);
+      _p.copy(q.pos).add(_v.set((Math.random() - 0.5) * 2, Math.random() * 1.4, (Math.random() - 0.5) * 2));
+      this.burst(_p, Math.round(10 * q.scale) + 6, 11 * q.scale, {
+        color: 0xffb352,
+        size: 1.3 * q.scale,
+        life: 0.5,
+        drag: 0.3,
+        gravity: -2,
+        growth: 2.4,
+      });
+      this.flash(_p, 0xffa040, 34 * q.scale, 0.18);
+    }
+
     for (let i = 0; i < MAX_PARTICLES; i++) {
       if (this.life[i] <= 0) {
         if (this.alphas[i] !== 0) this.alphas[i] = 0;
@@ -397,3 +633,4 @@ export class Effects {
 
 const _v = new THREE.Vector3();
 const _p = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
