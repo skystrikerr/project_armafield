@@ -166,9 +166,15 @@ const UNARMORED: ArmorScheme = {
   turretFront: 3, turretSide: 2, turretRear: 2, turretTop: 1,
 };
 
+/**
+ * Armoured cars and light tanks. The sides are proof against rifle fire and
+ * very little else, which is the whole point of the class — thin enough that
+ * an anti-tank rifle is a real threat, thick enough that a squad with Garands
+ * is not.
+ */
 const LIGHT_ARMOR: ArmorScheme = {
-  hullFront: 15, hullSide: 8, hullRear: 8, hullTop: 6,
-  turretFront: 19, turretSide: 13, turretRear: 13, turretTop: 6,
+  hullFront: 15, hullSide: 11, hullRear: 11, hullTop: 9,
+  turretFront: 19, turretSide: 13, turretRear: 13, turretTop: 9,
 };
 
 const MEDIUM_ARMOR: ArmorScheme = {
@@ -275,7 +281,7 @@ const JAPANESE_MEDIUM_LATE: ArmorScheme = {
 
 /** Tankettes and armoured cars: rifle-proof, and only just. */
 const TANKETTE_ARMOR: ArmorScheme = {
-  hullFront: 8, hullSide: 6, hullRear: 6, hullTop: 5,
+  hullFront: 12, hullSide: 10, hullRear: 10, hullTop: 8,
   turretFront: 8, turretSide: 6, turretRear: 6, turretTop: 5,
 };
 
@@ -1605,6 +1611,22 @@ const CANNON_WEAPONS = new Set([
   "type94_37", "type97_57", "type1_47", "type3_75",
   "f34_76", "zis_85", "d10_100", "d25t_122", "ml20_152", "zis_45", "katyusha_rocket",
 ]);
+
+/**
+ * Chassis that steer on wheels rather than tracks. The distinction is the
+ * whole of how a vehicle handles: tracks can counter-rotate and spin a vehicle
+ * on the spot, wheels have to be rolling before they turn at all and steer
+ * backwards in reverse.
+ */
+const WHEELED_CHASSIS: ReadonlySet<Chassis> = new Set<Chassis>([
+  "light_car", "motorcycle", "truck", "amphibious", "armored_car", "heavy_armored_car",
+  "vintage_armored_car", "boxy_armored_car", "soviet_armored_car", "rocket_truck",
+  "field_gun", "howitzer", "wagon", "trailer",
+]);
+
+export function isWheeled(defId: string): boolean {
+  return WHEELED_CHASSIS.has(vehicleById(defId).chassis);
+}
 
 /** The main gun a vehicle fires, or null if it only has machine guns. */
 export function mainGunOf(defId: string): string | null {

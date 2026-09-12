@@ -462,6 +462,12 @@ export type Soldier = {
   nextShotAt: number;
   /** Muzzle flash timer, seconds remaining. */
   flash: number;
+  /**
+   * Which way the killing shot threw the body, in world space, set once when
+   * the soldier dies and cleared on respawn. The ragdoll reads it on its first
+   * frame so a man shot in the back falls forwards rather than straight down.
+   */
+  deathImpulse: THREE.Vector3 | null;
   /** Walk cycle phase, for the leg animation. */
   gait: number;
   suppression: number;
@@ -515,6 +521,10 @@ export type Tank = {
   flash: number;
   /** Distance travelled, for the track-texture scroll and dust. */
   odo: number;
+  /** Last frame's speed, to work out acceleration for the suspension. */
+  lastSpeed: number;
+  /** Suspension pitch: nose up under power, down under braking. */
+  dive: number;
   driverId: number | null;
   isPlayer: boolean;
   ai: TankBrain | null;
@@ -651,6 +661,7 @@ export function makeSoldier(id: number, team: Team, pos: THREE.Vector3, isPlayer
     reloadUntil: 0,
     nextShotAt: 0,
     flash: 0,
+    deathImpulse: null,
     gait: 0,
     suppression: 0,
     ai: null,
@@ -700,6 +711,8 @@ export function makeTank(
     nextCoaxAt: 0,
     flash: 0,
     odo: 0,
+    lastSpeed: 0,
+    dive: 0,
     driverId: null,
     isPlayer: false,
     ai: null,

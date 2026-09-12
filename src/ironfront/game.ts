@@ -26,6 +26,7 @@ import {
   treeGeometry,
 } from "./models";
 import { Effects } from "./effects";
+import { applySettings, loadSettings, type GraphicsSettings } from "./graphics";
 import { Audio } from "./audio";
 import { Battle, muzzleOf, tankMuzzle, type DamageInfo } from "./combat";
 import { PlaneRig, RigAssets, SoldierRig, TankRig, ViewModel } from "./rigs";
@@ -81,6 +82,7 @@ import {
   isAircraft,
   mainGunOf,
   mapById,
+  isWheeled,
   mobilityOf,
   type Nation,
   planeSpecOf,
@@ -185,6 +187,16 @@ export class Ironfront {
   onSnapshot?: (s: HudSnapshot) => void;
 
   private renderer: THREE.WebGLRenderer;
+  private graphics: GraphicsSettings;
+  /** The biome's own fog distances, before the view-distance setting scales them. */
+  private baseFog = { near: 0, far: 0 };
+  /**
+   * Instanced vegetation the foliage setting can thin. Reducing an
+   * InstancedMesh's count simply stops drawing the tail of the buffer, and the
+   * instances were filled in generation order — which is scattered, not
+   * sorted — so a lower count is an even thinning rather than one bald corner.
+   */
+  private foliage: { mesh: THREE.InstancedMesh; full: number; cover: boolean }[] = [];
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private clock = new THREE.Clock();
@@ -292,8 +304,15 @@ export class Ironfront {
     // The map's biome decides the landform, palette, vegetation and sky, so it
     // is resolved before the renderer and the terrain are built.
     const biome = biomeById(mapById(this.settings.mapId).biome);
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
-    this.renderer.shadowMap.enabled = true;
+    // Antialiasing is baked into the WebGL context, so unlike every other
+    // graphics setting it can only be honoured at construction — the panel
+    // says as much rather than pretending a toggle takes effect live.
+    this.graphics = loadSettings();
+    this.renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: this.graphics.antialias,
+      powerPreference: "high-performance",
+    });
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.setClearColor(biome.horizon);
 
@@ -306,6 +325,7 @@ export class Ironfront {
     // Enough haze for depth, but not so much that the gunner's sight goes blind
     // at 600 m — long shots are the point of having one.
     this.scene.fog = new THREE.Fog(biome.fog, biome.fogNear, biome.fogFar);
+    this.baseFog = { near: biome.fogNear, far: biome.fogFar };
 
     this.terrain = new Terrain(seed, biome);
     // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -336,16 +356,44 @@ export class Ironfront {
 
     this.spawnArmies();
     this.attachEvents();
+    this.applyGraphics(this.graphics);
     this.resize();
+  }
+
+  /**
+   * Push a new set of graphics settings at the live renderer. Safe to call
+   * mid-match — everything but antialiasing takes effect on the next frame.
+   */
+  applyGraphics(s: GraphicsSettings) {
+    this.graphics = s;
+    applySettings(s, this.renderer, this.sun, this.scene.fog as THREE.Fog | null, this.baseFog.near, this.baseFog.far);
+    this.applyFoliageDensity(s.foliage);
+    this.resize();
+  }
+
+  /**
+   * Thin the vegetation. Trees are held back from the full range because they
+   * are cover as well as scenery — losing every tree on a low setting would
+   * change how a map plays, not just how it looks — while bushes and stumps
+   * are decoration and go the whole way.
+   */
+  private applyFoliageDensity(density: number) {
+    for (const f of this.foliage) {
+      const keep = f.cover ? 0.55 + 0.45 * density : density;
+      f.mesh.count = Math.max(1, Math.round(f.full * keep));
+    }
   }
 
   /* ---------------- setup ---------------- */
 
   private buildLights() {
-    this.scene.add(new THREE.HemisphereLight(0xbfe0ff, 0x6a6a4a, 1.5));
-    this.scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    // Sky above, bounced ground light below, and a warm key. Splitting the
+    // fill this way is what gives a flat-shaded face its gradient: a roof
+    // catches cool sky, the underside of a hull catches warm dirt, and the
+    // silhouette reads without any texture on it.
+    this.scene.add(new THREE.HemisphereLight(0xa8cdf0, 0x6b6145, 1.35));
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.22));
     this.sun.position.set(160, 300, 120);
-    this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     const sc = this.sun.shadow.camera as THREE.OrthographicCamera;
     sc.left = -130;
@@ -412,6 +460,7 @@ export class Ironfront {
 
   private buildScenery() {
     const mat = lowPolyMaterial();
+    this.foliage.length = 0;
 
     // Trees, grouped by species so each is one instanced draw.
     const byKind = new Map<string, number[]>();
@@ -434,6 +483,7 @@ export class Ironfront {
         inst.setMatrixAt(slot, this.tmpObj.matrix);
         this.treeSlot.set(treeIndex, { mesh: inst, index: slot });
       });
+      this.foliage.push({ mesh: inst, full: indices.length, cover: true });
       this.scene.add(inst);
     }
 
@@ -474,12 +524,9 @@ export class Ironfront {
       water.renderOrder = -1;
       this.scene.add(water);
     }
-    this.instanceProps(
-      bushGeometry(),
-      mat,
-      this.terrain.clutter.filter((c) => c.kind === "bush"),
-      (p) => p.scale,
-    );
+    const bushes = this.terrain.clutter.filter((c) => c.kind === "bush");
+    const bushMesh = this.instanceProps(bushGeometry(), mat, bushes, (p) => p.scale);
+    if (bushMesh) this.foliage.push({ mesh: bushMesh, full: bushes.length, cover: false });
     this.instanceProps(
       hedgehogGeometry(),
       mat,
@@ -529,7 +576,7 @@ export class Ironfront {
     props: { x: number; y: number; z: number; rot: number; scale: number }[],
     scaleOf: (p: { scale: number }) => number,
   ) {
-    if (props.length === 0) return;
+    if (props.length === 0) return null;
     const inst = new THREE.InstancedMesh(geo, mat, props.length);
     inst.castShadow = true;
     inst.receiveShadow = true;
@@ -541,6 +588,7 @@ export class Ironfront {
       inst.setMatrixAt(i, this.tmpObj.matrix);
     });
     this.scene.add(inst);
+    return inst;
   }
 
   private buildZones() {
@@ -1164,11 +1212,12 @@ export class Ironfront {
   private resize() {
     const w = this.canvas.clientWidth || window.innerWidth;
     const h = this.canvas.clientHeight || window.innerHeight;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    const ratio = Math.min(window.devicePixelRatio, 2) * this.graphics.renderScale;
+    this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(1, h);
     this.camera.updateProjectionMatrix();
-    this.effects.setViewportScale(h * Math.min(window.devicePixelRatio, 2), this.camera.fov);
+    this.effects.setViewportScale(h * ratio, this.camera.fov);
   }
 
   /* ---------------- main loop ---------------- */
@@ -1451,16 +1500,33 @@ export class Ironfront {
     // Every figure here comes from the vehicle's own catalog entry, so a Tiger
     // lumbers and a Greyhound sprints without any special-casing.
     const mob = mobilityOf(t.defId);
-    const maxFwd = mob.maxSpeed * (0.4 + 0.6 * engine) * (0.3 + 0.7 * tracks);
+    // Gravity down the slope the hull is sitting on. Climbing costs most of an
+    // engine's power and descending gives it back, which is what makes hilly
+    // ground feel like ground rather than a flat plane that is tilted.
+    const grade = clamp(-t.pitch, -0.6, 0.6);
+    const climb = 1 - grade * 1.1;
+    const maxFwd = mob.maxSpeed * (0.4 + 0.6 * engine) * (0.3 + 0.7 * tracks) * clamp(climb, 0.25, 1.25);
     const target = throttle > 0 ? maxFwd * throttle : mob.reverseSpeed * throttle;
-    const accel = mob.accel * (0.35 + 0.65 * engine);
+    const accel = mob.accel * (0.35 + 0.65 * engine) * clamp(climb, 0.3, 1.3);
     if (braking) t.speed += clamp(-t.speed, -accel * 3 * dt, accel * 3 * dt);
     else if (throttle !== 0) t.speed += clamp(target - t.speed, -accel * 2.4 * dt, accel * dt);
     else t.speed *= 1 - Math.min(1, dt * 1.1);
 
-    // Neutral steering when stopped, wider arcs at speed. Broken tracks pull.
-    const speedFactor = 0.45 + 0.55 * Math.min(1, Math.abs(t.speed) / (mob.maxSpeed * 0.6));
-    t.yaw -= steer * mob.turnRate * dt * speedFactor * tracks * (0.5 + 0.5 * driver);
+    // How a vehicle turns is the biggest thing separating one from another,
+    // and it comes down to what it is standing on. Tracks counter-rotate, so a
+    // tank spins fastest on the spot and its arc widens as it picks up speed.
+    // Wheels do nothing at all until the vehicle is rolling, bite hardest at a
+    // walking pace, and wash out at speed — and in reverse they steer the
+    // other way, the way any car does when you back it up.
+    const rolling = Math.abs(t.speed) / Math.max(1, mob.maxSpeed);
+    let steerRate: number;
+    if (isWheeled(t.defId)) {
+      const grip = Math.min(1, rolling / 0.25);
+      steerRate = grip * (1 - 0.45 * Math.min(1, rolling)) * Math.sign(t.speed || 1);
+    } else {
+      steerRate = 1 - 0.4 * Math.min(1, rolling);
+    }
+    t.yaw -= steer * mob.turnRate * dt * steerRate * tracks * (0.5 + 0.5 * driver);
 
     this.aimTankGun(t, dt);
 
@@ -1739,12 +1805,15 @@ export class Ironfront {
     t.pos.z += fz * t.speed * dt;
     t.odo += Math.abs(t.speed) * dt;
 
-    // Refuse to climb what a tank cannot climb.
+    // Refuse to climb what a tank cannot climb. Bleeding the speed off rather
+    // than snapping the hull back to where it was means a vehicle grinds to a
+    // halt against a bank instead of juddering on the spot.
     const slope = this.terrain.slopeAt(t.pos.x, t.pos.z);
     if (slope > 0.82) {
       t.pos.x = prevX;
       t.pos.z = prevZ;
-      t.speed *= 0.3;
+      t.speed *= Math.max(0, 1 - dt * 6);
+      if (Math.abs(t.speed) < 0.4) t.speed = 0;
     }
 
     t.pos.x = clamp(t.pos.x, -MAP_HALF + 10, MAP_HALF - 10);
@@ -1769,11 +1838,24 @@ export class Ironfront {
     const n = this.terrain.normalAt(t.pos.x, t.pos.z, this.tmpVec);
     const forwardTilt = -(n.x * fx + n.z * fz) / Math.max(0.2, n.y);
     const sideTilt = -(n.x * fz - n.z * fx) / Math.max(0.2, n.y);
+    // The hull chases the ground plane rather than snapping to it, which is
+    // most of what makes a vehicle feel like it has weight.
     t.pitch += clamp(Math.atan(forwardTilt) - t.pitch, -dt * 2, dt * 2);
     t.roll += clamp(Math.atan(sideTilt) - t.roll, -dt * 2, dt * 2);
 
-    // Dust and flattened trees in the wake.
-    if (Math.abs(t.speed) > 3 && Math.random() < dt * 12) {
+    // Suspension. The nose lifts as it pulls away and dips as it stops — a
+    // small angle, but its absence is why a vehicle with no sprung mass reads
+    // as a box being slid along the floor.
+    const accelNow = (t.speed - (t.lastSpeed ?? t.speed)) / Math.max(1e-3, dt);
+    t.lastSpeed = t.speed;
+    const wantDive = clamp(accelNow * 0.012, -0.09, 0.09);
+    t.dive += clamp(wantDive - t.dive, -dt * 1.6, dt * 1.6);
+    t.pitch += t.dive;
+
+    // Dust and flattened trees in the wake. Wheels throw far more of it than
+    // tracks at the same speed, and neither throws any when barely moving.
+    const work = Math.min(1, Math.abs(t.speed) / 12);
+    if (Math.abs(t.speed) > 2.5 && Math.random() < dt * (8 + 16 * work)) {
       this.tmpVec2.set(t.pos.x - fx * 3, t.pos.y + 0.2, t.pos.z - fz * 3);
       this.effects.dust(this.tmpVec2, 1);
     }
@@ -1993,6 +2075,20 @@ export class Ironfront {
     } else {
       target.respawnAt = this.now + range(this.rand, BOT_RESPAWN[0], BOT_RESPAWN[1]);
       target.ridingId = null;
+      if (target.kind === "soldier") {
+        // Push the body away from where it was hit, scaled by what hit it: a
+        // rifle round staggers a man, a shell throws him. Purely cosmetic —
+        // the simulation still treats the corpse as a point at target.pos.
+        const push = info.result === "headshot" ? 7 : info.weapon === "cannon" ? 22 : 5.5;
+        target.deathImpulse = this.tmpVec
+          .copy(target.pos)
+          .setY(target.pos.y + 1)
+          .sub(info.point)
+          .normalize()
+          .multiplyScalar(push)
+          .setY(2.2 + Math.random() * 1.6)
+          .clone();
+      }
     }
 
     if (attacker && attacker.team !== target.team) attacker.kills++;
@@ -2145,6 +2241,7 @@ export class Ironfront {
       if (s.alive || s.isPlayer) continue;
       if (this.now >= s.respawnAt) {
         s.alive = true;
+        s.deathImpulse = null;
         s.hp = 100;
         s.stance = "stand";
         s.suppression = 0;
@@ -2251,7 +2348,7 @@ export class Ironfront {
         s.ridingId !== null ||
         (s.isPlayer && (this.mode !== "infantry" || !this.thirdPerson)) ||
         (!s.alive && this.now > s.respawnAt - 3);
-      rig.update(s, s.team === this.player.team && !s.isPlayer, hidden);
+      rig.update(s, s.team === this.player.team && !s.isPlayer, hidden, dt);
     }
     for (const t of this.tanks) {
       const rig = this.tankRigs.get(t.id);

@@ -20,6 +20,7 @@ import {
 } from "@/ironfront/matchConfig";
 import { WEAPONS } from "@/ironfront/units";
 import { cn } from "@/lib/utils";
+import GraphicsPanel from "@/GraphicsPanel";
 
 /**
  * Pre-match setup overlay. Binds directly to a MatchConfig instance and hands
@@ -41,6 +42,7 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
 
   const [settings, setSettings] = useState<MatchSettings>(() => config.getMatchSettings());
   const [activeTab, setActiveTab] = useState<"team1" | "team2">("team1");
+  const [showGraphics, setShowGraphics] = useState(false);
   // Which preset the *current map* is showing. Held by MatchConfig rather than
   // here, because it changes when you switch maps.
   const activePreset = config.activePreset();
@@ -246,21 +248,33 @@ export default function MatchSetup({ onStart }: { onStart: (s: MatchSettings) =>
               ))}
             </ul>
           )}
-          <button
-            type="button"
-            onClick={start}
-            disabled={!canStart}
-            className={cn(
-              "w-full rounded border px-6 py-3 text-sm font-semibold uppercase tracking-[0.2em] transition",
-              canStart
-                ? "border-[#ffd479]/70 bg-[#ffd479]/15 text-[#ffd479] hover:bg-[#ffd479]/25"
-                : "cursor-not-allowed border-white/10 text-white/25",
-            )}
-          >
-            Start Match
-          </button>
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setShowGraphics(true)}
+              className="rounded border border-white/12 px-5 py-3 text-sm uppercase tracking-[0.2em] text-white/60 transition hover:bg-white/10"
+            >
+              Graphics
+            </button>
+            <button
+              type="button"
+              onClick={start}
+              disabled={!canStart}
+              className={cn(
+                "flex-1 rounded border px-6 py-3 text-sm font-semibold uppercase tracking-[0.2em] transition",
+                canStart
+                  ? "border-[#ffd479]/70 bg-[#ffd479]/15 text-[#ffd479] hover:bg-[#ffd479]/25"
+                  : "cursor-not-allowed border-white/10 text-white/25",
+              )}
+            >
+              Start Match
+            </button>
+          </div>
         </footer>
       </div>
+      {/* No renderer exists yet on this screen, so the panel only saves — the
+          settings are read when the match boots. */}
+      {showGraphics && <GraphicsPanel onApply={() => {}} onClose={() => setShowGraphics(false)} />}
     </div>
   );
 }

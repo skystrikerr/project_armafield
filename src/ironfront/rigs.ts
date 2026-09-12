@@ -26,6 +26,7 @@ import {
   TEAM_COLOR,
   type Plane,
   type Soldier,
+  type Stance,
   type Tank,
   type Team,
 } from "./units";
@@ -175,6 +176,154 @@ function mesh(geo: THREE.BufferGeometry, mat: THREE.Material) {
   return m;
 }
 
+/* ---------------- ragdoll ---------------- */
+
+/**
+ * A five-point verlet ragdoll: head, chest, hips and two feet, held together
+ * by distance constraints.
+ *
+ * Deliberately visual only. The simulation keeps treating a dead soldier as a
+ * point at `s.pos`, so nothing about hit detection, AI or scoring depends on
+ * where the body ends up — the ragdoll just decides what that death looks
+ * like. Verlet rather than a real solver because the whole thing is five
+ * points and seven constraints per corpse, and it never needs to be right,
+ * only plausible.
+ *
+ * Everything runs in the rig's local frame, which is the soldier's position
+ * and heading, so gravity is simply -Y and the ground is the plane y = 0.
+ */
+class Ragdoll {
+  /** head, chest, hips, left foot, right foot. */
+  private pos: THREE.Vector3[] = [];
+  private prev: THREE.Vector3[] = [];
+  private links: { a: number; b: number; len: number; stiff: number }[] = [];
+  /** Seconds of simulation left; a settled body stops costing anything. */
+  private life = 6;
+
+  constructor(stance: Stance, impulse: THREE.Vector3 | null, yaw: number) {
+    // Seeded from roughly where the body was standing, so it falls from the
+    // pose it was in rather than snapping to attention first.
+    const hipY = stance === "stand" ? 0.9 : stance === "crouch" ? 0.62 : 0.3;
+    const lean = stance === "prone" ? 0.75 : 0;
+    const p = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+    this.pos = [
+      p(0, hipY + 0.78 - lean * 0.5, lean),
+      p(0, hipY + 0.45 - lean * 0.3, lean * 0.6),
+      p(0, hipY, 0),
+      p(-0.17, 0.06, -0.05),
+      p(0.17, 0.06, 0.05),
+    ];
+    this.prev = this.pos.map((v) => v.clone());
+
+    const link = (a: number, b: number, stiff = 1) =>
+      this.links.push({ a, b, len: this.pos[a].distanceTo(this.pos[b]), stiff });
+    link(0, 1);            // neck
+    link(1, 2);            // spine
+    link(2, 3);            // left leg
+    link(2, 4);            // right leg
+    link(1, 3, 0.35);      // chest to feet, loose, so the body keeps its length
+    link(1, 4, 0.35);
+    link(3, 4, 0.25);      // feet apart
+
+    if (impulse) {
+      // The impulse arrives in world space; the rig's frame is turned by the
+      // soldier's heading, so it has to be turned back to match.
+      const cos = Math.cos(-yaw);
+      const sin = Math.sin(-yaw);
+      const lx = impulse.x * cos - impulse.z * sin;
+      const lz = impulse.x * sin + impulse.z * cos;
+      // Upper body takes most of it — that is what makes a hit read as a hit
+      // rather than the whole man sliding sideways.
+      const share = [0.06, 0.05, 0.03, 0.012, 0.012];
+      for (let i = 0; i < 5; i++) {
+        this.prev[i].x -= lx * share[i];
+        this.prev[i].y -= impulse.y * share[i] * 0.5;
+        this.prev[i].z -= lz * share[i];
+      }
+    }
+  }
+
+  step(dt: number) {
+    if (this.life <= 0) return;
+    this.life -= dt;
+    // Fixed sub-steps: verlet with a variable timestep changes stiffness as
+    // the frame rate moves, and a corpse that behaves differently at 30 and
+    // 120 fps is worse than one that is slightly behind.
+    const steps = Math.min(3, Math.max(1, Math.round(dt / 0.016)));
+    const h = Math.min(0.033, dt) / steps;
+    for (let n = 0; n < steps; n++) this.substep(h);
+  }
+
+  private substep(h: number) {
+    for (let i = 0; i < 5; i++) {
+      const p = this.pos[i];
+      const q = this.prev[i];
+      const vx = (p.x - q.x) * 0.985;
+      const vy = (p.y - q.y) * 0.985;
+      const vz = (p.z - q.z) * 0.985;
+      q.copy(p);
+      p.x += vx;
+      p.y += vy - 9.81 * h * h * 60;
+      p.z += vz;
+    }
+    // Relax the constraints a few times; more passes make a stiffer body.
+    for (let pass = 0; pass < 4; pass++) {
+      for (const l of this.links) {
+        const a = this.pos[l.a];
+        const b = this.pos[l.b];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const dz = b.z - a.z;
+        const d = Math.hypot(dx, dy, dz) || 1e-4;
+        const k = ((d - l.len) / d) * 0.5 * l.stiff;
+        a.x += dx * k; a.y += dy * k; a.z += dz * k;
+        b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
+      }
+      // Ground, with friction so a body does not skate once it lands.
+      for (let i = 0; i < 5; i++) {
+        const p = this.pos[i];
+        const floor = i === 0 ? 0.16 : i === 1 ? 0.2 : 0.1;
+        if (p.y >= floor) continue;
+        p.y = floor;
+        const q = this.prev[i];
+        q.x += (p.x - q.x) * 0.55;
+        q.z += (p.z - q.z) * 0.55;
+        q.y = p.y;
+      }
+    }
+  }
+
+  /** Drive the rig's nodes from the simulated points. */
+  apply(body: THREE.Group, torso: THREE.Group, armsPivot: THREE.Group, legs: THREE.Mesh[]) {
+    const hips = this.pos[2];
+    const chest = this.pos[1];
+    body.position.set(hips.x, hips.y, hips.z);
+
+    // The body's own +Y runs hips-to-chest, which is all the orientation a
+    // shape this simple needs: lying, slumped and kneeling all fall out of it.
+    _spine.subVectors(chest, hips).normalize();
+    _q.setFromUnitVectors(_yAxis, _spine);
+    body.quaternion.copy(_q);
+    torso.rotation.set(0, 0, 0);
+    armsPivot.rotation.set(0.35, 0, 0);
+
+    // Each leg swings towards where its foot ended up, measured in the body's
+    // own frame so it stays correct however the torso came to rest.
+    _inv.copy(_q).invert();
+    for (let i = 0; i < 2; i++) {
+      _leg.subVectors(this.pos[3 + i], hips).applyQuaternion(_inv);
+      legs[i].rotation.x = Math.atan2(_leg.z, -_leg.y);
+      legs[i].rotation.z = Math.atan2(-_leg.x - (i === 0 ? -0.16 : 0.16), -_leg.y) * 0.6;
+    }
+  }
+}
+
+const _spine = new THREE.Vector3();
+const _leg = new THREE.Vector3();
+const _yAxis = new THREE.Vector3(0, 1, 0);
+const _q = new THREE.Quaternion();
+const _inv = new THREE.Quaternion();
+
 /* ---------------- infantry ---------------- */
 
 export class SoldierRig {
@@ -186,6 +335,8 @@ export class SoldierRig {
   /** The weapon currently in the soldier's hands, swapped when it changes. */
   private weapon: THREE.Mesh;
   private weaponId = "";
+  /** Non-null only while this soldier is dead; discarded on respawn. */
+  private ragdoll: Ragdoll | null = null;
   private readonly assets: RigAssets;
   /** Marker floating above friendlies so a firefight stays legible. */
   readonly marker: THREE.Sprite;
@@ -213,7 +364,7 @@ export class SoldierRig {
     this.root.add(this.marker);
   }
 
-  update(s: Soldier, showMarker: boolean, hidden: boolean) {
+  update(s: Soldier, showMarker: boolean, hidden: boolean, dt = 0) {
     this.root.visible = !hidden;
     if (hidden) return;
     this.root.position.copy(s.pos);
@@ -221,14 +372,20 @@ export class SoldierRig {
     this.marker.visible = showMarker && s.alive;
 
     if (!s.alive) {
-      // Fallen: face down, flat on the ground, arms out of the way.
-      this.body.position.y = 0.24;
-      this.body.rotation.x = Math.PI / 2;
-      this.torso.rotation.y = 0;
-      this.armsPivot.rotation.x = 0.2;
-      for (let i = 0; i < 2; i++) this.legs[i].rotation.x = i === 0 ? 0.2 : -0.15;
+      // Fallen. The ragdoll is built the first frame the soldier is dead, from
+      // the stance he was in and whatever the killing shot pushed him with, and
+      // then simulated until it settles.
+      if (!this.ragdoll) this.ragdoll = new Ragdoll(s.stance, s.deathImpulse, s.yaw);
+      this.ragdoll.step(dt);
+      this.ragdoll.apply(this.body, this.torso, this.armsPivot, this.legs);
       this.weapon.visible = false;
       return;
+    }
+    // Back on his feet: the old body is finished with.
+    if (this.ragdoll) {
+      this.ragdoll = null;
+      this.body.quaternion.identity();
+      for (const leg of this.legs) leg.rotation.set(0, 0, 0);
     }
 
     const hipY = s.stance === "stand" ? 0.9 : s.stance === "crouch" ? 0.62 : 0.3;

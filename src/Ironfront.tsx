@@ -7,6 +7,8 @@ import MatchSetup from "@/MatchSetup";
 import { startGamepadMenuNav } from "@/gamepadMenu";
 import { mapById, type MatchSettings } from "@/ironfront/matchConfig";
 import { cn } from "@/lib/utils";
+import GraphicsPanel from "@/GraphicsPanel";
+import { loadSettings, type GraphicsSettings } from "@/ironfront/graphics";
 
 /**
  * The HUD. Everything here is a read-only view of a snapshot the simulation
@@ -21,6 +23,10 @@ export default function Ironfront() {
   const gameRef = useRef<Game | null>(null);
   const [hud, setHud] = useState<HudSnapshot | null>(null);
   const [showControls, setShowControls] = useState(false);
+  const [showGraphics, setShowGraphics] = useState(false);
+  // Held in React as well as in the game so the HUD can honour the parts of it
+  // that are HUD rather than renderer — the frame counter, for one.
+  const [graphics, setGraphics] = useState<GraphicsSettings>(() => loadSettings());
   // Null until the player commits a setup; that commit is what boots the game.
   const [matchSettings, setMatchSettings] = useState<MatchSettings | null>(null);
 
@@ -131,14 +137,26 @@ export default function Ironfront() {
           hud={hud}
           onResume={() => gameRef.current?.setPaused(false)}
           onControls={() => setShowControls(true)}
+          onGraphics={() => setShowGraphics(true)}
           onSetup={reopenSetup}
         />
       )}
       {showControls && <Controls onClose={() => setShowControls(false)} />}
+      {showGraphics && (
+        <GraphicsPanel
+          onApply={(s) => {
+            setGraphics(s);
+            gameRef.current?.applyGraphics(s);
+          }}
+          onClose={() => setShowGraphics(false)}
+        />
+      )}
 
-      {hud && (
+      {hud && (graphics.showFps || hud.muted || hud.gamepadConnected) && (
         <div className="pointer-events-none absolute right-3 top-3 text-[10px] uppercase tracking-[0.2em] text-white/35">
-          {hud.fps} fps{hud.muted ? " · muted" : ""}{hud.gamepadConnected ? " · controller" : ""}
+          {graphics.showFps ? `${hud.fps} fps` : ""}
+          {hud.muted ? " · muted" : ""}
+          {hud.gamepadConnected ? " · controller" : ""}
         </div>
       )}
     </div>
@@ -729,11 +747,13 @@ function Pause({
   hud,
   onResume,
   onControls,
+  onGraphics,
   onSetup,
 }: {
   hud: HudSnapshot;
   onResume: () => void;
   onControls: () => void;
+  onGraphics: () => void;
   onSetup: () => void;
 }) {
   return (
@@ -756,6 +776,13 @@ function Pause({
           className="rounded border border-white/12 px-5 py-2 text-sm text-white/70 hover:bg-white/10"
         >
           Controls
+        </button>
+        <button
+          type="button"
+          onClick={onGraphics}
+          className="rounded border border-white/12 px-5 py-2 text-sm text-white/70 hover:bg-white/10"
+        >
+          Graphics
         </button>
         <button
           type="button"
