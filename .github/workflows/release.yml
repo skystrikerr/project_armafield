@@ -62,6 +62,24 @@ jobs:
           path: ${{ matrix.artifact }}
           if-no-files-found: error
 
+      # This repository ships one game. A Thronglets build from before the two
+      # were split apart is still attached to the release, and a download list
+      # advertising the other game is worse than a missing file. Anything that
+      # is not a Claudefield build goes, on the Linux job only so the three
+      # running in parallel do not race over the same deletions.
+      - name: Remove anything left over from before the split
+        if: matrix.name == 'linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          existing=$(gh release view latest --json assets --jq '.assets[].name' 2>/dev/null || true)
+          for name in $existing; do
+            case "$name" in Claudefield-*) continue ;; esac
+            echo "removing $name — not part of this game"
+            gh release delete-asset latest "$name" -y || true
+          done
+
       # The "latest" release always holds today's main, so anything that renames
       # a build — a version bump, most often — would otherwise leave the old
       # file sitting beside the new one for someone to download by mistake.
