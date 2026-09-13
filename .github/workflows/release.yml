@@ -12,6 +12,15 @@ on:
 permissions:
   contents: write # to publish the "latest" release
 
+# Only the newest push builds. Two overlapping runs race over the same release:
+# each job clears its platform's previous file before uploading, so an older run
+# finishing last deletes the newer build and leaves a stale one behind. Cancelling
+# the run in progress makes "latest" mean the latest commit rather than whichever
+# Windows runner happened to free up first.
+concurrency:
+  group: downloads
+  cancel-in-progress: true
+
 jobs:
   build:
     strategy:
