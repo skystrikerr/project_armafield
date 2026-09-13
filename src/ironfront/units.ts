@@ -23,6 +23,14 @@ export const STANCE_SPEED: Record<Stance, number> = { stand: 4.1, crouch: 2.1, p
 /** Multiplier on incoming hit chance from AI: lying down is worth something. */
 export const STANCE_EXPOSURE: Record<Stance, number> = { stand: 1, crouch: 0.72, prone: 0.42 };
 
+/**
+ * How much punishment a man takes. Two rifle rounds killed anybody, which left
+ * no room to react to being shot at — you were dead before the sound of it
+ * registered. At this figure a rifle needs three and a submachine gun five, so
+ * a firefight is something you can be losing and still walk out of.
+ */
+export const SOLDIER_HP = 150;
+
 export type WeaponId = string;
 
 /** Soldier archetype id. Definitions live in eras.ts to keep the data out of this file. */
@@ -489,6 +497,12 @@ export type SoldierBrain = {
   hasLos: boolean;
   burstUntil: number;
   burstCooldown: number;
+  /**
+   * When this bot may first shoot at the target it currently has. Set when a
+   * target is acquired, so there is a moment between being seen and being
+   * fired on — without it a bot that walks round a corner is already shooting.
+   */
+  readyToFireAt: number;
   zoneId: string;
   strafe: number;
   coverUntil: number;
@@ -649,7 +663,7 @@ export function makeSoldier(id: number, team: Team, pos: THREE.Vector3, isPlayer
     aimYaw: 0,
     aimPitch: 0,
     stance: "stand",
-    hp: 100,
+    hp: SOLDIER_HP,
     alive: true,
     respawnAt: 0,
     stamina: 100,

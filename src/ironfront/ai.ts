@@ -131,6 +131,12 @@ export function updateSoldierAI(s: Soldier, ctx: AiContext, dt: number) {
     ai.zoneId = zone.id;
 
     const target = findTarget(s, ctx, 190, false);
+    // Seeing somebody and shooting at them are different moments. Without a
+    // gap between them a bot rounding a corner is already firing, which is
+    // what made them feel less like soldiers than like turrets.
+    if (target && target.id !== ai.targetId) {
+      ai.readyToFireAt = now + 0.55 + (1 - ctx.skill) * 0.7 + Math.random() * 0.45;
+    }
     ai.targetId = target ? target.id : null;
 
     if (!target) {
@@ -214,25 +220,27 @@ export function updateSoldierAI(s: Soldier, ctx: AiContext, dt: number) {
     const spec = WEAPONS[s.weapon];
     // Lead the target and lift for drop, badly or well depending on skill.
     const flight = dist / spec.speed;
-    velocityOf(target, _v).multiplyScalar(flight * (0.4 + ctx.skill * 0.6));
+    velocityOf(target, _v).multiplyScalar(flight * (0.15 + ctx.skill * 0.45));
     _aim.add(_v);
-    _aim.y += 0.5 * 9.81 * flight * flight * (0.5 + ctx.skill * 0.5);
+    _aim.y += 0.5 * 9.81 * flight * flight * (0.25 + ctx.skill * 0.45);
 
     const wantYaw = Math.atan2(_aim.x - s.pos.x, _aim.z - s.pos.z);
     const flat = Math.hypot(_aim.x - s.pos.x, _aim.z - s.pos.z);
     const wantPitch = Math.atan2(_aim.y - (s.pos.y + STANCE_EYE[s.stance]), flat);
-    const turn = dt * (3.2 + ctx.skill * 3);
+    // Swinging a rifle onto a man takes a moment. This used to be quick enough
+    // that stepping into the open and being hit were the same event.
+    const turn = dt * (1.5 + ctx.skill * 1.8);
     s.aimYaw = approachAngle(s.aimYaw, wantYaw, turn);
     s.aimPitch += clamp(wantPitch - s.aimPitch, -turn, turn);
     s.yaw = approachAngle(s.yaw, s.aimYaw, dt * 5);
 
     const aligned = Math.abs(angleDelta(s.aimYaw, wantYaw)) < 0.09;
     const inRange = dist < (weaponCategory(s.weapon) === "heavy" ? 140 : 175);
-    if (aligned && inRange && now >= s.reloadUntil) {
+    if (aligned && inRange && now >= s.reloadUntil && now >= ai.readyToFireAt) {
       if (now >= ai.burstCooldown) {
         if (now >= ai.burstUntil) {
-          ai.burstUntil = now + 0.25 + Math.random() * 0.5;
-          ai.burstCooldown = ai.burstUntil + 0.35 + (1 - ctx.skill) * 1.2 + Math.random() * 0.5;
+          ai.burstUntil = now + 0.2 + Math.random() * 0.35;
+          ai.burstCooldown = ai.burstUntil + 0.7 + (1 - ctx.skill) * 1.6 + Math.random() * 0.8;
         }
         if (now < ai.burstUntil) fireSoldier(s, ctx, dist);
       }
@@ -285,8 +293,11 @@ function fireSoldier(s: Soldier, ctx: AiContext, dist: number) {
   muzzleOf(s, _muzzle);
   const cp = Math.cos(s.aimPitch);
   _dir.set(Math.sin(s.aimYaw) * cp, Math.sin(s.aimPitch), Math.cos(s.aimYaw) * cp).normalize();
-  // Bot dispersion: worse at range, worse when the shooter is rattled.
-  const err = spec.spread * (2.6 - ctx.skill * 1.4) * (1 + dist / 260) * (1 + s.suppression / 90);
+  // Bot dispersion: worse at range, worse when the shooter is rattled. Bots
+  // shoot a good deal wider than the weapon itself does — a man firing a rifle
+  // standing up in a field is nothing like a bench rest, and holding them to
+  // the weapon's own figure made every bot a marksman.
+  const err = spec.spread * (5.5 - ctx.skill * 2.2) * (1 + dist / 110) * (1 + s.suppression / 60);
   ctx.battle.fire({
     kind: weaponCategory(s.weapon) === "heavy" ? "rocket" : "bullet",
     weapon: s.weapon,

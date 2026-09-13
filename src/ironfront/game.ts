@@ -48,7 +48,9 @@ import {
   SHELLS,
   STANCE_EYE,
   STANCE_SPEED,
+  SOLDIER_HP,
   TANK_GUN_Y,
+  TANK_HULL,
   TANK_TURRET,
   TEAM_COLOR,
   WEAPONS,
@@ -810,6 +812,7 @@ export class Ironfront {
       hasLos: false,
       burstUntil: 0,
       burstCooldown: 0,
+      readyToFireAt: 0,
       zoneId: "B",
       strafe: 0,
       coverUntil: 0,
@@ -1174,7 +1177,7 @@ export class Ironfront {
     this.dismount(true);
     this.leaveVehicle(false);
     this.player.alive = true;
-    this.player.hp = 100;
+    this.player.hp = SOLDIER_HP;
     this.player.stamina = 100;
     this.player.stance = "stand";
     equipSoldier(this.player, classId, primaryWeapon);
@@ -1912,6 +1915,7 @@ export class Ironfront {
     }
 
     this.resolveCollision(s.pos, SOLDIER_RADIUS, false, SOLDIER_HEIGHT);
+    this.resolveVehicleCollision(s, SOLDIER_RADIUS);
     s.pos.x = clamp(s.pos.x, -MAP_HALF + 6, MAP_HALF - 6);
     s.pos.z = clamp(s.pos.z, -MAP_HALF + 6, MAP_HALF - 6);
 
@@ -2103,6 +2107,47 @@ export class Ironfront {
   }
 
   /** Circle-vs-box pushout, run twice so corners resolve cleanly. */
+  /**
+   * Keep infantry out of vehicles. `resolveCollision` above only knows about
+   * the terrain's static obstacles, so until this existed a man could walk
+   * straight through a Tiger — and through its wreck, which is worse, because
+   * a knocked-out tank is exactly the sort of thing you want to take cover
+   * behind.
+   *
+   * The hull is treated as an oriented box rather than a circle: a tank is
+   * twice as long as it is wide, and a circle big enough to cover the length
+   * pushes you away from the sides of it across empty ground.
+   */
+  private resolveVehicleCollision(s: Soldier, radius: number) {
+    for (const t of this.tanks) {
+      // The one you are riding on carries you; it must not also shove you off.
+      if (s.ridingId === t.id) continue;
+      const dx = s.pos.x - t.pos.x;
+      const dz = s.pos.z - t.pos.z;
+      const reach = TANK_HULL.hd + radius;
+      if (dx * dx + dz * dz > reach * reach) continue;
+      // Under the belly or over the roof: no contact to resolve.
+      if (s.pos.y > t.pos.y + TANK_HULL.y + TANK_HULL.hh) continue;
+
+      const c = Math.cos(-t.yaw);
+      const sn = Math.sin(-t.yaw);
+      const lx = dx * c - dz * sn;
+      const lz = dx * sn + dz * c;
+      const gapX = TANK_HULL.hw + radius - Math.abs(lx);
+      const gapZ = TANK_HULL.hd + radius - Math.abs(lz);
+      if (gapX <= 0 || gapZ <= 0) continue;
+
+      // Out through whichever face is nearest, so a man pressed against a
+      // flank slides along it instead of being flung over the hull.
+      let ox = 0;
+      let oz = 0;
+      if (gapX < gapZ) ox = Math.sign(lx) * gapX || gapX;
+      else oz = Math.sign(lz) * gapZ || gapZ;
+      s.pos.x += ox * c + oz * sn;
+      s.pos.z += -ox * sn + oz * c;
+    }
+  }
+
   private resolveCollision(pos: THREE.Vector3, radius: number, vehicle: boolean, height: number) {
     for (let iter = 0; iter < 2; iter++) {
       let touched = false;
@@ -2437,7 +2482,7 @@ export class Ironfront {
       if (this.now >= s.respawnAt) {
         s.alive = true;
         s.deathImpulse = null;
-        s.hp = 100;
+        s.hp = SOLDIER_HP;
         s.stance = "stand";
         s.suppression = 0;
         equipSoldier(s, s.classId);

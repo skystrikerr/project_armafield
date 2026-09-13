@@ -4,6 +4,7 @@ import type { Effects } from "./effects";
 import type { Audio } from "./audio";
 import {
   SHELLS,
+  SOLDIER_HP,
   STANCE_EYE,
   TANK_HULL,
   TANK_GUN_Y,
@@ -156,8 +157,13 @@ export class Battle {
       damage: sh ? sh.damage : spec.damage,
       blast: sh ? sh.blast : spec.blast,
       blastDamage: sh ? sh.blastDamage : spec.blastDamage,
-      gravity: opts.kind === "bullet" ? 9.81 : opts.kind === "grenade" ? 18 : 9.81,
-      drag: opts.kind === "bullet" ? 0.09 : opts.kind === "shell" ? 0.035 : 0.02,
+      // Small arms fire slowly enough here that a round is visibly in flight,
+      // which is the point — but at that speed real gravity would put two
+      // metres of drop on a two-hundred-metre shot and turn every engagement
+      // into a holdover puzzle. Bullets fall at less than half weight so the
+      // travel reads without the sights lying to you.
+      gravity: opts.kind === "bullet" ? 4.5 : opts.kind === "grenade" ? 18 : 9.81,
+      drag: opts.kind === "bullet" ? 0.05 : opts.kind === "shell" ? 0.035 : 0.02,
       life: opts.kind === "grenade" ? 3.4 : opts.kind === "bullet" ? 3 : 12,
       fuse: opts.kind === "grenade" ? 3.4 : 0,
       tracerColor: spec.tracer,
@@ -398,7 +404,10 @@ export class Battle {
   ) {
     if (target.kind === "soldier") {
       const headshot = part === "head";
-      const damage = headshot ? Math.max(100, p.damage * 2.6) : p.damage;
+      // A headshot still ends it outright. Raising body health so firefights
+      // last would otherwise have quietly made head hits survivable, which is
+      // the opposite of what a head hit should mean.
+      const damage = headshot ? Math.max(SOLDIER_HP, p.damage * 2.6) : p.damage;
       if (p.blast > 0) {
         this.detonate(p, point);
         p.dead = true;
