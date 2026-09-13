@@ -537,7 +537,12 @@ export type Tank = {
    */
   defId: string;
   /** Soldier ids currently riding in the troop bed. Empty for gun tanks. */
-  passengerIds: number[];
+  /**
+   * Who is sitting in each passenger seat, indexed by seat number. A hole in
+   * the middle is a free seat, which is why this is sparse rather than a list
+   * of occupants.
+   */
+  passengerIds: (number | null)[];
 };
 
 export type TankBrain = {

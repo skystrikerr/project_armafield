@@ -231,7 +231,7 @@ function Reticle({ hud }: { hud: HudSnapshot }) {
 
       </div>
 
-      {range !== null && (tank || hud.mode === "infantry") && (
+      {range !== null && (tank || hud.mode === "infantry" || hud.mode === "passenger") && (
         <div className="absolute top-[calc(50%+2.6rem)] whitespace-nowrap text-[11px] tabular-nums text-white/55">
           {Math.round(range)} m
         </div>
@@ -339,9 +339,11 @@ function Status({ hud }: { hud: HudSnapshot }) {
     <>
       <div className="pointer-events-none absolute bottom-4 left-4 w-56">
         <Bar label="Health" value={hud.hp} max={100} color="#c94f3d" />
-        {hud.mode === "infantry" && <Bar label="Stamina" value={hud.stamina} max={100} color="#8aa85a" />}
+        {(hud.mode === "infantry" || hud.mode === "passenger") && (
+          <Bar label="Stamina" value={hud.stamina} max={100} color="#8aa85a" />
+        )}
         <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-white/40">
-          {hud.mode === "infantry" ? hud.stance : hud.mode}
+          {hud.mode === "infantry" ? hud.stance : hud.mode === "passenger" ? "riding" : hud.mode}
         </div>
       </div>
 

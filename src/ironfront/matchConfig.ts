@@ -1774,6 +1774,13 @@ export type MapDef = {
   defaultPreset: PresetId;
   /** Which terrain recipe this map is generated from. See BIOMES in terrain.ts. */
   biome: string;
+  /**
+   * What the three capture points are called here, west to east. The points
+   * themselves sit at fixed positions on every map — that is the shape of the
+   * mode — but calling the same ground a vineyard on a Normandy beach and on
+   * an alpine snowfield was simply wrong.
+   */
+  objectives: [string, string, string];
 };
 
 export const MAPS: MapDef[] = [
@@ -1785,6 +1792,7 @@ export const MAPS: MapDef[] = [
     tags: ["Balanced", "3 Points"],
     defaultPreset: "all_out",
     biome: "temperate",
+    objectives: ["Vineyard", "Crossroads", "Rail Yard"],
   },
   {
     id: "bocage",
@@ -1794,6 +1802,7 @@ export const MAPS: MapDef[] = [
     tags: ["Close", "Infantry"],
     defaultPreset: "infantry_only",
     biome: "bocage",
+    objectives: ["Orchard", "Sunken Lane", "Farmstead"],
   },
   {
     id: "steppe",
@@ -1803,6 +1812,7 @@ export const MAPS: MapDef[] = [
     tags: ["Open", "Armor"],
     defaultPreset: "armor_clash",
     biome: "steppe",
+    objectives: ["West Ridge", "Rail Halt", "Grain Store"],
   },
   {
     id: "coast",
@@ -1812,6 +1822,7 @@ export const MAPS: MapDef[] = [
     tags: ["Air", "Water"],
     defaultPreset: "air_superiority",
     biome: "coast",
+    objectives: ["Palm Point", "Airstrip", "Boat House"],
   },
   {
     id: "falcons_pass",
@@ -1821,6 +1832,7 @@ export const MAPS: MapDef[] = [
     tags: ["River", "Bridges"],
     defaultPreset: "all_out",
     biome: "alpine",
+    objectives: ["Lower Bridge", "Chapel", "Upper Bridge"],
   },
   {
     id: "frost_hammer",
@@ -1830,6 +1842,7 @@ export const MAPS: MapDef[] = [
     tags: ["Winter", "River"],
     defaultPreset: "all_out",
     biome: "arctic",
+    objectives: ["Ice Ford", "Frozen Chapel", "Timber Yard"],
   },
   {
     id: "frostguard_peaks",
@@ -1839,6 +1852,7 @@ export const MAPS: MapDef[] = [
     tags: ["Trenches", "Craters"],
     defaultPreset: "infantry_only",
     biome: "mud",
+    objectives: ["Shell Flats", "Dead Wood", "Gun Pits"],
   },
   {
     id: "frostguard_trenches",
@@ -1848,6 +1862,7 @@ export const MAPS: MapDef[] = [
     tags: ["Winter", "Craters"],
     defaultPreset: "infantry_only",
     biome: "snow_trench",
+    objectives: ["West Sap", "Communication Trench", "East Sap"],
   },
   {
     id: "frostguard_summit",
@@ -1857,6 +1872,7 @@ export const MAPS: MapDef[] = [
     tags: ["Winter", "Forest", "Lake"],
     defaultPreset: "all_out",
     biome: "alpine_snow",
+    objectives: ["Cable Station", "Summit Hut", "Frozen Lake"],
   },
   {
     id: "atlantic_wall",
@@ -1866,6 +1882,7 @@ export const MAPS: MapDef[] = [
     tags: ["Beach", "Bunkers", "Trenches"],
     defaultPreset: "all_out",
     biome: "atlantic",
+    objectives: ["The Sands", "Bluff Battery", "Hedgerow Line"],
   },
   {
     id: "fortress_island",
@@ -1875,6 +1892,7 @@ export const MAPS: MapDef[] = [
     tags: ["Beach", "Bunkers", "Craters"],
     defaultPreset: "all_out",
     biome: "island",
+    objectives: ["Landing Beach", "Headland Battery", "Trench Belt"],
   },
 ];
 

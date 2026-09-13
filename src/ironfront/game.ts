@@ -110,7 +110,7 @@ export type MinimapUnit = { x: number; z: number; team: Team; kind: "soldier" | 
 
 export type HudSnapshot = {
   phase: "briefing" | "playing" | "deploy" | "over";
-  mode: "infantry" | "tank" | "plane";
+  mode: "infantry" | "tank" | "plane" | "passenger";
   hp: number;
   stance: string;
   stamina: number;
@@ -180,7 +180,20 @@ type ZoneState = {
   contested: boolean;
 };
 
-type PlayerMode = "infantry" | "tank" | "plane";
+/** What the player deploys as. Riding along is something you do once out there. */
+export type DeployMode = "infantry" | "tank" | "plane";
+type PlayerMode = DeployMode | "passenger";
+
+/**
+ * Where a passenger sits on a vehicle, in the hull's own frame. Riding is
+ * deliberately not driving: you keep your own weapon and your own aim, the
+ * vehicle carries you, and you can be shot off it.
+ */
+const PASSENGER_SEATS: [number, number, number][] = [
+  [-1.15, 1.5, -0.6], [1.15, 1.5, -0.6],
+  [-1.15, 1.5, -1.9], [1.15, 1.5, -1.9],
+  [-1.15, 1.5, 0.7], [1.15, 1.5, 0.7],
+];
 
 export class Ironfront {
   readonly canvas: HTMLCanvasElement;
@@ -230,6 +243,8 @@ export class Ironfront {
 
   private player!: Soldier;
   private mode: PlayerMode = "infantry";
+  /** The vehicle the player is riding on as a passenger, if any. */
+  private ridingAs: { tank: Tank; seat: number } | null = null;
   private ridingTank: Tank | null = null;
   private ridingPlane: Plane | null = null;
   private aimYaw = 0;
@@ -960,7 +975,7 @@ export class Ironfront {
         this.toggleVehicle();
         break;
       case "KeyR":
-        if (this.mode === "infantry") this.reloadPlayer();
+        if (this.mode === "infantry" || this.mode === "passenger") this.reloadPlayer();
         break;
       case "KeyZ":
         if (this.mode === "infantry") this.player.stance = this.player.stance === "prone" ? "stand" : "prone";
@@ -969,7 +984,7 @@ export class Ironfront {
         if (this.mode === "infantry") this.player.stance = this.player.stance === "crouch" ? "stand" : "crouch";
         break;
       case "KeyG":
-        if (this.mode === "infantry") this.throwGrenade();
+        if (this.mode === "infantry" || this.mode === "passenger") this.throwGrenade();
         break;
       case "KeyB":
         if (this.mode === "plane") this.dropBomb();
@@ -978,15 +993,15 @@ export class Ironfront {
         this.audio.setMuted(!this.audio.muted);
         break;
       case "Digit1":
-        if (this.mode === "infantry") this.switchWeapon(0);
+        if (this.mode === "infantry" || this.mode === "passenger") this.switchWeapon(0);
         else if (this.mode === "tank" && this.ridingTank) this.selectShell(this.ridingTank, "ap");
         break;
       case "Digit2":
-        if (this.mode === "infantry") this.switchWeapon(1);
+        if (this.mode === "infantry" || this.mode === "passenger") this.switchWeapon(1);
         else if (this.mode === "tank" && this.ridingTank) this.selectShell(this.ridingTank, "he");
         break;
       case "Digit3":
-        if (this.mode === "infantry") this.switchWeapon(2);
+        if (this.mode === "infantry" || this.mode === "passenger") this.switchWeapon(2);
         break;
       default:
         break;
@@ -1154,8 +1169,9 @@ export class Ironfront {
   }
 
   /** Called from the deploy screen. `classId`/`primaryWeapon` only matter for infantry. */
-  deploy(as: PlayerMode, classId: ClassId = "rifleman", primaryWeapon?: string) {
+  deploy(as: DeployMode, classId: ClassId = "rifleman", primaryWeapon?: string) {
     if (this.phase !== "deploy" && this.phase !== "briefing") return;
+    this.dismount(true);
     this.leaveVehicle(false);
     this.player.alive = true;
     this.player.hp = 100;
@@ -1319,7 +1335,24 @@ export class Ironfront {
     if (!this.player.alive) return;
     if (this.mode === "tank" && this.ridingTank) this.controlTank(this.ridingTank, dt);
     else if (this.mode === "plane" && this.ridingPlane) this.controlPlane(this.ridingPlane, dt);
+    else if (this.mode === "passenger") this.controlPassenger(dt);
     else this.controlInfantry(dt);
+  }
+
+  /**
+   * A rider fights as infantry minus the walking. Everything about aiming,
+   * firing, reloading and switching weapons is the same code the man on foot
+   * uses — the vehicle simply decides where he is standing.
+   */
+  private controlPassenger(dt: number) {
+    const s = this.player;
+    this.settleReload();
+    this.updateRecoilAndSway(dt, s);
+    s.aimYaw = this.effAimYaw;
+    s.aimPitch = this.effAimPitch;
+    s.sprinting = false;
+    this.updatePassenger();
+    this.firePlayerWeapon(dt);
   }
 
   private controlInfantry(dt: number) {
@@ -1364,6 +1397,16 @@ export class Ironfront {
       s.onGround = false;
     }
 
+    this.firePlayerWeapon(dt);
+  }
+
+  /**
+   * Firing, reloading and aiming down the sights. Shared by the man on foot
+   * and the man riding on a hull, because the only difference between them is
+   * who decides where he is standing.
+   */
+  private firePlayerWeapon(_dt: number) {
+    const s = this.player;
     // Sprinting soldiers cannot shoot; everyone else can.
     const spec = WEAPONS[s.weapon];
     const wantFire = this.mouseDown.has(0) && !s.sprinting;
@@ -1653,15 +1696,103 @@ export class Ironfront {
     return best;
   }
 
+  /**
+   * A friendly vehicle with a seat free, whoever is driving it. This is what
+   * makes a transport a transport: a truck with a bot at the wheel, or one a
+   * squadmate is already riding, is something you can climb onto rather than
+   * something you can only stare at.
+   */
+  private nearbySeat(): { tank: Tank; seat: number } | null {
+    const s = this.player;
+    let best: { tank: Tank; seat: number } | null = null;
+    let bestD = 9;
+    for (const t of this.tanks) {
+      if (!t.alive || t.team !== s.team) continue;
+      const seats = Math.min(PASSENGER_SEATS.length, vehicleById(t.defId).passengerSeats);
+      if (seats <= 0) continue;
+      const d = s.pos.distanceTo(t.pos);
+      if (d >= bestD) continue;
+      for (let i = 0; i < seats; i++) {
+        if (t.passengerIds[i] != null) continue;
+        bestD = d;
+        best = { tank: t, seat: i };
+        break;
+      }
+    }
+    return best;
+  }
+
+  private enterSeat(tank: Tank, seat: number) {
+    tank.passengerIds[seat] = this.player.id;
+    this.player.ridingId = tank.id;
+    this.ridingAs = { tank, seat };
+    this.mode = "passenger";
+    this.player.stance = "stand";
+    this.pushEvent(`Riding on ${tank.name} — F to jump off`, "info");
+    this.audio.ui(380);
+  }
+
+  /** Keep a rider glued to his seat, and throw him off if the ride is lost. */
+  private updatePassenger() {
+    const ride = this.ridingAs;
+    if (!ride) return;
+    const { tank, seat } = ride;
+    if (!tank.alive) {
+      // The vehicle brewing up does not spare the men sitting on it.
+      this.dismount(true);
+      this.applyDamage(this.player, 65, tank.id, {
+        weapon: "cannon",
+        result: "hit",
+        point: this.tmpVec.copy(tank.pos).setY(tank.pos.y + 1).clone(),
+      });
+      return;
+    }
+    const [sx, sy, sz] = PASSENGER_SEATS[seat];
+    const cos = Math.cos(tank.yaw);
+    const sin = Math.sin(tank.yaw);
+    this.player.pos.set(
+      tank.pos.x + sx * cos + sz * sin,
+      tank.pos.y + sy,
+      tank.pos.z - sx * sin + sz * cos,
+    );
+    this.player.vel.set(0, 0, 0);
+    this.player.yaw = tank.yaw;
+  }
+
+  private dismount(thrown: boolean) {
+    const ride = this.ridingAs;
+    if (!ride) return;
+    ride.tank.passengerIds[ride.seat] = null;
+    this.ridingAs = null;
+    this.player.ridingId = null;
+    this.mode = "infantry";
+    if (!thrown) {
+      // Step off to the side rather than into the hull.
+      const side = ride.seat % 2 === 0 ? -1 : 1;
+      this.player.pos.x += Math.cos(ride.tank.yaw) * side * 3.2;
+      this.player.pos.z -= Math.sin(ride.tank.yaw) * side * 3.2;
+    }
+    this.player.pos.y = this.terrain.heightAt(this.player.pos.x, this.player.pos.z);
+  }
+
   private toggleVehicle() {
+    if (this.mode === "passenger") {
+      this.dismount(false);
+      return;
+    }
     if (this.mode !== "infantry") {
       this.leaveVehicle(true);
       return;
     }
     const v = this.nearbyVehicle();
-    if (!v) return;
-    if (v.kind === "tank") this.enterTank(v);
-    else this.enterPlane(v);
+    if (v) {
+      if (v.kind === "tank") this.enterTank(v);
+      else this.enterPlane(v);
+      return;
+    }
+    // No controls free, but there may still be somewhere to sit.
+    const seat = this.nearbySeat();
+    if (seat) this.enterSeat(seat.tank, seat.seat);
   }
 
   private enterTank(t: Tank) {
@@ -2060,7 +2191,7 @@ export class Ironfront {
       // Shake scaled to the hit, and the view is kicked off aim — the player's
       // half of the same stagger the bots get above.
       this.shake(0.3 + Math.min(0.9, amount * 0.01));
-      if (this.mode === "infantry") {
+      if (this.mode === "infantry" || this.mode === "passenger") {
         const kick = Math.min(0.16, amount * 0.0022);
         this.recoilPitch += kick;
         this.recoilYaw += (Math.random() - 0.5) * kick * 1.6;
@@ -2157,6 +2288,7 @@ export class Ironfront {
     }
 
     if (target.id === this.player.id) {
+      this.dismount(true);
       this.player.deaths++;
       this.phase = "deploy";
       this.respawnAt = this.now + RESPAWN_DELAY;
@@ -2221,6 +2353,17 @@ export class Ironfront {
 
   /* ---------------- match flow ---------------- */
 
+  /**
+   * What this map calls a capture point. The points sit at fixed positions on
+   * every map, so the names have to come from the map rather than from the
+   * zone — otherwise an alpine snowfield has a vineyard on it.
+   */
+  private zoneName(zone: Zone): string {
+    const names = mapById(this.settings.mapId).objectives;
+    const i = ZONES.findIndex((z) => z.id === zone.id);
+    return names?.[i] ?? zone.name;
+  }
+
   private objectiveFor(team: Team): Zone {
     const base = BASES[team];
     let best = this.zones[0];
@@ -2265,7 +2408,7 @@ export class Ironfront {
         if (owner !== zs.owner) {
           zs.owner = owner;
           if (owner) {
-            this.pushEvent(`${owner === "blue" ? "Blue" : "Red"} has taken ${zs.zone.name}`, "info");
+            this.pushEvent(`${owner === "blue" ? "Blue" : "Red"} has taken ${this.zoneName(zs.zone)}`, "info");
             this.audio.ui(owner === this.player.team ? 720 : 320);
           }
         }
@@ -2398,7 +2541,7 @@ export class Ironfront {
       if (!rig) continue;
       const hidden =
         s.ridingId !== null ||
-        (s.isPlayer && (this.mode !== "infantry" || !this.thirdPerson)) ||
+        (s.isPlayer && ((this.mode !== "infantry" && this.mode !== "passenger") || !this.thirdPerson)) ||
         (!s.alive && this.now > s.respawnAt - 3);
       rig.update(s, s.team === this.player.team && !s.isPlayer, hidden, dt);
     }
@@ -2455,7 +2598,7 @@ export class Ironfront {
     this.shakeAmount = Math.max(0, this.shakeAmount - dt * 2.2);
 
     let fov = 70;
-    if (this.mode === "infantry") {
+    if (this.mode === "infantry" || this.mode === "passenger") {
       const zoomMul = WEAPONS[this.player.weapon]?.adsZoom ?? 2.2;
       // A wider field while sprinting. Speed is hard to feel through a window
       // that never changes size, and the widening is what sells it in both
@@ -2542,7 +2685,7 @@ export class Ironfront {
     // updated here where the FOV it has to compensate for is already known.
     // Only infantry in first person: a tank crewman is not holding a rifle,
     // and in third person the soldier rig is drawn with its own weapon.
-    if (this.mode === "infantry" && !this.thirdPerson && this.player.alive && this.phase === "playing") {
+    if ((this.mode === "infantry" || this.mode === "passenger") && !this.thirdPerson && this.player.alive && this.phase === "playing") {
       this.viewModel.update(
         this.player,
         nationOfTeam(this.player.team),
@@ -2568,7 +2711,7 @@ export class Ironfront {
     // Infantry aims along the same effective direction the camera renders
     // (raw mouse plus recoil and sway); other modes have neither, so the raw
     // mouse-driven values are already what the camera shows.
-    const yaw = this.mode === "infantry" ? this.effAimYaw : this.aimYaw;
+    const yaw = this.mode === "infantry" || this.mode === "passenger" ? this.effAimYaw : this.aimYaw;
     const pitch = this.mode === "infantry" ? this.effAimPitch : this.aimPitch;
     const cp = Math.cos(pitch);
     this.tmpVec2.set(Math.sin(yaw) * cp, Math.sin(pitch), Math.cos(yaw) * cp).normalize();
@@ -2648,7 +2791,7 @@ export class Ironfront {
       mags: s.mags[s.weapon],
       grenades: s.grenades,
       reload:
-        this.mode === "infantry" && this.now < s.reloadUntil
+        (this.mode === "infantry" || this.mode === "passenger") && this.now < s.reloadUntil
           ? 1 - (s.reloadUntil - this.now) / spec.reloadTime
           : null,
       vehicle: t
@@ -2684,7 +2827,7 @@ export class Ironfront {
         : null,
       zones: this.zones.map((z) => ({
         id: z.zone.id,
-        name: z.zone.name,
+        name: this.zoneName(z.zone),
         owner: z.owner,
         progress: z.progress,
         contested: z.contested,
