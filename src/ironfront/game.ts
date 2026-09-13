@@ -344,6 +344,7 @@ export class Ironfront {
       unitById: (id) => this.units.find((u) => u.id === id),
       applyDamage: (t, a, by, info) => this.applyDamage(t, a, by, info),
       notify: (by, target, info) => this.notify(by, target, info),
+      blastCorpses: (at, radius, force) => this.blastCorpses(at, radius, force),
     });
 
     this.sun = new THREE.DirectionalLight(0xfff0d8, 2.6);
@@ -2030,10 +2031,40 @@ export class Ironfront {
     }
     target.hp -= amount;
 
+    // Being hit moves you. A round carries real momentum into a man, and
+    // without any of it landing a shot reads as a number changing rather than
+    // as something happening to a body: the man staggers, his aim is thrown
+    // off, and he is pushed back along the line of fire.
+    if (target.kind === "soldier" && target.alive) {
+      const shove = Math.min(1.1, amount * 0.012);
+      this.tmpVec.copy(target.pos).setY(target.pos.y + 1).sub(info.point);
+      this.tmpVec.y = 0;
+      if (this.tmpVec.lengthSq() > 1e-4) {
+        this.tmpVec.normalize();
+        target.vel.addScaledVector(this.tmpVec, shove * 3.2);
+      }
+      // Suppression already drives the AI's willingness to stay in the open;
+      // a hit is the strongest possible version of it.
+      target.suppression = Math.min(1, target.suppression + 0.45);
+      if (!target.isPlayer) {
+        // A bot's aim is thrown by the impact, so a burst that lands spoils
+        // his return fire instead of only subtracting health.
+        target.aimYaw += (Math.random() - 0.5) * shove * 0.5;
+        target.aimPitch += (Math.random() - 0.5) * shove * 0.35;
+      }
+    }
+
     if (target.id === this.player.id || (this.ridingTank && target.id === this.ridingTank.id) || (this.ridingPlane && target.id === this.ridingPlane.id)) {
       const dir = Math.atan2(info.point.x - this.camera.position.x, info.point.z - this.camera.position.z);
       this.damage.push({ dir, until: this.now + 2.2 });
-      this.shake(0.35);
+      // Shake scaled to the hit, and the view is kicked off aim — the player's
+      // half of the same stagger the bots get above.
+      this.shake(0.3 + Math.min(0.9, amount * 0.01));
+      if (this.mode === "infantry") {
+        const kick = Math.min(0.16, amount * 0.0022);
+        this.recoilPitch += kick;
+        this.recoilYaw += (Math.random() - 0.5) * kick * 1.6;
+      }
     }
 
     const attacker = this.units.find((u) => u.id === attackerId);
@@ -2043,6 +2074,27 @@ export class Ironfront {
     }
 
     if (target.hp <= 0) this.kill(target, attackerId, info);
+  }
+
+  /**
+   * Throw the bodies lying near a blast. A corpse is rig state rather than
+   * simulation state — the sim has already forgotten it — so this reaches into
+   * the rigs directly instead of going through applyDamage.
+   */
+  private blastCorpses(at: THREE.Vector3, radius: number, force: number) {
+    for (const s of this.soldiers) {
+      if (s.alive) continue;
+      const rig = this.soldierRigs.get(s.id);
+      if (!rig) continue;
+      const d = s.pos.distanceTo(at);
+      if (d > radius) continue;
+      const falloff = 1 - d / radius;
+      this.tmpVec.copy(s.pos).setY(s.pos.y + 0.6).sub(at);
+      if (this.tmpVec.lengthSq() < 1e-4) this.tmpVec.set(0, 1, 0);
+      this.tmpVec.normalize().multiplyScalar(force * falloff * falloff);
+      this.tmpVec.y = Math.abs(this.tmpVec.y) + force * falloff * 0.5;
+      rig.pushRagdoll(this.tmpVec, s.yaw);
+    }
   }
 
   private isPlayerUnit(id: number) {
@@ -2405,10 +2457,13 @@ export class Ironfront {
     let fov = 70;
     if (this.mode === "infantry") {
       const zoomMul = WEAPONS[this.player.weapon]?.adsZoom ?? 2.2;
-      fov = this.zoomed ? 72 / zoomMul : 72;
+      // A wider field while sprinting. Speed is hard to feel through a window
+      // that never changes size, and the widening is what sells it in both
+      // camera modes — the FOV is eased towards, so it opens rather than snaps.
+      fov = this.zoomed ? 72 / zoomMul : this.player.sprinting ? 80 : 72;
       const eye = STANCE_EYE[this.player.stance];
       if (this.thirdPerson) {
-        const back = 5.5;
+        const back = this.player.sprinting ? 6.6 : 5.5;
         const cp = Math.cos(this.effAimPitch);
         this.camera.position.set(
           this.player.pos.x - Math.sin(this.effAimYaw) * cp * back + Math.cos(this.effAimYaw) * 1.2,

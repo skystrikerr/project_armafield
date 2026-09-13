@@ -78,6 +78,8 @@ export interface CombatWorld {
   listener: THREE.Vector3;
   applyDamage(target: Unit, amount: number, attackerId: number, info: DamageInfo): void;
   notify(attackerId: number, targetId: number, info: DamageInfo): void;
+  /** Throw any bodies lying near a blast. Corpses are rig state, not sim state. */
+  blastCorpses(at: THREE.Vector3, radius: number, force: number): void;
 }
 
 /** Height and width of a soldier's hitbox in each stance. */
@@ -606,6 +608,10 @@ export class Battle {
     if (radius <= 0) return;
     this.world.effects.explosion(at, radius);
     this.world.audio.explosion(at.distanceTo(this.world.listener), Math.max(0.6, radius / 8));
+    // The living take damage below; the dead get thrown. A shell landing in a
+    // heap of bodies that ignores them completely is the sort of thing you
+    // only notice once, and then cannot stop noticing.
+    this.world.blastCorpses(at, radius * 1.6, p.blastDamage * 0.06);
 
     for (const u of this.world.allUnits()) {
       if (!u.alive) continue;

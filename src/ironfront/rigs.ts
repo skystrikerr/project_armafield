@@ -200,6 +200,22 @@ class Ragdoll {
   /** Seconds of simulation left; a settled body stops costing anything. */
   private life = 6;
 
+  /** Shove a settled body — a blast landing nearby, or a vehicle over it. */
+  push(world: THREE.Vector3, yaw: number, strength: number) {
+    const cos = Math.cos(-yaw);
+    const sin = Math.sin(-yaw);
+    const lx = world.x * cos - world.z * sin;
+    const lz = world.x * sin + world.z * cos;
+    for (let i = 0; i < this.pos.length; i++) {
+      const share = strength * (i < 2 ? 0.05 : 0.03);
+      this.prev[i].x -= lx * share;
+      this.prev[i].y -= world.y * share * 0.6;
+      this.prev[i].z -= lz * share;
+    }
+    // Whatever it was, the body is moving again and worth simulating.
+    this.life = Math.max(this.life, 2.5);
+  }
+
   constructor(stance: Stance, impulse: THREE.Vector3 | null, yaw: number) {
     // Seeded from roughly where the body was standing, so it falls from the
     // pose it was in rather than snapping to attention first.
@@ -212,6 +228,10 @@ class Ragdoll {
       p(0, hipY, 0),
       p(-0.17, 0.06, -0.05),
       p(0.17, 0.06, 0.05),
+      // Hands, hanging off the chest. Without them the whole upper body is one
+      // rigid piece and a fallen man reads as a plank rather than a body.
+      p(-0.3, hipY + 0.3, 0.16),
+      p(0.3, hipY + 0.3, 0.16),
     ];
     this.prev = this.pos.map((v) => v.clone());
 
@@ -224,6 +244,9 @@ class Ragdoll {
     link(1, 3, 0.35);      // chest to feet, loose, so the body keeps its length
     link(1, 4, 0.35);
     link(3, 4, 0.25);      // feet apart
+    link(1, 5, 0.8);       // arms, slack enough to swing and flop
+    link(1, 6, 0.8);
+    link(2, 5, 0.12);      // and loosely tethered to the hips so they trail
 
     if (impulse) {
       // The impulse arrives in world space; the rig's frame is turned by the
@@ -234,8 +257,8 @@ class Ragdoll {
       const lz = impulse.x * sin + impulse.z * cos;
       // Upper body takes most of it — that is what makes a hit read as a hit
       // rather than the whole man sliding sideways.
-      const share = [0.06, 0.05, 0.03, 0.012, 0.012];
-      for (let i = 0; i < 5; i++) {
+      const share = [0.06, 0.05, 0.03, 0.012, 0.012, 0.045, 0.045];
+      for (let i = 0; i < this.pos.length; i++) {
         this.prev[i].x -= lx * share[i];
         this.prev[i].y -= impulse.y * share[i] * 0.5;
         this.prev[i].z -= lz * share[i];
@@ -255,7 +278,7 @@ class Ragdoll {
   }
 
   private substep(h: number) {
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < this.pos.length; i++) {
       const p = this.pos[i];
       const q = this.prev[i];
       const vx = (p.x - q.x) * 0.985;
@@ -280,7 +303,7 @@ class Ragdoll {
         b.x -= dx * k; b.y -= dy * k; b.z -= dz * k;
       }
       // Ground, with friction so a body does not skate once it lands.
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < this.pos.length; i++) {
         const p = this.pos[i];
         const floor = i === 0 ? 0.16 : i === 1 ? 0.2 : 0.1;
         if (p.y >= floor) continue;
@@ -305,7 +328,13 @@ class Ragdoll {
     _q.setFromUnitVectors(_yAxis, _spine);
     body.quaternion.copy(_q);
     torso.rotation.set(0, 0, 0);
-    armsPivot.rotation.set(0.35, 0, 0);
+
+    // The arms hang towards where the hands ended up, averaged into the one
+    // pivot the rig actually has for them.
+    _leg.subVectors(this.pos[5], chest).add(_arm.subVectors(this.pos[6], chest)).multiplyScalar(0.5);
+    _inv.copy(_q).invert();
+    _leg.applyQuaternion(_inv);
+    armsPivot.rotation.set(Math.atan2(_leg.z, -_leg.y) * 0.8, 0, 0);
 
     // Each leg swings towards where its foot ended up, measured in the body's
     // own frame so it stays correct however the torso came to rest.
@@ -320,6 +349,7 @@ class Ragdoll {
 
 const _spine = new THREE.Vector3();
 const _leg = new THREE.Vector3();
+const _arm = new THREE.Vector3();
 const _yAxis = new THREE.Vector3(0, 1, 0);
 const _q = new THREE.Quaternion();
 const _inv = new THREE.Quaternion();
@@ -388,23 +418,34 @@ export class SoldierRig {
       for (const leg of this.legs) leg.rotation.set(0, 0, 0);
     }
 
-    const hipY = s.stance === "stand" ? 0.9 : s.stance === "crouch" ? 0.62 : 0.3;
-    this.body.position.y = hipY;
     this.body.rotation.x = s.stance === "prone" ? Math.PI / 2 : 0;
 
-    // Legs swing on the gait phase when moving, and settle when still.
+    const hipY = s.stance === "stand" ? 0.9 : s.stance === "crouch" ? 0.62 : 0.3;
+
+    // Legs swing on the gait phase when moving, and settle when still. A run
+    // is a longer stride at a faster cadence, not just the walk played quicker,
+    // so both the rate and the amplitude go up — which is most of what makes a
+    // sprinting soldier read as sprinting from behind.
     const moving = Math.hypot(s.vel.x, s.vel.z) > 0.4;
-    const swing = moving ? Math.sin(s.gait * 2.4) * (s.sprinting ? 0.85 : 0.55) : 0;
+    const cadence = s.sprinting ? 3.5 : 2.4;
+    const swing = moving ? Math.sin(s.gait * cadence) * (s.sprinting ? 1.15 : 0.55) : 0;
     const bend = s.stance === "crouch" ? 0.85 : 0;
     this.legs[0].rotation.x = swing + bend;
     this.legs[1].rotation.x = -swing + bend;
+    // The body rises and falls on each stride, hardest at a run.
+    this.body.position.y = hipY + (moving ? Math.abs(Math.sin(s.gait * cadence)) * (s.sprinting ? 0.07 : 0.025) : 0);
 
-    // Upper body twists towards where the soldier is looking.
+    // Upper body twists towards where the soldier is looking, and leans into
+    // a run. A man sprinting upright looks like a man on a travelator.
     this.torso.rotation.y = wrap(s.aimYaw - s.yaw);
-    this.torso.rotation.x = s.stance === "prone" ? -Math.PI / 2 + 0.25 : 0;
-    this.armsPivot.rotation.x = -s.aimPitch + (moving && !s.sprinting ? Math.sin(s.gait * 4.8) * 0.05 : 0);
-    // Sprinting soldiers carry the weapon low.
-    this.armsPivot.rotation.z = s.sprinting ? -0.5 : 0;
+    const lean = s.sprinting ? 0.34 : 0;
+    this.torso.rotation.x = s.stance === "prone" ? -Math.PI / 2 + 0.25 : lean;
+    this.armsPivot.rotation.x =
+      (s.sprinting ? -0.5 + Math.sin(s.gait * cadence) * 0.45 : -s.aimPitch) +
+      (moving && !s.sprinting ? Math.sin(s.gait * 4.8) * 0.05 : 0);
+    // Sprinting soldiers carry the weapon low and across the body, and their
+    // arms pump with the stride rather than holding the aim.
+    this.armsPivot.rotation.z = s.sprinting ? -0.7 : 0;
 
     // Each weapon has its own silhouette, so the mesh is swapped whenever the
     // soldier changes weapon rather than toggling between two fixed ones.
@@ -414,6 +455,11 @@ export class SoldierRig {
       this.weapon.geometry = this.assets.weaponGeometryFor(s.weapon);
       this.weapon.position.set(...weaponGrip(s.weapon));
     }
+  }
+
+  /** Shove this soldier's body, if he has one lying about. */
+  pushRagdoll(world: THREE.Vector3, yaw: number) {
+    this.ragdoll?.push(world, yaw, 1);
   }
 
   dispose() {

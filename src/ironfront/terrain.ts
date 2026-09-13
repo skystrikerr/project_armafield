@@ -301,6 +301,12 @@ export const BIOMES: Record<string, Biome> = {
     trees: { count: 1100, kinds: ["palm", "palm", "pine", "oak"], density: 1.0, minScale: 0.8, maxScale: 1.5 },
     rocks: { count: 300, minScale: 1.0, maxScale: 3.0 },
     clutter: { count: 600, bushChance: 0.7 },
+    // The map is named for its water and promises crossings and a beach, but
+    // spreading TEMPERATE brings its river, lake and coast in as null — so the
+    // coast had no water at all until these were set. A channel across the
+    // middle gives the crossings, the shore along the west edge gives the sand.
+    river: { width: 14, depth: 5, level: -4.5, colour: 0x2f86b4 },
+    coast: { shoreX: -232, beach: 54, bluff: 30, rise: 16, sand: 0xd8c894, surf: 0x2f86b4 },
     sky: 0x59a3d8, horizon: 0xe6efe8, fog: 0xc6dde8, fogNear: 600, fogFar: 2800,
   },
 
@@ -947,6 +953,18 @@ export class Terrain {
     return false;
   }
 
+  /**
+   * Would a structure placed here be standing in water? The ground is held
+   * above the waterline nearly everywhere, but a lake bowl or a river channel
+   * is meant to be below it, and a village scattered across a zone can reach
+   * into one — which is how a house ends up at the bottom of a lake.
+   */
+  private submerged(x: number, z: number) {
+    const level = this.biome.river?.level;
+    if (level === undefined) return false;
+    return this.heightAt(x, z) < level + 0.6;
+  }
+
   /** A cluster of buildings, walls and sandbags on a capture point. */
   private village(rand: Rand, zone: Zone) {
     const count = 5 + Math.floor(rand() * 4);
@@ -955,7 +973,7 @@ export class Terrain {
       const dist = range(rand, 8, zone.radius * 0.82);
       const x = zone.x + Math.cos(ang) * dist;
       const z = zone.z + Math.sin(ang) * dist;
-      if (this.obstructed(x, z, 6)) continue;
+      if (this.obstructed(x, z, 6) || this.submerged(x, z)) continue;
       const w = range(rand, 5, 9);
       const d = range(rand, 5, 9);
       const h = rand() < 0.35 ? range(rand, 6.5, 9) : range(rand, 3.6, 5);
@@ -971,7 +989,7 @@ export class Terrain {
       const dist = range(rand, zone.radius * 0.35, zone.radius * 0.8);
       const x = zone.x + Math.cos(ang) * dist;
       const z = zone.z + Math.sin(ang) * dist;
-      if (this.obstructed(x, z, 5)) continue;
+      if (this.obstructed(x, z, 5) || this.submerged(x, z)) continue;
       const rot = rand() * Math.PI * 2;
       const y = this.heightAt(x, z);
       this.obstacles.push(box(x, y + 0.55, z, 3.2, 0.55, 0.7, rot, false));
